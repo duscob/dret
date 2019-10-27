@@ -1,0 +1,2 @@
+DRet - Document Retrieval Library
+=================================
