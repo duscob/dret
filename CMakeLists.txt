@@ -21,8 +21,8 @@ set(CMAKE_MODULE_PATH
 include(ConfigSafeGuards)
 
 
-
 if (dret_build_tests)
+    include(ConfigGTest)
 endif ()
 
 
