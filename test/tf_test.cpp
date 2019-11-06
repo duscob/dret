@@ -18,9 +18,6 @@ using RightHand = std::pair<std::size_t, std::size_t>;
 using Rules = std::vector<RightHand>;
 using OccsBVs = std::vector<sdsl::bit_vector>;
 using FLOccsBVs = std::pair<OccsBVs, OccsBVs>;
-using Occ = std::pair<std::pair<std::size_t, std::vector<std::size_t>>,
-                      std::vector<std::size_t>>; // (non-terminal, docs) = relative_positions
-using Occs = std::vector<Occ>;
 
 
 sdsl::bit_vector operator~(sdsl::bit_vector _bv) {
@@ -106,6 +103,10 @@ INSTANTIATE_TEST_SUITE_P(FirstLastOccs,
                          )
 );
 
+using Occ = std::pair<std::pair<std::size_t, std::vector<std::size_t>>,
+                      std::vector<std::size_t>>; // (non-terminal, terminals) = relative_positions
+using Occs = std::vector<Occ>;
+
 
 class FirstOccs_Test : public TestWithSLP<Occs> {};
 
@@ -113,16 +114,16 @@ class FirstOccs_Test : public TestWithSLP<Occs> {};
 TEST_P(FirstOccs_Test, Find) {
   auto[f_occs_bvs, l_occs_bvs] = dret::BuildFirstAndLastOccs<sdsl::bit_vector>(slp_);
 
-  auto occs = std::get<2>(GetParam());
+  const auto &occs = std::get<2>(GetParam());
 
   for (const auto &occ : occs) {
     auto &nonterminal = occ.first.first;
-    auto &docs = occ.first.second;
+    auto &terms = occ.first.second;
     auto &e_poss = occ.second;
 
-    for (std::size_t i = 0; i < docs.size(); ++i) {
-      auto pos = dret::FindFirstOcc(slp_, nonterminal, docs[i], f_occs_bvs, l_occs_bvs);
-      EXPECT_EQ(pos, e_poss[i]) << nonterminal << ":" << docs[i];
+    for (std::size_t i = 0; i < terms.size(); ++i) {
+      auto pos = dret::FindFirstOcc(slp_, nonterminal, terms[i], f_occs_bvs, l_occs_bvs);
+      EXPECT_EQ(pos, e_poss[i]) << nonterminal << ":" << terms[i];
     }
   }
 }
@@ -152,16 +153,16 @@ class LastOccs_Test : public TestWithSLP<Occs> {};
 TEST_P(LastOccs_Test, Find) {
   auto[f_occs_bvs, l_occs_bvs] = dret::BuildFirstAndLastOccs<sdsl::bit_vector>(slp_);
 
-  auto occs = std::get<2>(GetParam());
+  const auto &occs = std::get<2>(GetParam());
 
   for (const auto &occ : occs) {
     auto &nonterminal = occ.first.first;
-    auto &docs = occ.first.second;
+    auto &terms = occ.first.second;
     auto &e_poss = occ.second;
 
-    for (std::size_t i = 0; i < docs.size(); ++i) {
-      auto pos = dret::FindLastOcc(slp_, nonterminal, docs[i], f_occs_bvs, l_occs_bvs);
-      EXPECT_EQ(pos, e_poss[i]) << nonterminal << ":" << docs[i];
+    for (std::size_t i = 0; i < terms.size(); ++i) {
+      auto pos = dret::FindLastOcc(slp_, nonterminal, terms[i], f_occs_bvs, l_occs_bvs);
+      EXPECT_EQ(pos, e_poss[i]) << nonterminal << ":" << terms[i];
     }
   }
 }
@@ -181,5 +182,64 @@ INSTANTIATE_TEST_SUITE_P(LastOccs,
                                                   {{3, {1, 2, 3, 4}}, {0, 0, 1, 0}}, {{4, {1, 2, 3, 4}}, {0, 0, 0, 1}},
                                                   {{5, {1, 2}}, {2, 1}}, {{6, {1, 2, 3}}, {3, 2, 1}},
                                                   {{7, {1, 3}}, {0, 2}}, {{10, {1, 2}}, {4, 2}}})
+                         )
+);
+
+using Cover = std::vector<std::size_t>;
+using Positions = std::map<std::size_t, std::size_t>; // (terminal, relative_position)
+using CoversXPoss = std::vector<std::pair<Cover, std::pair<Positions, Positions>>>;
+
+
+class AllFirstOccs_Test : public TestWithSLP<CoversXPoss> {};
+
+
+TEST_P(AllFirstOccs_Test, Find) {
+  auto[f_occs_bvs, l_occs_bvs] = dret::BuildFirstAndLastOccs<sdsl::bit_vector>(slp_);
+
+  Positions f_occs;
+  auto report_f_occ = [&f_occs](auto _term, auto _pos) {
+    f_occs[_term] = _pos;
+  };
+
+  Positions l_occs;
+  auto report_l_occ = [&l_occs](auto _term, auto _pos) {
+    l_occs[_term] = _pos;
+  };
+
+  const auto &covers_poss = std::get<2>(GetParam());
+  for (const auto &cover_pos : covers_poss) {
+    const auto &cover = cover_pos.first;
+    f_occs.clear();
+    l_occs.clear();
+
+    dret::FindAllFirstLastOccs(slp_, cover, f_occs_bvs, l_occs_bvs, report_f_occ, report_l_occ);
+
+    const auto &e_f_occs = cover_pos.second.first;
+    EXPECT_THAT(f_occs, testing::ElementsAreArray(e_f_occs));
+
+    const auto &e_l_occs = cover_pos.second.second;
+    EXPECT_THAT(l_occs, testing::ElementsAreArray(e_l_occs));
+  }
+}
+
+
+INSTANTIATE_TEST_SUITE_P(UsingSimpleSLP,
+                         AllFirstOccs_Test,
+                         testing::Values(
+                             std::make_tuple(2ul,
+                                             Rules{{1, 2}, {3, 3}},
+                                             CoversXPoss{{{4}, {{{1, 1}, {2, 2}}, {{1, 3}, {2, 4}}}},
+                                                         {{2, 3}, {{{1, 2}, {2, 1}}, {{1, 2}, {2, 3}}}}}),
+                             std::make_tuple(4ul,
+                                             Rules{{2, 1}, {3, 5}, {3, 3}, {2, 5}, {4, 6}, {8, 1}, {6, 7}, {11, 6},
+                                                   {9, 12}, {13, 10}},
+                                             CoversXPoss{{{14}, {{{1, 4}, {2, 3}, {3, 2}, {4, 1}},
+                                                                 {{1, 16}, {2, 14}, {3, 10}, {4, 1}}}},
+                                                         {{5, 7, 6},
+                                                          {{{1, 2}, {2, 1}, {3, 3}}, {{1, 7}, {2, 6}, {3, 5}}}},
+                                                         {{1, 7, 6},
+                                                          {{{1, 1}, {2, 5}, {3, 2}}, {{1, 6}, {2, 5}, {3, 4}}}},
+                                                         {{3, 6}, {{{1, 4}, {2, 3}, {3, 1}}, {{1, 4}, {2, 3}, {3, 2}}}},
+                                                         {{3, 3}, {{{3, 1}}, {{3, 2}}}}})
                          )
 );
