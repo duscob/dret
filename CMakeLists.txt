@@ -39,19 +39,28 @@ target_include_directories(dret INTERFACE ${PROJECT_SOURCE_DIR}/include/dret)
 
 include(internal_utils)
 
+find_library(SDSL_LIB sdsl)
+find_library(DIVSUFSORT_LIB divsufsort)
+find_library(DIVSUFSORT64_LIB divsufsort64)
+set(SDSL_LIBS ${SDSL_LIB} ${DIVSUFSORT_LIB} ${DIVSUFSORT64_LIB})
+find_library(GRAMMAR_LIB grammar)
+set(LIBS ${SDSL_LIB} ${GRAMMAR_LIB})
+
 if (dret_build_tests)
     enable_testing()
 
     include(ConfigGTest)
 
-    find_library(SDSL_LIB sdsl REQUIRED)
-
-    cxx_test_with_flags_and_args(tf_test "" "gtest;gtest_main;gmock;sdsl" "" ${PROJECT_SOURCE_DIR}/test/tf_test.cpp)
-    cxx_test_with_flags_and_args(algorithm_test "" "gtest;gtest_main;gmock;sdsl" "" ${PROJECT_SOURCE_DIR}/test/algorithm_test.cpp)
+    cxx_test_with_flags_and_args(tf_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/tf_test.cpp)
+    cxx_test_with_flags_and_args(algorithm_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/algorithm_test.cpp)
 endif ()
 
+# TODO use find_package(gflags) instead find_library(...)
+find_library(GFLAGS_LIB gflags)
+find_package(Boost COMPONENTS filesystem)
 
 if (dret_build_tools)
+    cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${Boost_LIBRARIES}" tool/build_items.cpp)
 endif ()
 
 
