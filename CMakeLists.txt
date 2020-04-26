@@ -30,6 +30,7 @@ set(CMAKE_CXX_STANDARD 17)
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
 set(SOURCE_FILES
+        ${PROJECT_SOURCE_DIR}/include/dret/df_brute.h
         ${PROJECT_SOURCE_DIR}/include/dret/tf.h
         ${PROJECT_SOURCE_DIR}/include/dret/algorithm.h)
 
@@ -51,6 +52,7 @@ if (dret_build_tests)
 
     include(ConfigGTest)
 
+    cxx_test_with_flags_and_args(df_brute_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/df_brute_test.cpp)
     cxx_test_with_flags_and_args(tf_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/tf_test.cpp)
     cxx_test_with_flags_and_args(algorithm_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/algorithm_test.cpp)
 endif ()
@@ -65,5 +67,8 @@ endif ()
 
 
 if (dret_build_benchmarks)
+    include(ConfigGBenchmark)
+
+    cxx_executable_with_flags(query_doc_freq_idx_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${Boost_LIBRARIES}" benchmark/query_doc_freq_idx_bm.cpp)
 endif ()
 
