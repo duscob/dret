@@ -10,7 +10,7 @@
 #include <sdsl/config.hpp>
 #include <rindex/r_index.hpp>
 
-#include <df_brute.h>
+#include <doc_freq_index_brute.h>
 
 DEFINE_string(data, "", "Data file basename. (MANDATORY)");
 DEFINE_string(patterns, "", "Patterns file. (MANDATORY)");
@@ -90,7 +90,7 @@ int main(int argc, char *argv[]) {
   BitVector doc_endings_compact(doc_endings);
   auto doc_endings_rank = BitVector::rank_1_type(&doc_endings_compact);
 
-  auto idx = dret::MakeDFIdxBrute(r_idx_wrapper, doc_endings_rank);
+  auto idx = dret::MakeDocFreqIndexBrute(r_idx_wrapper, doc_endings_rank);
 
   benchmark::RegisterBenchmark("Brute", BM_Doc_Freq, idx, patterns);
 

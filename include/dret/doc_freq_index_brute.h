@@ -2,8 +2,8 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 4/25/20.
 //
 
-#ifndef DRET_DF_BRUTE_H_
-#define DRET_DF_BRUTE_H_
+#ifndef DRET_DOC_FREQ_INDEX_BRUTE_H_
+#define DRET_DOC_FREQ_INDEX_BRUTE_H_
 
 #include <cstddef>
 #include <unordered_map>
@@ -21,9 +21,9 @@ void ListFrequencyByDoc(const CSA &_csa, const GetDoc &_get_doc, const Pattern &
 }
 
 template<typename CSA, typename GetDoc>
-class DFIdxBrute {
+class DocFreqIndexBrute {
  public:
-  DFIdxBrute(const CSA &_csa, const GetDoc &_get_doc) : csa_{_csa}, get_doc_{_get_doc} {
+  DocFreqIndexBrute(const CSA &_csa, const GetDoc &_get_doc) : csa_{_csa}, get_doc_{_get_doc} {
   }
 
   template<typename Pattern>
@@ -54,10 +54,10 @@ class DFIdxBrute {
 };
 
 template<typename CSA, typename GetDoc>
-auto MakeDFIdxBrute(const CSA &_csa, const GetDoc &_get_doc) {
-  return DFIdxBrute<CSA, GetDoc>{_csa, _get_doc};
+auto MakeDocFreqIndexBrute(const CSA &_csa, const GetDoc &_get_doc) {
+  return DocFreqIndexBrute<CSA, GetDoc>{_csa, _get_doc};
 }
 
 }
 
-#endif //DRET_DF_BRUTE_H_
+#endif //DRET_DOC_FREQ_INDEX_BRUTE_H_

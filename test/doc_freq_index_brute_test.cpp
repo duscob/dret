@@ -5,7 +5,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
-#include <df_brute.h>
+#include <doc_freq_index_brute.h>
 
 using Occurrences = std::vector<std::size_t>;
 using DocFreqs = std::unordered_map<std::size_t, std::size_t>;
@@ -22,15 +22,15 @@ class MockCSA {
   const Occurrences &occurrences_;
 };
 
-class DFIdxBrute_Test : public testing::TestWithParam<std::tuple<Occurrences, DocFreqs>>{};
+class DocFreqIndexBrute_Test : public testing::TestWithParam<std::tuple<Occurrences, DocFreqs>>{};
 
-TEST_P(DFIdxBrute_Test, ListWithFreq) {
+TEST_P(DocFreqIndexBrute_Test, ListWithFreq) {
   MockCSA csa{std::get<0>(GetParam())};
   auto get_doc = [](const auto &_occ) -> auto {
     return _occ;
   };
 
-  auto idx = dret::MakeDFIdxBrute(csa, get_doc);
+  auto idx = dret::MakeDocFreqIndexBrute(csa, get_doc);
 
   auto real_doc_freqs = idx.ListWithFreq("empty");
 
@@ -40,8 +40,8 @@ TEST_P(DFIdxBrute_Test, ListWithFreq) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    DFIdxBrute,
-    DFIdxBrute_Test,
+    DocFreqIndexBrute,
+    DocFreqIndexBrute_Test,
     testing::Values(
         std::make_tuple(Occurrences{}, DocFreqs{}),
         std::make_tuple(Occurrences{3}, DocFreqs{{3, 1}}),
