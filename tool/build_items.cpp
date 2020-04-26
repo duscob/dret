@@ -25,6 +25,44 @@ const char *KEY_BWT_RUNS_LAST = "bwt_runs_last";
 const char *KEY_TEXT_BWT_RUNS_FIRST = "text_bwt_runs_first";
 const char *KEY_TEXT_BWT_RUNS_LAST = "text_bwt_runs_last";
 const char *KEY_R_INDEX = "ri";
+const char *KEY_DOC_END = "doc_end";
+
+
+template<typename II, typename DocBorder, typename DocDelim>
+void ConstructDocBorder(II begin, II end, DocBorder &doc_border, const DocDelim &doc_delim, std::size_t size = 0) {
+  if (size == 0)
+    size = std::distance(begin, end);
+
+  DocBorder tmp_doc_border(size, 0);
+
+  std::size_t i = 0;
+  for (auto it = begin; it != end; ++it, ++i) {
+    if (*it == doc_delim) {
+      tmp_doc_border[i] = 1;
+    }
+  }
+
+  doc_border.swap(tmp_doc_border);
+};
+
+
+template<uint8_t WIDTH = 8, typename DocBorder, typename DocDelim>
+void ConstructDocBorder(const std::string &data_file, DocBorder &doc_border, const DocDelim &doc_delim) {
+  sdsl::int_vector_buffer<WIDTH> data_buf(data_file, std::ios::in, 1024 * 1024, WIDTH, true);
+
+  DocBorder tmp_doc_border(data_buf.size(), 0);
+
+  for (std::size_t i = 0; i < data_buf.size(); ++i) {
+    if (data_buf[i] == doc_delim) {
+      tmp_doc_border[i] = 1;
+    }
+  }
+
+  doc_border.swap(tmp_doc_border);
+
+  // Previous solution seems to be faster due to iterator comparison.
+//  ConstructDocBorder(data_buf.begin(), data_buf.end(), doc_border, doc_delim);
+}
 
 
 //! Constructs the Burrows and Wheeler Transform (BWT) from text over byte- or integer-alphabet and suffix array.
@@ -181,7 +219,8 @@ int main(int argc, char **argv) {
 
   // r-index
   ri::r_index<> r_idx;
-  if (!sdsl::load_from_cache(r_idx, KEY_R_INDEX, config)) {
+  sdsl::bit_vector doc_endings;
+  if (!cache_file_exists(KEY_R_INDEX, config)) {
     std::cout << "Construct RI ..." << std::endl;
 
     std::string input;
@@ -192,6 +231,10 @@ int main(int argc, char **argv) {
 
       input = buffer.str();
     }
+
+    ConstructDocBorder(input.begin(), input.end(), doc_endings, '\0');
+
+    sdsl::store_to_cache(doc_endings, KEY_DOC_END, config);
 
     std::replace(input.begin(), input.end(), '\0', '\2');
     r_idx = ri::r_index<>(input, false);
