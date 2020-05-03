@@ -31,6 +31,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_brute.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_sada.h
         ${PROJECT_SOURCE_DIR}/include/dret/tf.h
         ${PROJECT_SOURCE_DIR}/include/dret/algorithm.h)
 
