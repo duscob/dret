@@ -11,8 +11,12 @@
 
 #include <sdsl/io.hpp>
 #include <sdsl/construct.hpp>
+#include <sdsl/csa_wt.hpp>
+#include <sdsl/rmq_succinct_sada.hpp>
 
 #include <rindex/r_index.hpp>
+
+#include <dret/doc_freq_index_sada.h>
 
 DEFINE_string(text, "", "Text file. (MANDATORY)");
 DEFINE_bool(sais, true, "SE_SAIS or LIBDIVSUFSORT algorithm for Suffix Array construction.");
@@ -20,13 +24,21 @@ DEFINE_bool(sais, true, "SE_SAIS or LIBDIVSUFSORT algorithm for Suffix Array con
 using namespace sdsl;
 using namespace std;
 
+const char *KEY_DA = "da";
 const char *KEY_BWT_RUNS_FIRST = "bwt_runs_first";
 const char *KEY_BWT_RUNS_LAST = "bwt_runs_last";
 const char *KEY_TEXT_BWT_RUNS_FIRST = "text_bwt_runs_first";
 const char *KEY_TEXT_BWT_RUNS_LAST = "text_bwt_runs_last";
 const char *KEY_R_INDEX = "ri";
 const char *KEY_DOC_END = "doc_end";
+const char *KEY_DOC_ISA = "doc_isa";
+const char *KEY_SADA_RMINQ = "sada_rminq";
+const char *KEY_SADA_RMAXQ = "sada_rmaxq";
 
+const u_int8_t kDocDelimiter = 2;
+
+using RangeMinQuery = sdsl::rmq_succinct_sct<true>;
+using RangeMaxQuery = sdsl::rmq_succinct_sct<false>;
 
 template<typename II, typename DocBorder, typename DocDelim>
 void ConstructDocBorder(II begin, II end, DocBorder &doc_border, const DocDelim &doc_delim, std::size_t size = 0) {
@@ -44,7 +56,6 @@ void ConstructDocBorder(II begin, II end, DocBorder &doc_border, const DocDelim 
 
   doc_border.swap(tmp_doc_border);
 };
-
 
 template<uint8_t WIDTH = 8, typename DocBorder, typename DocDelim>
 void ConstructDocBorder(const std::string &data_file, DocBorder &doc_border, const DocDelim &doc_delim) {
@@ -157,6 +168,59 @@ void construct_bwt_and_runs(cache_config &config) {
   register_cache_file(KEY_BWT, config);
 }
 
+template<uint8_t t_width>
+struct sa_trait {
+  typedef uint64_t value_type;
+  typedef std::vector<value_type> vec_type;
+  enum { num_bytes = 0 };
+  template<class t_sa>
+  static void calc_sa(t_sa &sa, vec_type &text) {
+    qsufsort::construct_sa(sa, text);
+  }
+};
+
+template<>
+struct sa_trait<8> {
+  typedef uint8_t value_type;
+  typedef std::vector<value_type> vec_type;
+  enum { num_bytes = 1 };
+  template<class t_sa>
+  static void calc_sa(t_sa &sa, vec_type &text) {
+    algorithm::calculate_sa(text.data(), text.size(), sa);
+  }
+};
+
+template<uint8_t t_width>
+void construct_doc_isa_base(typename sa_trait<t_width>::vec_type &doc_buffer, int_vector<> &doc_isa) {
+  int_vector<> sa(doc_buffer.size(), 0, bits::hi(doc_buffer.size()) + 1);
+  sa_trait<t_width>::calc_sa(sa, doc_buffer);
+  util::bit_compress(sa);
+  doc_isa = sa;
+  for (std::size_t i = 0; i < doc_buffer.size(); ++i) {
+    doc_isa[sa[i]] = i;
+  }
+}
+
+template<uint8_t t_width>
+void construct_doc_isa(cache_config &config, vector<int_vector<>> &doc_isa) {
+  typename sa_trait<t_width>::vec_type doc_buffer;
+  int_vector_buffer<t_width> text_buf(cache_file_name(conf::KEY_TEXT, config));
+  std::size_t doc_id = 0;
+  for (std::size_t i = 0; i < text_buf.size(); ++i) {
+    if (kDocDelimiter == text_buf[i]) {
+      if (doc_buffer.size() > 0) {
+        doc_buffer.push_back(0);
+        doc_isa.emplace_back(int_vector<>());
+        construct_doc_isa_base<t_width>(doc_buffer, doc_isa[doc_isa.size() - 1]);
+        ++doc_id;
+      }
+      doc_buffer.clear();
+    } else {
+      doc_buffer.push_back(text_buf[i]);
+    }
+  }
+}
+
 int main(int argc, char **argv) {
   gflags::SetUsageMessage("This program calculates the SA and BWT for the given text.");
   gflags::AllowCommandLineReparsing();
@@ -216,6 +280,25 @@ int main(int argc, char **argv) {
     cout << "DONE" << endl;
   }
 
+  if (!cache_file_exists(conf::KEY_CSA, config)) {
+    cout << "Calculate Compressed Suffix Array ... " << endl;
+
+    sdsl::csa_wt<sdsl::wt_huff<sdsl::rrr_vector<63>>, 30, 1000000, sdsl::text_order_sa_sampling<> > csa;
+    construct(csa, data_path, config, 8);
+
+    sdsl::store_to_cache(csa, conf::KEY_CSA, config);
+    cout << "DONE" << endl;
+  }
+
+  if (!cache_file_exists(KEY_DOC_ISA, config)) {
+    cout << "Calculate Inverse Suffix Array for each Doc... " << endl;
+
+    vector<int_vector<> > doc_isa;
+    construct_doc_isa<8>(config, doc_isa);
+
+    sdsl::store_to_cache(doc_isa, KEY_DOC_ISA, config);
+    cout << "DONE" << endl;
+  }
 
   // r-index
   ri::r_index<> r_idx;
@@ -240,6 +323,66 @@ int main(int argc, char **argv) {
     r_idx = ri::r_index<>(input, false);
 
     sdsl::store_to_cache(r_idx, KEY_R_INDEX, config);
+    cout << "DONE" << endl;
+  }
+
+  if (!cache_file_exists(KEY_DA, config)) {
+    std::cout << "Construct Document Array ..." << std::endl;
+
+    sdsl::int_vector<> sa;
+    load_from_cache(sa, conf::KEY_SA, config);
+
+    sdsl::bit_vector doc_endings;
+    load_from_cache(doc_endings, KEY_DOC_END, config);
+    using BitVector = sdsl::sd_vector<>;
+
+    BitVector doc_endings_compact(doc_endings);
+    auto doc_endings_rank = BitVector::rank_1_type(&doc_endings_compact);
+
+    size_t doc_cnt = doc_endings_rank(doc_endings_compact.size());
+
+    int_vector<> da(sa.size(), 0, bits::hi(doc_cnt) + 1);
+    for (size_t i = 0; i < sa.size(); ++i) {
+      da[i] = doc_endings_rank(sa[i]);
+    }
+    store_to_cache(da, KEY_DA, config);
+
+    cout << "DONE" << endl;
+  }
+
+  if (!cache_file_exists(KEY_SADA_RMINQ, config) || !cache_file_exists(KEY_SADA_RMAXQ, config)) {
+    std::cout << "Construct SADA Range Min/Max Query ..." << std::endl;
+
+    sdsl::int_vector<> da;
+    load_from_cache(da, KEY_DA, config);
+
+    size_t doc_cnt;
+    {
+      sdsl::bit_vector doc_endings;
+      load_from_cache(doc_endings, KEY_DOC_END, config);
+      using BitVector = sdsl::sd_vector<>;
+
+      BitVector doc_endings_compact(doc_endings);
+      auto doc_endings_rank = BitVector::rank_1_type(&doc_endings_compact);
+
+      doc_cnt = doc_endings_rank(doc_endings_compact.size());
+    }
+
+    // Compute range minimum query on previous document array
+    {
+      sdsl::int_vector<> prev_docs;
+      dret::ConstructPrevDocArray(da, doc_cnt, prev_docs);
+      RangeMinQuery range_min_query(&prev_docs);
+      store_to_cache(range_min_query, KEY_SADA_RMINQ, config);
+    }
+
+    // Compute range maximum query on next document array
+    {
+      sdsl::int_vector<> next_docs;
+      dret::ConstructNextDocArray(da, doc_cnt, next_docs);
+      RangeMaxQuery range_max_query(&next_docs);
+      store_to_cache(range_max_query, KEY_SADA_RMAXQ, config);
+    }
     cout << "DONE" << endl;
   }
 
