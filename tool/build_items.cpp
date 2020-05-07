@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <cstdio>
 
 #include <boost/filesystem.hpp>
 
@@ -34,6 +35,16 @@ const char *KEY_DOC_END = "doc_end";
 const char *KEY_DOC_ISA = "doc_isa";
 const char *KEY_SADA_RMINQ = "sada_rminq";
 const char *KEY_SADA_RMAXQ = "sada_rmaxq";
+const char *KEY_ILCP_BACKWARD = "ilcp_b";
+const char *KEY_ILCP_FORWARD = "ilcp_f";
+const char *KEY_ILCP_BACKWARD_RUN_HEADS = "ilcp_b_run_heads";
+const char *KEY_ILCP_FORWARD_RUN_HEADS = "ilcp_f_run_heads";
+const char *KEY_ILCP_BACKWARD_RMQ = "ilcp_b_rmq";
+const char *KEY_ILCP_FORWARD_RMQ = "ilcp_f_rmq";
+const char *KEY_CILCP_BACKWARD_RUN_HEADS = "cilcp_b_run_heads";
+const char *KEY_CILCP_FORWARD_RUN_HEADS = "cilcp_f_run_heads";
+const char *KEY_CILCP_BACKWARD_RMQ = "cilcp_b_rmq";
+const char *KEY_CILCP_FORWARD_RMQ = "cilcp_f_rmq";
 
 const u_int8_t kDocDelimiter = 2;
 
@@ -221,6 +232,23 @@ void construct_doc_isa(cache_config &config, vector<int_vector<>> &doc_isa) {
   }
 }
 
+template<uint8_t t_width>
+auto GetNextDoc(int_vector_buffer<t_width> &_text_buffer,
+                typename int_vector_buffer<t_width>::value_type _kDocDelimiter,
+                std::size_t &_sp) {
+  using ValueType = typename int_vector_buffer<t_width>::value_type;
+  std::vector<ValueType> doc_buffer;
+  for (; _sp < _text_buffer.size(); ++_sp) {
+    ValueType ch = _text_buffer[_sp];
+
+    if (ch == _kDocDelimiter) break;
+
+    doc_buffer.push_back(ch);
+  }
+
+  return doc_buffer;
+}
+
 int main(int argc, char **argv) {
   gflags::SetUsageMessage("This program calculates the SA and BWT for the given text.");
   gflags::AllowCommandLineReparsing();
@@ -230,6 +258,9 @@ int main(int argc, char **argv) {
     std::cerr << "Command-line error!!!" << std::endl;
     return 1;
   }
+
+  construct_config::byte_algo_sa = FLAGS_sais ? SE_SAIS
+                                              : LIBDIVSUFSORT; // or LIBDIVSUFSORT for less space-efficient but faster construction
 
   string data_path = FLAGS_text;
 
@@ -267,8 +298,6 @@ int main(int argc, char **argv) {
 
   if (!cache_file_exists(conf::KEY_SA, config)) {
     cout << "Calculate Suffix Array ... " << endl;
-    construct_config::byte_algo_sa = FLAGS_sais ? SE_SAIS
-                                                : LIBDIVSUFSORT; // or LIBDIVSUFSORT for less space-efficient but faster construction
     construct_sa<8>(config);
     cout << "DONE" << endl;
   }
@@ -298,6 +327,206 @@ int main(int argc, char **argv) {
 
     sdsl::store_to_cache(doc_isa, KEY_DOC_ISA, config);
     cout << "DONE" << endl;
+  }
+
+  if (!cache_file_exists(KEY_ILCP_BACKWARD, config) || !cache_file_exists(KEY_ILCP_FORWARD, config)
+      || !cache_file_exists(KEY_ILCP_BACKWARD_RMQ, config) || !cache_file_exists(KEY_ILCP_FORWARD_RMQ, config)
+      || !cache_file_exists(KEY_CILCP_BACKWARD_RMQ, config) || !cache_file_exists(KEY_CILCP_FORWARD_RMQ, config)) {
+    int_vector<> ilcps[2]; // [0] == backward && [1] == forward
+
+    if (!load_from_cache(ilcps[0], KEY_ILCP_BACKWARD, config) || !load_from_cache(ilcps[1], KEY_ILCP_FORWARD, config)) {
+      cout << "Calculate ILCP... " << endl;
+
+      std::size_t text_size;
+      std::vector<int_vector<>> lcp_docs;
+      {
+        int_vector_buffer<8> text_buf(cache_file_name(conf::KEY_TEXT, config));
+        text_size = text_buf.size();
+
+//        // Collection ISA
+//        sdsl::construct_isa(config);
+//        int_vector_buffer<> isa_buf(cache_file_name(conf::KEY_ISA, config));
+
+        cache_config config_doc(false, ".", util::basename(FLAGS_text) + "-doc");
+
+        std::size_t pos = 0;
+        std::size_t doc = 0;
+        while (pos < text_buf.size()) {
+          std::cout << "Doc " << doc++ << std::endl;
+
+          // Document text
+          std::cout << "  Text" << std::endl;
+//          std::size_t sp_doc = pos;
+          {
+            sdsl::int_vector<8> text_doc;
+            {
+              auto doc_buffer = GetNextDoc(text_buf, 2, pos);
+              ++pos; // Set at first position of next document
+
+              text_doc.resize(doc_buffer.size() + 1);
+
+              std::copy(doc_buffer.begin(), doc_buffer.end(), text_doc.begin());
+              text_doc[text_doc.size() - 1] = 0;
+            }
+            sdsl::store_to_cache(text_doc, conf::KEY_TEXT, config_doc);
+          }
+
+          // Document SA
+          std::cout << "  SA" << std::endl;
+          sdsl::construct_sa<8>(config_doc);
+
+          // Document ISA
+          std::cout << "  ISA" << std::endl;
+          sdsl::construct_isa(config_doc);
+
+          // Document LCP
+          std::cout << "  LCP" << std::endl;
+          sdsl::construct_lcp_kasai<8>(config_doc);
+          lcp_docs.emplace_back(sdsl::int_vector<>());
+          sdsl::load_from_cache(lcp_docs[lcp_docs.size() - 1], conf::KEY_LCP, config_doc);
+
+//        // Construct ILCP
+//        std::cout << "  ILCP" << std::endl;
+//        sdsl::int_vector_buffer<> lcp_doc_buf(cache_file_name(conf::KEY_LCP, config_doc));
+//        sdsl::int_vector_buffer<> sa_doc_buf(cache_file_name(conf::KEY_SA, config_doc));
+//        isa_buf[sp_doc]; // Set isa_buf at first suffix of current document.
+//        for (std::size_t i = 0; i < sa_doc_buf.size(); ++i) {
+//          ilcp_backward[isa_buf[sa_doc_buf[i] + sp_doc]] = lcp_doc_buf[i];
+//        }
+
+          for (const auto &item : config_doc.file_map) {
+            std::cout << item.first << "---" << item.second << std::endl;
+            std::remove(item.second.c_str());
+          }
+        }
+      }
+
+      // Construct ILCP
+      std::cout << "  ILCP" << std::endl;
+
+      ilcps[0].resize(text_size);
+      ilcps[1].resize(text_size);
+      sdsl::int_vector_buffer<> da(cache_file_name(KEY_DA, config));
+      std::vector<std::size_t> doc_suffix_indices(lcp_docs.size(), 0);
+
+      for (std::size_t i = 0; i < da.size(); ++i) {
+        std::size_t doc = da[i];
+        auto &doc_suffix_idx = doc_suffix_indices[doc];
+        const auto &doc_lcp = lcp_docs[doc];
+
+        ilcps[0][i] = doc_lcp[doc_suffix_idx];
+        ilcps[1][i] = doc_lcp[++doc_suffix_idx % doc_lcp.size()];
+      }
+
+      sdsl::store_to_cache(ilcps[0], KEY_ILCP_BACKWARD, config);
+      sdsl::store_to_cache(ilcps[1], KEY_ILCP_FORWARD, config);
+
+      cout << "DONE" << endl;
+    }
+
+    if (!cache_file_exists(KEY_ILCP_BACKWARD_RMQ, config) || !cache_file_exists(KEY_ILCP_FORWARD_RMQ, config)) {
+      cout << "Calculate ILCP Left/Right RMQ... " << endl;
+
+      const char *key_ilcps_run_beginnings[2] = {KEY_ILCP_BACKWARD_RUN_HEADS, KEY_ILCP_FORWARD_RUN_HEADS};
+      const char *key_ilcps_rmq[2] = {KEY_ILCP_BACKWARD_RMQ, KEY_ILCP_FORWARD_RMQ};
+
+      for (int direction = 0; direction < 2; ++direction) {
+        std::cout << "Direction: " << direction << std::endl;
+
+        const auto &ilcp = ilcps[direction];
+
+        sdsl::bit_vector ilcp_run_beginnings(ilcp.size(), 0);
+        std::vector<std::size_t> ilcp_runs;
+
+        ilcp_runs.emplace_back(ilcp[0]);
+        ilcp_run_beginnings[0] = 1;
+        for (std::size_t i = 1; i < ilcp.size(); ++i) {
+          if (ilcp[i - 1] != ilcp[i]) {
+            ilcp_runs.emplace_back(ilcp[i]);
+            ilcp_run_beginnings[i] = 1;
+          }
+        }
+
+//        {
+//          std::ofstream out(std::to_string(direction) + "-tmp.txt");
+//          for (int i =31892292; i <= 31892408; ++i) {
+//            out << i << " - " << ilcp_runs[i] << std::endl;
+//          }
+//        }
+
+        store_to_cache(ilcp_run_beginnings, key_ilcps_run_beginnings[direction], config);
+
+        std::cout << "# ILCP runs: " << ilcp_runs.size() << std::endl;
+
+        RangeMinQuery range_min_query(&ilcp_runs);
+        store_to_cache(range_min_query, key_ilcps_rmq[direction], config);
+      }
+
+      cout << "DONE" << endl;
+    }
+
+    if (!cache_file_exists(KEY_CILCP_BACKWARD_RMQ, config) || !cache_file_exists(KEY_CILCP_FORWARD_RMQ, config)) {
+      cout << "Calculate CILCP Left/Right RMQ... " << endl;
+
+      const char *key_ilcps_run_heads[2] = {KEY_CILCP_BACKWARD_RUN_HEADS, KEY_CILCP_FORWARD_RUN_HEADS};
+      const char *key_ilcps_rmq[2] = {KEY_CILCP_BACKWARD_RMQ, KEY_CILCP_FORWARD_RMQ};
+
+      sdsl::int_vector<> da;
+      sdsl::load_from_cache(da, KEY_DA, config);
+
+//      {
+//        std::ofstream out("tmp-ilcp.txt");
+//        for (int i = 36854822; i <= 36856834; ++i) {
+//          out << i << " - " << da[i] << " - " << ilcps[1][i] << std::endl;
+//        }
+//      }
+
+      for (int direction = 0; direction < 2; ++direction) {
+        std::cout << "Direction: " << direction << std::endl;
+        const auto &ilcp = ilcps[direction];
+
+        sdsl::bit_vector ilcp_run_heads(ilcp.size(), 0);
+        std::vector<std::size_t> ilcp_runs;
+
+        ilcp_runs.emplace_back(ilcp[0]);
+        ilcp_run_heads[0] = 1;
+        for (std::size_t i = 1; i < ilcp.size(); ++i) {
+          std::size_t l = ilcp[i - 1];
+          std::size_t d = da[i - 1];
+          if (l == ilcp[i]) {
+            while (++i < ilcp.size() && l == ilcp[i]) {}
+          } else if (d == da[i]) {
+            do {
+              l = std::min(l, ilcp[i]);
+            } while (++i < ilcp.size() && d == da[i]);
+          }
+
+          if (i < ilcp.size()) {
+            ilcp_runs[ilcp_runs.size() - 1] = l;
+            ilcp_runs.emplace_back(ilcp[i]);
+            ilcp_run_heads[i] = 1;
+          }
+        }
+
+//        {
+//          sdsl::bit_vector::select_1_type select(&ilcp_run_heads);
+//
+//          std::ofstream out(std::to_string(direction) + "-tmp-cilcp-runs.txt");
+//          for (int i = 904788; i <= 904796; ++i) {
+//            out << i << " - " << select(i + 1) << " - " << ilcp_runs[i] << std::endl;
+//          }
+//        }
+
+        store_to_cache(ilcp_run_heads, key_ilcps_run_heads[direction], config);
+
+        std::cout << "# CILCP runs: " << ilcp_runs.size() << std::endl;
+
+        RangeMinQuery range_min_query(&ilcp_runs);
+        store_to_cache(range_min_query, key_ilcps_rmq[direction], config);
+      }
+
+      cout << "DONE" << endl;
+    }
   }
 
   // r-index
