@@ -10,10 +10,10 @@
 
 #include <sdsl/int_vector.hpp>
 
+#include "doc_freq_index_rmq.h"
+
 
 namespace dret {
-
-enum class OccurrenceSide { LEFTMOST, RIGHTMOST };
 
 template<OccurrenceSide _side, typename RMQ, typename GetValue, typename IsReported, typename Report>
 void GetExtremeOccurrencesInRange(std::size_t _sp,
@@ -168,8 +168,8 @@ class DocFreqIndexSada {
   const DocBorderSelect &doc_border_select_;
 
   std::size_t doc_cnt_;
-  RangeMinQuery range_min_query_;
-  RangeMaxQuery range_max_query_;
+  const RangeMinQuery &range_min_query_;
+  const RangeMaxQuery &range_max_query_;
 
   using bit_vector = sdsl::bit_vector;
   mutable std::array<bit_vector, 2> marked_docs_;
