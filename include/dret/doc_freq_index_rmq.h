@@ -87,12 +87,12 @@ auto ComputeSuffixesRMQ(std::size_t _sp,
   return suffixes;
 }
 
-template<typename RAContainer, typename Report, typename DocBorderRank, typename DocBorderSelect, typename DocISAs>
+template<typename RAContainer, typename Report, typename DocBorderRank, typename DocBorderSelect, typename GetSuffixPosInDoc>
 void ListFrequencyByDoc(const RAContainer &_suffixes,
                         Report &_report_doc_freq,
                         const DocBorderRank &_doc_border_rank,
                         const DocBorderSelect &_doc_border_select_,
-                        const DocISAs &_doc_isas) {
+                        const GetSuffixPosInDoc &_get_suffix_pos_in_doc) {
   for (int i = 0; i < _suffixes.size(); i += 2) {
     auto suffix_1 = _suffixes[i];
     auto suffix_2 = _suffixes[i + 1];
@@ -101,9 +101,7 @@ void ListFrequencyByDoc(const RAContainer &_suffixes,
     if (suffix_1 == suffix_2) { // Pattern occurs exactly once
       _report_doc_freq(doc, 1);
     } else { // Pattern occurs more than once
-      std::size_t doc_begin = doc ? _doc_border_select_(doc) + 1 : 0;
-      std::size_t doc_sp = _doc_isas[doc][suffix_1 - doc_begin];
-      std::size_t doc_ep = _doc_isas[doc][suffix_2 - doc_begin];
+      auto [doc_sp, doc_ep] = _get_suffix_pos_in_doc(doc, suffix_1, suffix_2);
 
       if (doc_sp > doc_ep) {
         std::swap(doc_sp, doc_ep);
@@ -114,7 +112,7 @@ void ListFrequencyByDoc(const RAContainer &_suffixes,
   }
 }
 
-template<typename LeftRMQ, typename RightRMQ, typename SetFirstRange, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsMarkedDoc, typename MarkDoc, typename UnmarkDoc, typename DocBorder, typename DocISAs, typename DocBorderRank = typename DocBorder::rank_1_type, typename DocBorderSelect = typename DocBorder::select_1_type>
+template<typename LeftRMQ, typename RightRMQ, typename SetFirstRange, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsMarkedDoc, typename MarkDoc, typename UnmarkDoc, typename DocBorder, typename GetSuffixPosInDoc, typename DocBorderRank = typename DocBorder::rank_1_type, typename DocBorderSelect = typename DocBorder::select_1_type>
 class DocFreqIndexRMQ {
  public:
   DocFreqIndexRMQ(std::size_t _doc_cnt,
@@ -126,7 +124,7 @@ class DocFreqIndexRMQ {
                   const IsMarkedDoc &_is_marked_doc,
                   const MarkDoc &_mark_doc,
                   const UnmarkDoc &_unmark_doc,
-                  const DocISAs &_doc_isas,
+                  const GetSuffixPosInDoc &_get_suffix_pos_in_doc,
                   const DocBorder &_doc_border,
                   const DocBorderRank &_doc_border_rank,
                   const DocBorderSelect &_doc_border_select)
@@ -139,7 +137,7 @@ class DocFreqIndexRMQ {
         is_marked_doc_{_is_marked_doc},
         mark_doc_{_mark_doc},
         unmark_doc_{_unmark_doc},
-        doc_isas_{_doc_isas},
+        get_suffix_pos_in_doc_{_get_suffix_pos_in_doc},
         doc_border_{_doc_border},
         doc_border_rank_{_doc_border_rank},
         doc_border_select_{_doc_border_select} {}
@@ -161,7 +159,7 @@ class DocFreqIndexRMQ {
       unmark_doc_(doc);
     };
 
-    ListFrequencyByDoc(suffixes, report_doc_freq, doc_border_rank_, doc_border_select_, doc_isas_);
+    ListFrequencyByDoc(suffixes, report_doc_freq, doc_border_rank_, doc_border_select_, get_suffix_pos_in_doc_);
   }
 
   auto ListWithFreq(std::size_t _sp, std::size_t _ep) const {
@@ -189,13 +187,14 @@ class DocFreqIndexRMQ {
   const MarkDoc &mark_doc_;
   const UnmarkDoc &unmark_doc_;
 
-  const DocISAs &doc_isas_;
+  const GetSuffixPosInDoc &get_suffix_pos_in_doc_;
+
   const DocBorder &doc_border_;
   const DocBorderRank &doc_border_rank_;
   const DocBorderSelect &doc_border_select_;
 };
 
-template<typename LeftRMQ, typename RightRMQ, typename TransformRange, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsMarkedDoc, typename MarkDoc, typename UnmarkDoc, typename DocBorder, typename DocISAs, typename DocBorderRank = typename DocBorder::rank_1_type, typename DocBorderSelect = typename DocBorder::select_1_type>
+template<typename LeftRMQ, typename RightRMQ, typename TransformRange, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsMarkedDoc, typename MarkDoc, typename UnmarkDoc, typename DocBorder, typename GetSuffixPosInDoc, typename DocBorderRank = typename DocBorder::rank_1_type, typename DocBorderSelect = typename DocBorder::select_1_type>
 auto MakeDocFreqIndexRMQ(std::size_t _doc_cnt,
                          const LeftRMQ &_left_rmq,
                          const RightRMQ &_right_rmq,
@@ -205,7 +204,7 @@ auto MakeDocFreqIndexRMQ(std::size_t _doc_cnt,
                          const IsMarkedDoc &_is_marked_doc,
                          const MarkDoc &_mark_doc,
                          const UnmarkDoc &_unmark_doc,
-                         const DocISAs &_doc_isas,
+                         const GetSuffixPosInDoc &_get_suffix_pos_in_doc,
                          const DocBorder &_doc_border,
                          const DocBorderRank &_doc_border_rank,
                          const DocBorderSelect &_doc_border_select) {
@@ -218,7 +217,7 @@ auto MakeDocFreqIndexRMQ(std::size_t _doc_cnt,
                          _is_marked_doc,
                          _mark_doc,
                          _unmark_doc,
-                         _doc_isas,
+                         _get_suffix_pos_in_doc,
                          _doc_border,
                          _doc_border_rank,
                          _doc_border_select);
