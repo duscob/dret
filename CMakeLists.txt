@@ -24,7 +24,7 @@ include(ConfigSafeGuards)
 
 
 #Global Setup
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 14)
 
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
@@ -46,7 +46,7 @@ find_library(SDSL_LIB sdsl)
 find_library(DIVSUFSORT_LIB divsufsort)
 find_library(DIVSUFSORT64_LIB divsufsort64)
 set(SDSL_LIBS ${SDSL_LIB} ${DIVSUFSORT_LIB} ${DIVSUFSORT64_LIB})
-find_library(GRAMMAR_LIB grammar)
+find_library(GRAMMAR_LIB grammar REQUIRED)
 set(LIBS ${SDSL_LIB} ${GRAMMAR_LIB})
 
 if (dret_build_tests)
@@ -64,13 +64,16 @@ find_library(GFLAGS_LIB gflags)
 find_package(Boost COMPONENTS filesystem)
 
 if (dret_build_tools)
-    cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${Boost_LIBRARIES}" tool/build_items.cpp)
+    cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${Boost_LIBRARIES};${GRAMMAR_LIB}" tool/build_items.cpp)
+    cxx_executable_with_flags(build_items_sada "" "${SDSL_LIBS};${GFLAGS_LIB}" tool/build_items_sada.cpp tool/definitions.h)
+    cxx_executable_with_flags(build_items_ilcp "" "${SDSL_LIBS};${GFLAGS_LIB};" tool/build_items_ilcp.cpp tool/definitions.h)
+#    cxx_executable_with_flags(build_dslp "" "${SDSL_LIBS};${GFLAGS_LIB};${GRAMMAR_LIB}" tool/build_dslp.cpp)
 endif ()
 
 
 if (dret_build_benchmarks)
     include(ConfigGBenchmark)
 
-    cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${Boost_LIBRARIES}" benchmark/query_doc_freq_index_bm.cpp)
+    cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${Boost_LIBRARIES};${GRAMMAR_LIB}" benchmark/query_doc_freq_index_bm.cpp)
 endif ()
 
