@@ -70,11 +70,12 @@ endif ()
 # TODO use find_package(gflags) instead find_library(...)
 find_library(GFLAGS_LIB gflags)
 find_package(Boost COMPONENTS filesystem)
+find_package(Threads)
 
 if (dret_build_tools)
-    cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${Boost_LIBRARIES};${GRAMMAR_LIB}" tool/build_items.cpp)
-    cxx_executable_with_flags(build_items_sada "" "${SDSL_LIBS};${GFLAGS_LIB}" tool/build_items_sada.cpp tool/definitions.h)
-    cxx_executable_with_flags(build_items_ilcp "" "${SDSL_LIBS};${GFLAGS_LIB};" tool/build_items_ilcp.cpp tool/definitions.h)
+    cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${Boost_LIBRARIES};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items.cpp)
+    cxx_executable_with_flags(build_items_sada "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_sada.cpp tool/definitions.h)
+    cxx_executable_with_flags(build_items_ilcp "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_ilcp.cpp tool/definitions.h)
 #    cxx_executable_with_flags(build_dslp "" "${SDSL_LIBS};${GFLAGS_LIB};${GRAMMAR_LIB}" tool/build_dslp.cpp)
 endif ()
 
@@ -82,6 +83,6 @@ endif ()
 if (dret_build_benchmarks)
     include(ConfigGBenchmark)
 
-    cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${Boost_LIBRARIES};${GRAMMAR_LIB}" benchmark/query_doc_freq_index_bm.cpp)
+    cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${Boost_LIBRARIES};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/query_doc_freq_index_bm.cpp)
 endif ()
 
