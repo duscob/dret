@@ -27,7 +27,9 @@ void GetExtremeOccurrencesInRange(std::size_t _sp,
 
   stack.emplace(_sp, _ep);
   while (!stack.empty()) {
-    auto[rsp, rep] = stack.top();
+    auto values = stack.top();
+    auto &rsp = values.first;
+    auto &rep = values.second;
     stack.pop();
 
     if (rsp <= rep) {
@@ -82,7 +84,9 @@ class DocFreqIndexSada {
 
   template<typename Pattern, typename ReportDocFreq>
   void ListWithFreq(const Pattern &_pattern, ReportDocFreq _report_doc_freq) const {
-    auto[sp, ep] = csa_.Search(_pattern);
+    auto values = csa_.Search(_pattern);
+    auto &sp = values.first;
+    auto &ep = values.second;
 
     // Compute TF-IDF
     auto get_suffix_doc = [this](std::size_t idx) {

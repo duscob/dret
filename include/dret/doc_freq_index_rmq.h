@@ -30,7 +30,10 @@ void GetExtremeOccurrencesRMQ(std::size_t _sp,
   _set_first_ranges(_sp, _ep, stack, _side);
 
   while (!stack.empty()) {
-    auto[rsp, rep] = stack.top();
+    auto values = stack.top();
+    auto &rsp = values.first;
+    auto &rep = values .second;
+
     stack.pop();
 
     if (rsp <= rep) {
@@ -101,7 +104,9 @@ void ListFrequencyByDoc(const RAContainer &_suffixes,
     if (suffix_1 == suffix_2) { // Pattern occurs exactly once
       _report_doc_freq(doc, 1);
     } else { // Pattern occurs more than once
-      auto [doc_sp, doc_ep] = _get_suffix_pos_in_doc(doc, suffix_1, suffix_2);
+      auto values = _get_suffix_pos_in_doc(doc, suffix_1, suffix_2);
+      auto &doc_sp = values.first;
+      auto &doc_ep = values.second;
 
       if (doc_sp > doc_ep) {
         std::swap(doc_sp, doc_ep);
@@ -112,7 +117,7 @@ void ListFrequencyByDoc(const RAContainer &_suffixes,
   }
 }
 
-template<typename LeftRMQ, typename RightRMQ, typename SetFirstRange, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsMarkedDoc, typename MarkDoc, typename UnmarkDoc, typename DocBorder, typename GetSuffixPosInDoc, typename DocBorderRank = typename DocBorder::rank_1_type, typename DocBorderSelect = typename DocBorder::select_1_type>
+template<typename LeftRMQ, typename RightRMQ, typename SetFirstRange, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsMarkedDoc, typename MarkDoc, typename UnmarkDoc, typename GetSuffixPosInDoc, typename DocBorder, typename DocBorderRank = typename DocBorder::rank_1_type, typename DocBorderSelect = typename DocBorder::select_1_type>
 class DocFreqIndexRMQ {
  public:
   DocFreqIndexRMQ(std::size_t _doc_cnt,
@@ -208,19 +213,30 @@ auto MakeDocFreqIndexRMQ(std::size_t _doc_cnt,
                          const DocBorder &_doc_border,
                          const DocBorderRank &_doc_border_rank,
                          const DocBorderSelect &_doc_border_select) {
-  return DocFreqIndexRMQ(_doc_cnt,
-                         _left_rmq,
-                         _right_rmq,
-                         _transform_range,
-                         _get_suffix_doc_value,
-                         _report_suffix_doc_value,
-                         _is_marked_doc,
-                         _mark_doc,
-                         _unmark_doc,
-                         _get_suffix_pos_in_doc,
-                         _doc_border,
-                         _doc_border_rank,
-                         _doc_border_select);
+  return DocFreqIndexRMQ<LeftRMQ,
+                         RightRMQ,
+                         TransformRange,
+                         GetSuffixDocValue,
+                         ReportSuffixDocValue,
+                         IsMarkedDoc,
+                         MarkDoc,
+                         UnmarkDoc,
+                         GetSuffixPosInDoc,
+                         DocBorder,
+                         DocBorderRank,
+                         DocBorderSelect>(_doc_cnt,
+                                          _left_rmq,
+                                          _right_rmq,
+                                          _transform_range,
+                                          _get_suffix_doc_value,
+                                          _report_suffix_doc_value,
+                                          _is_marked_doc,
+                                          _mark_doc,
+                                          _unmark_doc,
+                                          _get_suffix_pos_in_doc,
+                                          _doc_border,
+                                          _doc_border_rank,
+                                          _doc_border_select);
 }
 }
 
