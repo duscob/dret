@@ -27,7 +27,15 @@ include(ConfigSafeGuards)
 set(CMAKE_CXX_STANDARD 14)
 
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
+# Set common include folder for module
+set(COMMON_INCLUDES
+        ${PROJECT_SOURCE_DIR}/include
+        ${CMAKE_INSTALL_PREFIX}/include
+        ${CMAKE_PREFIX_PATH}/include)
+
+include_directories(${COMMON_INCLUDES})
+
+
 
 set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_brute.h
