@@ -11,6 +11,8 @@
 #include <vector>
 #include <algorithm>
 
+#include "doc_freq_index.h"
+
 namespace dret {
 
 enum class OccurrenceSide { LEFTMOST, RIGHTMOST };
@@ -32,7 +34,7 @@ void GetExtremeOccurrencesRMQ(std::size_t _sp,
   while (!stack.empty()) {
     auto values = stack.top();
     auto &rsp = values.first;
-    auto &rep = values .second;
+    auto &rep = values.second;
 
     stack.pop();
 
@@ -88,6 +90,179 @@ auto ComputeSuffixesRMQ(std::size_t _sp,
   std::sort(suffixes.begin(), suffixes.end());
 
   return suffixes;
+}
+
+template<typename LeftRMQ, typename RightRMQ>
+struct RMQAlgoCore {
+ public:
+//  std::size_t doc_cnt;
+
+  LeftRMQ left_rmq;
+  RightRMQ right_rmq;
+
+  // Set initial ranges in stack
+  using Stack = std::stack<std::pair<std::size_t, std::size_t>>;
+  virtual void operator()(std::size_t _sp, std::size_t _ep, Stack &_stack, OccurrenceSide _side) const = 0;
+};
+
+template<typename LeftRMQ, typename RightRMQ>
+struct RMQAlgoCoreSada : public RMQAlgoCore<LeftRMQ, RightRMQ> {
+ public:
+  // Set initial ranges
+  using typename RMQAlgoCore<LeftRMQ, RightRMQ>::Stack;
+  void operator()(std::size_t _sp, std::size_t _ep, Stack &_stack, OccurrenceSide) const override {
+    _stack.emplace(_sp, _ep);
+  }
+};
+
+template<typename LeftRMQ, typename RightRMQ, typename BitVector, typename BitVectorRank = typename BitVector::rank_1_type, typename BitVectorSelect = typename BitVector::select_1_type>
+struct RMQAlgoCoreILCP : public RMQAlgoCore<LeftRMQ, RightRMQ> {
+ public:
+  BitVector run_heads[2];
+  BitVectorRank run_heads_rank[2];
+  BitVectorSelect run_heads_select[2];
+
+  // Set initial ranges
+  using typename RMQAlgoCore<LeftRMQ, RightRMQ>::Stack;
+  void operator()(std::size_t _sp, std::size_t _ep, Stack &_stack, OccurrenceSide _side) const override {
+    auto direction = _side == dret::OccurrenceSide::LEFTMOST ? 0 : 1;
+
+    _stack.emplace(run_heads_rank[direction](_sp + 1) - 1, run_heads_rank[direction](_ep + 1) - 1);
+  }
+};
+
+template<typename LeftRMQ, typename RightRMQ, typename BitVector, typename BitVectorRank = typename BitVector::rank_1_type, typename BitVectorSelect = typename BitVector::select_1_type>
+struct RMQAlgoCoreCILCP : public RMQAlgoCoreILCP<LeftRMQ, RightRMQ, BitVector, BitVectorRank, BitVectorSelect> {
+ public:
+  // Set initial ranges
+  using typename RMQAlgoCore<LeftRMQ, RightRMQ>::Stack;
+  void operator()(std::size_t _sp, std::size_t _ep, Stack &_stack, OccurrenceSide _side) const override {
+    auto direction = _side == dret::OccurrenceSide::LEFTMOST ? 0 : 1;
+
+    auto p = std::make_pair(this->run_heads_rank[direction](_sp + 1) - 1, this->run_heads_rank[direction](_ep + 1) - 1);
+
+    if (p.first < p.second) {
+      if (_side == dret::OccurrenceSide::LEFTMOST) {
+        _stack.emplace(p.second, p.second);
+        _stack.emplace(p.first, p.second - 1);
+      } else if (_side == dret::OccurrenceSide::RIGHTMOST) {
+        _stack.emplace(p.first, p.first);
+        _stack.emplace(p.first + 1, p.second);
+      }
+    } else {
+      _stack.emplace(p);
+    }
+  }
+};
+
+class GetValuesRMQFunctor {
+ public:
+  virtual std::pair<std::size_t, std::size_t> operator()(std::size_t _i,
+                                                         const OccurrenceSide &_side,
+                                                         std::size_t _sp,
+                                                         std::size_t _ep) const = 0;
+};
+
+template<typename GetValue>
+class GetValuesRMQSadaFunctor : public GetValuesRMQFunctor {
+ public:
+  GetValuesRMQSadaFunctor(const GetValue *_get_value) : get_value_{_get_value} {}
+
+  std::pair<std::size_t, std::size_t> operator()(std::size_t _i,
+                                                 const OccurrenceSide &_side,
+                                                 std::size_t _sp,
+                                                 std::size_t _ep) const override {
+    return (*get_value_)(_i);
+  }
+
+ private:
+  const GetValue *get_value_;
+};
+
+class RMQReporter {
+ public:
+  virtual void operator()(std::size_t _i,
+                          const std::pair<std::size_t, std::size_t> &_suffix_doc,
+                          const OccurrenceSide &_side,
+                          const std::function<void(std::size_t)> &_report,
+                          std::size_t _sp,
+                          std::size_t _ep) const = 0;
+};
+
+template<typename Mark>
+class RMQSadaReporter : public RMQReporter {
+ public:
+  RMQSadaReporter(Mark *_mark) : mark_{_mark} {}
+
+  void operator()(std::size_t _i,
+                  const std::pair<std::size_t, std::size_t> &_suffix_doc,
+                  const OccurrenceSide &_side,
+                  const std::function<void(std::size_t)> &_report,
+                  std::size_t _sp,
+                  std::size_t _ep) const override {
+    _report(_suffix_doc.first);
+    (*mark_)(_suffix_doc.second, _side);
+  }
+
+ private:
+  Mark *mark_;
+};
+
+template<typename AlgoCore, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsReported>
+class ComputeSuffixesByDocRMQFunctor : public ComputeSuffixesByDocFunctor {
+ public:
+  ComputeSuffixesByDocRMQFunctor(const AlgoCore &_core,
+                                 const GetSuffixDocValue &_get_suffix_doc_value,
+                                 const ReportSuffixDocValue &_report_suffix_doc_value,
+                                 const IsReported &_is_reported)
+      : core_{_core},
+        get_suffix_doc_value_{_get_suffix_doc_value},
+        report_suffix_doc_value_{_report_suffix_doc_value},
+        is_reported_{_is_reported} {
+  }
+
+  template<typename AddSuffix>
+  void operator()(std::size_t _sp, std::size_t _ep, AddSuffix &_add_suffix) const {
+    auto report_suffix =
+        [this, &_add_suffix](auto _i, const auto &_suffix_doc, OccurrenceSide _side, auto _sp, auto _ep) {
+          report_suffix_doc_value_(_i, _suffix_doc, _side, _add_suffix, _sp, _ep);
+        };
+
+    GetExtremeOccurrencesRMQ<OccurrenceSide::LEFTMOST>(
+        _sp, _ep, core_, core_.left_rmq, get_suffix_doc_value_, is_reported_, report_suffix);
+
+    GetExtremeOccurrencesRMQ<OccurrenceSide::RIGHTMOST>(
+        _sp, _ep, core_, core_.right_rmq, get_suffix_doc_value_, is_reported_, report_suffix);
+  }
+
+  std::vector<std::size_t> operator()(std::size_t _sp, std::size_t _ep) const override {
+    std::vector<std::size_t> suffixes;
+    auto add_suffix = [&suffixes](auto _suffix) {
+      suffixes.emplace_back(_suffix);
+    };
+
+    (*this)(_sp, _ep, add_suffix);
+
+    std::sort(suffixes.begin(), suffixes.end());
+
+    return suffixes;
+  }
+
+ private:
+  const AlgoCore &core_;
+
+  const GetSuffixDocValue &get_suffix_doc_value_;
+  const ReportSuffixDocValue &report_suffix_doc_value_;
+  const IsReported &is_reported_;
+};
+
+template<typename AlgoCore, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsReported>
+auto MakeNewComputeSuffixesByDocRMQFunctor(const AlgoCore &_core,
+                                           const GetSuffixDocValue &_get_suffix_doc_value,
+                                           const ReportSuffixDocValue &_report_suffix_doc_value,
+                                           const IsReported &_is_reported) {
+  return new ComputeSuffixesByDocRMQFunctor<AlgoCore, GetSuffixDocValue, ReportSuffixDocValue, IsReported>(
+      _core, _get_suffix_doc_value, _report_suffix_doc_value, _is_reported);
 }
 
 template<typename RAContainer, typename Report, typename DocBorderRank, typename DocBorderSelect, typename GetSuffixPosInDoc>
