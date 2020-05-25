@@ -38,6 +38,7 @@ include_directories(${COMMON_INCLUDES})
 
 
 set(SOURCE_FILES
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_brute.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_rmq.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_sada.h
@@ -84,5 +85,6 @@ if (dret_build_benchmarks)
     include(ConfigGBenchmark)
 
     cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${Boost_LIBRARIES};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/query_doc_freq_index_bm.cpp)
+    cxx_executable_with_flags(bm_query_doc_freq_index "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${Boost_LIBRARIES};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/bm_query_doc_freq_index.cpp)
 endif ()
 
