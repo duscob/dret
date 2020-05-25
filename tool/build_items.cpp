@@ -35,7 +35,7 @@ using namespace std;
 //const char *KEY_DA = "da";
 const char *KEY_DA_RAW = "da_raw";
 
-const char *KEY_DSA_RAW = "dsa_raw";
+//const char *KEY_DSA_RAW = "dsa_raw";
 //const char *KEY_DSA_GC = "dsa_gc";
 
 const char *KEY_BWT_RUNS_FIRST = "bwt_runs_first";
@@ -44,11 +44,11 @@ const char *KEY_BWT_RUNS_LAST = "bwt_runs_last";
 const char *KEY_TEXT_BWT_RUNS_FIRST = "text_bwt_runs_first";
 const char *KEY_TEXT_BWT_RUNS_LAST = "text_bwt_runs_last";
 
-const char *KEY_R_INDEX = "ri";
+//const char *KEY_R_INDEX = "ri";
 
 //const char *KEY_DOC_END = "doc_end";
 const char *KEY_DOC_ISAS = "doc_isas";
-const char *KEY_DOC_DISAS_RAW = "doc_disas_raw";
+//const char *KEY_DOC_DISAS_RAW = "doc_disas_raw";
 //const char *KEY_DOC_DISAS_GC = "doc_disas_gc";
 
 //const char *KEY_SADA_RMINQ = "sada_rminq";
