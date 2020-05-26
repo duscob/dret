@@ -47,7 +47,7 @@ class IsMarkedWrapper {
   IsMarkedWrapper(const BitVectors *_marked = nullptr) : bit_vectors_{_marked} {}
 
   template<typename SuffixDoc>
-  auto operator()(std::size_t _i, const SuffixDoc &_suffix_doc, dret::OccurrenceSide _side) const {
+  auto operator()(std::size_t /*_i*/, const SuffixDoc &_suffix_doc, dret::OccurrenceSide _side) const {
     return bit_vectors_[_side == dret::OccurrenceSide::LEFTMOST ? 0 : 1][_suffix_doc.second];
   }
 
@@ -174,27 +174,40 @@ class Factory {
             std::remove_reference<std::remove_pointer<decltype(core_ilcp_.run_heads[i])>::type>::type(tmp_bv);
         core_ilcp_.run_heads_rank[i].set_vector(&core_ilcp_.run_heads[i]);
         core_ilcp_.run_heads_select[i].set_vector(&core_ilcp_.run_heads[i]);
-
-//        std::cout << "|BitVector| = " << sdsl::size_in_bytes(tmp_bv) << std::endl;
-//        sdsl::sd_vector<> sd_bv(tmp_bv);
-//        std::cout << "|sd_vector| = " << sdsl::size_in_bytes(sd_bv) << std::endl;
-//        sdsl::rrr_vector<> rrr_bv(tmp_bv);
-//        std::cout << "|rrr_vector| = " << sdsl::size_in_bytes(rrr_bv) << std::endl;
-//        std::cout << "|our_vector| = " << sdsl::size_in_bytes(core_ilcp_.run_heads[i]) << std::endl;
       }
     }
 
+
+    // Loading CILCP components
+    Load(core_cilcp_.left_rmq, KEY_CILCP_BACKWARD_RMQ, config_, "CILCP Left RMQ");
+    Load(core_cilcp_.right_rmq, KEY_CILCP_FORWARD_RMQ, config_, "CILCP Right RMQ");
+    {
+      sdsl::bit_vector tmp_bv;
+      std::string keys[2] = {KEY_CILCP_BACKWARD_RUN_HEADS, KEY_CILCP_FORWARD_RUN_HEADS};
+      for (std::size_t i = 0; i < 2; ++i) {
+        Load(tmp_bv, keys[i], config_, "CILCP Left/Right Run Heads");
+        core_cilcp_.run_heads[i] =
+            std::remove_reference<std::remove_pointer<decltype(core_cilcp_.run_heads[i])>::type>::type(tmp_bv);
+        core_cilcp_.run_heads_rank[i].set_vector(&core_cilcp_.run_heads[i]);
+        core_cilcp_.run_heads_select[i].set_vector(&core_cilcp_.run_heads[i]);
+      }
+    }
 
     // RMQ get values functors
     get_values_rmq_functors_.emplace_back(new dret::GetValuesRMQSadaFunctor<SAWrapper>(sa_wrappers_[0]));
     get_values_rmq_functors_.emplace_back(
         new dret::GetValuesRMQILCPFunctor<SAWrapper, decltype(core_ilcp_)>(sa_wrappers_[0], &core_ilcp_));
+    get_values_rmq_functors_.emplace_back(
+        new dret::GetValuesRMQCILCPFunctor<SAWrapper, decltype(core_cilcp_)>(sa_wrappers_[0], &core_cilcp_));
 
     // RMQ reporters
     rmq_reporters.emplace_back(new dret::RMQSadaReporter<decltype(mark_)>(&mark_));
     rmq_reporters.emplace_back(
         new dret::RMQILCPReporter<decltype(mark_), SAWrapper, decltype(core_ilcp_)>(
             &mark_, sa_wrappers_[0], &core_ilcp_));
+    rmq_reporters.emplace_back(
+        new dret::RMQCILCPReporter<decltype(mark_), SAWrapper, decltype(core_cilcp_)>(
+            &mark_, sa_wrappers_[0], &core_cilcp_));
   }
 
   struct Config {
@@ -224,6 +237,17 @@ class Factory {
                 dret::MakeNewComputeSuffixesByDocRMQFunctor(core_ilcp_,
                                                             *get_values_rmq_functors_[1],
                                                             *rmq_reporters[1],
+                                                            is_marked_)),
+            compute_doc_freq_suff_wrappers_[0]
+        );
+      }
+      case IndexEnum::CILCP: {
+        return dret::MakePtrDocFreqIndexBasicScheme(
+            csa_wrappers_[0],
+            std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
+                dret::MakeNewComputeSuffixesByDocRMQFunctor(core_cilcp_,
+                                                            *get_values_rmq_functors_[2],
+                                                            *rmq_reporters[2],
                                                             is_marked_)),
             compute_doc_freq_suff_wrappers_[0]
         );
@@ -294,6 +318,9 @@ class Factory {
   // ILCP components
   //TODO Experiment with other bitvectors
   dret::RMQAlgoCoreILCP<RangeMinQuery, RangeMinQuery, sdsl::rrr_vector<>> core_ilcp_;
+
+  // CILCP
+  dret::RMQAlgoCoreCILCP<RangeMinQuery, RangeMinQuery, sdsl::sd_vector<>> core_cilcp_;
 
   // RMQ get values
   std::vector<std::unique_ptr<dret::GetValuesRMQFunctor>> get_values_rmq_functors_;

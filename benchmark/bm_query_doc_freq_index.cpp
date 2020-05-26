@@ -17,8 +17,9 @@ DEFINE_bool(print_result, false, "Execute benchmark that print results per index
 
 // Benchmark Warm-up
 static void BM_WarmUp(benchmark::State &state) {
-  for (auto _ : state)
+  for (auto _ : state) {
     std::string empty_string;
+  }
 }
 BENCHMARK(BM_WarmUp);
 
@@ -82,7 +83,8 @@ int main(int argc, char *argv[]) {
   std::vector<std::pair<const char *, Factory::Config>> index_configs = {
       {"Brute-R-Index", Factory::Config{Factory::IndexEnum::Brute}},
       {"Sada", Factory::Config{Factory::IndexEnum::SADA}},
-      {"ILCP", Factory::Config{Factory::IndexEnum::ILCP}}
+      {"ILCP", Factory::Config{Factory::IndexEnum::ILCP}},
+      {"CILCP", Factory::Config{Factory::IndexEnum::CILCP}}
   };
 
   std::string print_bm_prefix = "Print-";
