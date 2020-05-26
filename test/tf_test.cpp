@@ -112,7 +112,9 @@ class FirstOccs_Test : public TestWithSLP<Occs> {};
 
 
 TEST_P(FirstOccs_Test, Find) {
-  auto[f_occs_bvs, l_occs_bvs] = dret::BuildFirstAndLastOccs<sdsl::bit_vector>(slp_);
+  auto values = dret::BuildFirstAndLastOccs<sdsl::bit_vector>(slp_);
+  auto &f_occs_bvs = values.first;
+  auto &l_occs_bvs = values.second;
 
   const auto &occs = std::get<2>(GetParam());
 
@@ -151,7 +153,9 @@ class LastOccs_Test : public TestWithSLP<Occs> {};
 
 
 TEST_P(LastOccs_Test, Find) {
-  auto[f_occs_bvs, l_occs_bvs] = dret::BuildFirstAndLastOccs<sdsl::bit_vector>(slp_);
+  auto values = dret::BuildFirstAndLastOccs<sdsl::bit_vector>(slp_);
+  auto &f_occs_bvs = values.first;
+  auto &l_occs_bvs = values.second;
 
   const auto &occs = std::get<2>(GetParam());
 
@@ -194,7 +198,9 @@ class AllFirstOccs_Test : public TestWithSLP<CoversXPoss> {};
 
 
 TEST_P(AllFirstOccs_Test, Find) {
-  auto[f_occs_bvs, l_occs_bvs] = dret::BuildFirstAndLastOccs<sdsl::bit_vector>(slp_);
+  auto values = dret::BuildFirstAndLastOccs<sdsl::bit_vector>(slp_);
+  auto &f_occs_bvs = values.first;
+  auto &l_occs_bvs = values.second;
 
   Positions f_occs;
   auto report_f_occ = [&f_occs](auto _term, auto _pos) {

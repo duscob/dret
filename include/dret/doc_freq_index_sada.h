@@ -10,10 +10,10 @@
 
 #include <sdsl/int_vector.hpp>
 
+#include "doc_freq_index_rmq.h"
+
 
 namespace dret {
-
-enum class OccurrenceSide { LEFTMOST, RIGHTMOST };
 
 template<OccurrenceSide _side, typename RMQ, typename GetValue, typename IsReported, typename Report>
 void GetExtremeOccurrencesInRange(std::size_t _sp,
@@ -27,7 +27,9 @@ void GetExtremeOccurrencesInRange(std::size_t _sp,
 
   stack.emplace(_sp, _ep);
   while (!stack.empty()) {
-    auto[rsp, rep] = stack.top();
+    auto values = stack.top();
+    auto &rsp = values.first;
+    auto &rep = values.second;
     stack.pop();
 
     if (rsp <= rep) {
@@ -82,7 +84,9 @@ class DocFreqIndexSada {
 
   template<typename Pattern, typename ReportDocFreq>
   void ListWithFreq(const Pattern &_pattern, ReportDocFreq _report_doc_freq) const {
-    auto[sp, ep] = csa_.Search(_pattern);
+    auto values = csa_.Search(_pattern);
+    auto &sp = values.first;
+    auto &ep = values.second;
 
     // Compute TF-IDF
     auto get_suffix_doc = [this](std::size_t idx) {
@@ -168,8 +172,8 @@ class DocFreqIndexSada {
   const DocBorderSelect &doc_border_select_;
 
   std::size_t doc_cnt_;
-  RangeMinQuery range_min_query_;
-  RangeMaxQuery range_max_query_;
+  const RangeMinQuery &range_min_query_;
+  const RangeMaxQuery &range_max_query_;
 
   using bit_vector = sdsl::bit_vector;
   mutable std::array<bit_vector, 2> marked_docs_;

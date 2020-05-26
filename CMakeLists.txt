@@ -24,13 +24,23 @@ include(ConfigSafeGuards)
 
 
 #Global Setup
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 14)
 
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
+# Set common include folder for module
+set(COMMON_INCLUDES
+        ${PROJECT_SOURCE_DIR}/include
+        ${CMAKE_INSTALL_PREFIX}/include
+        ${CMAKE_PREFIX_PATH}/include)
+
+include_directories(${COMMON_INCLUDES})
+
+
 
 set(SOURCE_FILES
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_brute.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_rmq.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_sada.h
         ${PROJECT_SOURCE_DIR}/include/dret/tf.h
         ${PROJECT_SOURCE_DIR}/include/dret/algorithm.h)
@@ -45,7 +55,7 @@ find_library(SDSL_LIB sdsl)
 find_library(DIVSUFSORT_LIB divsufsort)
 find_library(DIVSUFSORT64_LIB divsufsort64)
 set(SDSL_LIBS ${SDSL_LIB} ${DIVSUFSORT_LIB} ${DIVSUFSORT64_LIB})
-find_library(GRAMMAR_LIB grammar)
+find_library(GRAMMAR_LIB grammar REQUIRED)
 set(LIBS ${SDSL_LIB} ${GRAMMAR_LIB})
 
 if (dret_build_tests)
@@ -61,15 +71,20 @@ endif ()
 # TODO use find_package(gflags) instead find_library(...)
 find_library(GFLAGS_LIB gflags)
 find_package(Boost COMPONENTS filesystem)
+find_package(Threads)
 
 if (dret_build_tools)
-    cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${Boost_LIBRARIES}" tool/build_items.cpp)
+    cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${Boost_LIBRARIES};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items.cpp)
+    cxx_executable_with_flags(build_items_sada "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_sada.cpp tool/definitions.h)
+    cxx_executable_with_flags(build_items_ilcp "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_ilcp.cpp tool/definitions.h)
+#    cxx_executable_with_flags(build_dslp "" "${SDSL_LIBS};${GFLAGS_LIB};${GRAMMAR_LIB}" tool/build_dslp.cpp)
 endif ()
 
 
 if (dret_build_benchmarks)
     include(ConfigGBenchmark)
 
-    cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${Boost_LIBRARIES}" benchmark/query_doc_freq_index_bm.cpp)
+#    cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${Boost_LIBRARIES};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/query_doc_freq_index_bm.cpp)
+    cxx_executable_with_flags(bm_query_doc_freq_index "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${Boost_LIBRARIES};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/bm_query_doc_freq_index.cpp)
 endif ()
 
