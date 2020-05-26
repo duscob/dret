@@ -96,12 +96,19 @@ class Factory {
   Factory(const sdsl::cache_config &_config) : config_{_config} {
     // Loading CSAs
     Load(r_idx_, KEY_R_INDEX, config_, "R-Index");
+    size_r_idx_ = sdsl::size_in_bytes(r_idx_);
+    size_r_idx_basic_ = r_idx_.size_in_bytes_basic();
     csa_wrappers_.emplace_back(new RIndexWrapper<decltype(r_idx_)>(&r_idx_));
+
+    seq_size_ = r_idx_.text_size();
+
 
     // Loading document ending marks
     Load(doc_endings_, KEY_DOC_END, config_, "Document Endings");
     doc_endings_rank_ = BitVectorCompactRank(&doc_endings_);
     doc_endings_select_ = BitVectorCompactSelect(&doc_endings_);
+    size_doc_endings_ = sdsl::size_in_bytes(doc_endings_) + sdsl::size_in_bytes(doc_endings_rank_)
+        + sdsl::size_in_bytes(doc_endings_select_);
 
     n_doc_ = doc_endings_rank_(doc_endings_.size());
     doc_marked_[0].resize(n_doc_, false);
@@ -111,41 +118,45 @@ class Factory {
     mark_ = decltype(mark_)(doc_marked_);
     unmark_ = decltype(unmark_)(doc_marked_);
 
+
     // Loading differential suffix array
-    LoadDifferentialSLP(KEY_DSA_RAW,
-                        dsa_.slp_,
-                        dsa_.roots_,
-                        dsa_.seq_size_,
-                        dsa_.seq_diff_base_,
-                        dsa_.span_sums_,
-                        dsa_.sums_diff_base_,
-                        dsa_.samples_,
-                        dsa_.sample_roots_pos_,
-                        dsa_.samples_pos_,
-                        dsa_.samples_pos_rank_,
-                        dsa_.samples_pos_select_,
-                        dsa_.dslp_);
+    dsa_.size_in_bytes_ = LoadDifferentialSLP(
+        KEY_DSA_RAW,
+        dsa_.slp_,
+        dsa_.roots_,
+        dsa_.seq_size_,
+        dsa_.seq_diff_base_,
+        dsa_.span_sums_,
+        dsa_.sums_diff_base_,
+        dsa_.samples_,
+        dsa_.sample_roots_pos_,
+        dsa_.samples_pos_,
+        dsa_.samples_pos_rank_,
+        dsa_.samples_pos_select_,
+        dsa_.dslp_);
 
     sa_wrappers_.emplace_back(
         new DSAWrapper<std::remove_pointer<decltype(dsa_.dslp_)>::type, BitVectorCompactRank>(
             dsa_.dslp_,
             &doc_endings_rank_));
 
+
     // Document inverse suffix arrays
     // Loading differential document inverse suffix arrays
-    LoadDifferentialSLP(KEY_DOC_DISAS_RAW,
-                        doc_disas_.slp_,
-                        doc_disas_.roots_,
-                        doc_disas_.seq_size_,
-                        doc_disas_.seq_diff_base_,
-                        doc_disas_.span_sums_,
-                        doc_disas_.sums_diff_base_,
-                        doc_disas_.samples_,
-                        doc_disas_.sample_roots_pos_,
-                        doc_disas_.samples_pos_,
-                        doc_disas_.samples_pos_rank_,
-                        doc_disas_.samples_pos_select_,
-                        doc_disas_.dslp_);
+    doc_disas_.size_in_bytes_ = LoadDifferentialSLP(
+        KEY_DOC_DISAS_RAW,
+        doc_disas_.slp_,
+        doc_disas_.roots_,
+        doc_disas_.seq_size_,
+        doc_disas_.seq_diff_base_,
+        doc_disas_.span_sums_,
+        doc_disas_.sums_diff_base_,
+        doc_disas_.samples_,
+        doc_disas_.sample_roots_pos_,
+        doc_disas_.samples_pos_,
+        doc_disas_.samples_pos_rank_,
+        doc_disas_.samples_pos_select_,
+        doc_disas_.dslp_);
 
     doc_isas_wrappers_.emplace_back(new DocDISAsWrapper<std::remove_pointer<decltype(doc_disas_.dslp_)>::type>(
         doc_disas_.dslp_));
@@ -160,11 +171,13 @@ class Factory {
     // Loading Sada components
     Load(core_sada_.left_rmq, KEY_SADA_RMINQ, config_, "Sada RMinQ");
     Load(core_sada_.right_rmq, KEY_SADA_RMAXQ, config_, "Sada RMaxQ");
+    size_sada_ = sdsl::size_in_bytes(core_sada_.left_rmq) + sdsl::size_in_bytes(core_sada_.right_rmq);
 
 
     // Loading ILCP components
     Load(core_ilcp_.left_rmq, KEY_ILCP_BACKWARD_RMQ, config_, "ILCP Left RMQ");
     Load(core_ilcp_.right_rmq, KEY_ILCP_FORWARD_RMQ, config_, "ILCP Right RMQ");
+    size_ilcp_ = sdsl::size_in_bytes(core_ilcp_.left_rmq) + sdsl::size_in_bytes(core_ilcp_.right_rmq);
     {
       sdsl::bit_vector tmp_bv;
       std::string keys[2] = {KEY_ILCP_BACKWARD_RUN_HEADS, KEY_ILCP_FORWARD_RUN_HEADS};
@@ -174,6 +187,8 @@ class Factory {
             std::remove_reference<std::remove_pointer<decltype(core_ilcp_.run_heads[i])>::type>::type(tmp_bv);
         core_ilcp_.run_heads_rank[i].set_vector(&core_ilcp_.run_heads[i]);
         core_ilcp_.run_heads_select[i].set_vector(&core_ilcp_.run_heads[i]);
+        size_ilcp_ += sdsl::size_in_bytes(core_ilcp_.run_heads[i]) + sdsl::size_in_bytes(core_ilcp_.run_heads_rank[i])
+            + sdsl::size_in_bytes(core_ilcp_.run_heads_select[i]);
       }
     }
 
@@ -181,6 +196,7 @@ class Factory {
     // Loading CILCP components
     Load(core_cilcp_.left_rmq, KEY_CILCP_BACKWARD_RMQ, config_, "CILCP Left RMQ");
     Load(core_cilcp_.right_rmq, KEY_CILCP_FORWARD_RMQ, config_, "CILCP Right RMQ");
+    size_cilcp_ = sdsl::size_in_bytes(core_cilcp_.left_rmq) + sdsl::size_in_bytes(core_cilcp_.right_rmq);
     {
       sdsl::bit_vector tmp_bv;
       std::string keys[2] = {KEY_CILCP_BACKWARD_RUN_HEADS, KEY_CILCP_FORWARD_RUN_HEADS};
@@ -190,6 +206,9 @@ class Factory {
             std::remove_reference<std::remove_pointer<decltype(core_cilcp_.run_heads[i])>::type>::type(tmp_bv);
         core_cilcp_.run_heads_rank[i].set_vector(&core_cilcp_.run_heads[i]);
         core_cilcp_.run_heads_select[i].set_vector(&core_cilcp_.run_heads[i]);
+        size_cilcp_ += sdsl::size_in_bytes(core_cilcp_.run_heads[i])
+            + sdsl::size_in_bytes(core_cilcp_.run_heads_rank[i])
+            + sdsl::size_in_bytes(core_cilcp_.run_heads_select[i]);
       }
     }
 
@@ -210,47 +229,58 @@ class Factory {
             &mark_, sa_wrappers_[0], &core_cilcp_));
   }
 
+  auto SequenceSize() const {
+    return seq_size_;
+  }
+
   struct Config {
     IndexEnum index;
   };
 
-  dret::DocFreqIndex *Build(const Config &_config) const {
+  std::pair<dret::DocFreqIndex *, std::size_t> Build(const Config &_config) const {
     switch (_config.index) {
       case IndexEnum::Brute: {
-        return dret::MakeNewDocFreqIndexBrute(*csa_wrappers_[0], doc_endings_rank_);
+        return {dret::MakeNewDocFreqIndexBrute(*csa_wrappers_[0], doc_endings_rank_),
+                size_r_idx_ + size_doc_endings_};
       }
       case IndexEnum::SADA: {
-        return dret::MakePtrDocFreqIndexBasicScheme(
-            csa_wrappers_[0],
-            std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                dret::MakeNewComputeSuffixesByDocRMQFunctor(core_sada_,
-                                                            *get_values_rmq_functors_[0],
-                                                            *rmq_reporters[0],
-                                                            is_marked_)),
-            compute_doc_freq_suff_wrappers_[0]
-        );
+        return {
+            dret::MakePtrDocFreqIndexBasicScheme(
+                csa_wrappers_[0],
+                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
+                    dret::MakeNewComputeSuffixesByDocRMQFunctor(core_sada_,
+                                                                *get_values_rmq_functors_[0],
+                                                                *rmq_reporters[0],
+                                                                is_marked_)),
+                compute_doc_freq_suff_wrappers_[0]),
+            size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_sada_
+        };
       }
       case IndexEnum::ILCP: {
-        return dret::MakePtrDocFreqIndexBasicScheme(
-            csa_wrappers_[0],
-            std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                dret::MakeNewComputeSuffixesByDocRMQFunctor(core_ilcp_,
-                                                            *get_values_rmq_functors_[1],
-                                                            *rmq_reporters[1],
-                                                            is_marked_)),
-            compute_doc_freq_suff_wrappers_[0]
-        );
+        return {
+            dret::MakePtrDocFreqIndexBasicScheme(
+                csa_wrappers_[0],
+                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
+                    dret::MakeNewComputeSuffixesByDocRMQFunctor(core_ilcp_,
+                                                                *get_values_rmq_functors_[1],
+                                                                *rmq_reporters[1],
+                                                                is_marked_)),
+                compute_doc_freq_suff_wrappers_[0]),
+            size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_ilcp_
+        };
       }
       case IndexEnum::CILCP: {
-        return dret::MakePtrDocFreqIndexBasicScheme(
-            csa_wrappers_[0],
-            std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                dret::MakeNewComputeSuffixesByDocRMQFunctor(core_cilcp_,
-                                                            *get_values_rmq_functors_[2],
-                                                            *rmq_reporters[2],
-                                                            is_marked_)),
-            compute_doc_freq_suff_wrappers_[0]
-        );
+        return {
+            dret::MakePtrDocFreqIndexBasicScheme(
+                csa_wrappers_[0],
+                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
+                    dret::MakeNewComputeSuffixesByDocRMQFunctor(core_cilcp_,
+                                                                *get_values_rmq_functors_[2],
+                                                                *rmq_reporters[2],
+                                                                is_marked_)),
+                compute_doc_freq_suff_wrappers_[0]),
+            size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_cilcp_
+        };
       }
     }
     exit(4);
@@ -259,14 +289,19 @@ class Factory {
  private:
   sdsl::cache_config config_;
 
+  std::size_t seq_size_;
+
   // CSA
   std::vector<std::shared_ptr<CSAWrapper>> csa_wrappers_;
   ri::r_index<> r_idx_;
+  std::size_t size_r_idx_;
+  std::size_t size_r_idx_basic_;
 
   // Document ending marks
   BitVectorCompact doc_endings_;
   BitVectorCompactRank doc_endings_rank_;
   BitVectorCompactSelect doc_endings_select_;
+  std::size_t size_doc_endings_;
 
   // Documents
   std::size_t n_doc_;
@@ -298,6 +333,8 @@ class Factory {
                                     decltype(samples_),
                                     decltype(sample_roots_pos_),
                                     decltype(samples_pos_)> *dslp_ = nullptr;
+
+    std::size_t size_in_bytes_;
   };
 
   // Suffix array
@@ -314,13 +351,16 @@ class Factory {
 
   // Sada components
   dret::RMQAlgoCoreSada<RangeMinQuery, RangeMaxQuery> core_sada_;
+  std::size_t size_sada_;
 
   // ILCP components
   //TODO Experiment with other bitvectors
   dret::RMQAlgoCoreILCP<RangeMinQuery, RangeMinQuery, sdsl::rrr_vector<>> core_ilcp_;
+  std::size_t size_ilcp_;
 
-  // CILCP
+  // CILCP components
   dret::RMQAlgoCoreCILCP<RangeMinQuery, RangeMinQuery, sdsl::sd_vector<>> core_cilcp_;
+  std::size_t size_cilcp_;
 
   // RMQ get values
   std::vector<std::unique_ptr<dret::GetValuesRMQFunctor>> get_values_rmq_functors_;
@@ -329,22 +369,23 @@ class Factory {
   std::vector<std::unique_ptr<dret::RMQReporter>> rmq_reporters;
 
   template<typename SLP, typename Roots, typename SpanSums, typename Samples, typename SampleRootsPos, typename SamplePos, typename SamplePosRank, typename SamplePosSelect, typename DSLP>
-  void LoadDifferentialSLP(const std::string &_key,
-                           SLP &_slp,
-                           Roots &_roots,
-                           std::size_t &_seq_size,
-                           uint64_t &_seq_diff_base,
-                           SpanSums &_span_sums,
-                           uint64_t &_sums_diff_base,
-                           Samples &_samples,
-                           SampleRootsPos &_sample_roots_pos,
-                           SamplePos &_sample_pos,
-                           SamplePosRank &_sample_pos_rank,
-                           SamplePosSelect &_sample_pos_select,
-                           DSLP &_dslp) const {
+  std::size_t LoadDifferentialSLP(const std::string &_key,
+                                  SLP &_slp,
+                                  Roots &_roots,
+                                  std::size_t &_seq_size,
+                                  uint64_t &_seq_diff_base,
+                                  SpanSums &_span_sums,
+                                  uint64_t &_sums_diff_base,
+                                  Samples &_samples,
+                                  SampleRootsPos &_sample_roots_pos,
+                                  SamplePos &_sample_pos,
+                                  SamplePosRank &_sample_pos_rank,
+                                  SamplePosSelect &_sample_pos_select,
+                                  DSLP &_dslp) const {
     std::string _basefile = cache_file_name(_key, config_);
     auto bit_compress = [](sdsl::int_vector<> &_v) { sdsl::util::bit_compress(_v); };
 
+    std::size_t size_in_bytes = 0;
     {
       grammar::SLP<> tmp_slp;
       std::vector<std::size_t> tmp_roots;
@@ -362,6 +403,7 @@ class Factory {
       grammar::Construct(_roots, tmp_roots);
       bit_compress(_roots);
     }
+    size_in_bytes += sdsl::size_in_bytes(_slp) + sdsl::size_in_bytes(_roots);
 
     {
       auto filename = _basefile + ".info";
@@ -376,8 +418,10 @@ class Factory {
       in >> minimal;
       _seq_diff_base = minimal < 0 ? std::abs(minimal) : 0;
     }
+    size_in_bytes += sizeof(_seq_size) + sizeof(_seq_diff_base);
 
     Load(_span_sums, KEY_GRM_SPAN_SUMS + ("_" + _key), config_, "DSA Span Sums");
+    size_in_bytes += sdsl::size_in_bytes(_span_sums);
 
     {
       auto filename = cache_file_name(KEY_GRM_SPAN_SUMS + ("_" + _key), config_) + ".info";
@@ -390,14 +434,19 @@ class Factory {
       in >> minimal;
       _sums_diff_base = minimal < 0 ? std::abs(minimal) : 0;
     }
+    size_in_bytes += sizeof(_sums_diff_base);
 
     Load(_samples, KEY_GRM_SAMPLE_VALUES + ("_" + _key), config_, "DSA Samples");
+    size_in_bytes += sdsl::size_in_bytes(_samples);
 
     Load(_sample_roots_pos, KEY_GRM_SAMPLE_ROOTS_POSITIONS + ("_" + _key), config_, "DSA Samples Roots pos");
+    size_in_bytes += sdsl::size_in_bytes(_sample_roots_pos);
 
     Load(_sample_pos, KEY_GRM_SAMPLE_POSITIONS + ("_" + _key), config_, "DSA Samples Pos");
     _sample_pos_rank = SamplePosRank(&_sample_pos);
     _sample_pos_select = SamplePosSelect(&_sample_pos);
+    size_in_bytes += sdsl::size_in_bytes(_sample_pos) + sdsl::size_in_bytes(_sample_pos_rank)
+        + sdsl::size_in_bytes(_sample_pos_select);
 
     _dslp = new typename std::remove_pointer<DSLP>::type(_seq_size,
                                                          _slp,
@@ -410,6 +459,8 @@ class Factory {
                                                          _sample_pos,
                                                          _sample_pos_rank,
                                                          _sample_pos_select);
+
+    return size_in_bytes;
   }
 };
 

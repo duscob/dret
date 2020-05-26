@@ -16,29 +16,41 @@ DEFINE_string(data_name, "data", "Data file basename.");
 DEFINE_bool(print_result, false, "Execute benchmark that print results per index.");
 
 // Benchmark Warm-up
-static void BM_WarmUp(benchmark::State &state) {
-  for (auto _ : state) {
+static void BM_WarmUp(benchmark::State &_state) {
+  for (auto _ : _state) {
     std::string empty_string;
   }
+
+  _state.counters["Size(bytes)"] = 0;
+  _state.counters["Bits_x_Symbol"] = 0;
+  _state.counters["Patterns"] = 0;
+  _state.counters["Time_x_Pattern"] = 0;
 }
 BENCHMARK(BM_WarmUp);
 
 // Benchmark Queries on Document Frequency Index
-auto BM_QueryDocFreqIndex = [](benchmark::State &_state, const auto *_idx, const auto &_patterns) {
-  for (auto _ : _state) {
-    for (const auto &pattern: _patterns) {
-      auto freqs = _idx->Search(pattern);
-    }
-  }
-};
+auto BM_QueryDocFreqIndex =
+    [](benchmark::State &_state, const auto &_idx, const auto &_patterns, auto _seq_size) {
+      for (auto _ : _state) {
+        for (const auto &pattern: _patterns) {
+          auto freqs = _idx.first->Search(pattern);
+        }
+      }
+
+      _state.counters["Size(bytes)"] = _idx.second;
+      _state.counters["Bits_x_Symbol"] = _idx.second * 8.0 / _seq_size;
+      _state.counters["Patterns"] = _patterns.size();
+      _state.counters["Time_x_Pattern"] = benchmark::Counter(
+          _patterns.size(), benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kInvert);
+    };
 
 auto BM_PrintQueryDocFreqIndex =
-    [](benchmark::State &_state, const auto &_idx_name, const auto *_idx, const auto &_patterns) {
+    [](benchmark::State &_state, const auto &_idx_name, const auto &_idx, const auto &_patterns, auto _seq_size) {
       for (auto _ : _state) {
         std::ofstream out(std::string("result-") + _idx_name + ".txt");
         for (const auto &pattern: _patterns) {
           out << pattern << std::endl;
-          auto freqs = _idx->Search(pattern);
+          auto freqs = _idx.first->Search(pattern);
 
           std::map<std::size_t, std::size_t> ordered_freqs{freqs.begin(), freqs.end()};
           for (const auto &item  : ordered_freqs) {
@@ -46,6 +58,12 @@ auto BM_PrintQueryDocFreqIndex =
           }
         }
       }
+
+      _state.counters["Size(bytes)"] = _idx.second;
+      _state.counters["Bits_x_Symbol"] = _idx.second * 8.0 / _seq_size;
+      _state.counters["Patterns"] = _patterns.size();
+      _state.counters["Time_x_Pattern"] = benchmark::Counter(
+          _patterns.size(), benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kInvert);
     };
 
 int main(int argc, char *argv[]) {
@@ -90,10 +108,11 @@ int main(int argc, char *argv[]) {
   std::string print_bm_prefix = "Print-";
   for (const auto &idx_config: index_configs) {
     auto index = factory.Build(idx_config.second);
-    benchmark::RegisterBenchmark(idx_config.first, BM_QueryDocFreqIndex, index, patterns);
+    benchmark::RegisterBenchmark(idx_config.first, BM_QueryDocFreqIndex, index, patterns, factory.SequenceSize());
     if (FLAGS_print_result) {
       auto print_bm_name = print_bm_prefix + idx_config.first;
-      benchmark::RegisterBenchmark(print_bm_name.c_str(), BM_PrintQueryDocFreqIndex, idx_config.first, index, patterns);
+      benchmark::RegisterBenchmark(
+          print_bm_name.c_str(), BM_PrintQueryDocFreqIndex, idx_config.first, index, patterns, factory.SequenceSize());
     }
   }
 
