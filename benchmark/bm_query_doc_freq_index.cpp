@@ -81,7 +81,8 @@ int main(int argc, char *argv[]) {
 
   std::vector<std::pair<const char *, Factory::Config>> index_configs = {
       {"Brute-R-Index", Factory::Config{Factory::IndexEnum::Brute}},
-      {"Sada", Factory::Config{Factory::IndexEnum::SADA}}
+      {"Sada", Factory::Config{Factory::IndexEnum::SADA}},
+      {"ILCP", Factory::Config{Factory::IndexEnum::ILCP}}
   };
 
   std::string print_bm_prefix = "Print-";

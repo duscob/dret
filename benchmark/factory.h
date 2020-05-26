@@ -161,11 +161,40 @@ class Factory {
     Load(core_sada_.left_rmq, KEY_SADA_RMINQ, config_, "Sada RMinQ");
     Load(core_sada_.right_rmq, KEY_SADA_RMAXQ, config_, "Sada RMaxQ");
 
+
+    // Loading ILCP components
+    Load(core_ilcp_.left_rmq, KEY_ILCP_BACKWARD_RMQ, config_, "ILCP Left RMQ");
+    Load(core_ilcp_.right_rmq, KEY_ILCP_FORWARD_RMQ, config_, "ILCP Right RMQ");
+    {
+      sdsl::bit_vector tmp_bv;
+      std::string keys[2] = {KEY_ILCP_BACKWARD_RUN_HEADS, KEY_ILCP_FORWARD_RUN_HEADS};
+      for (std::size_t i = 0; i < 2; ++i) {
+        Load(tmp_bv, keys[i], config_, "ILCP Left/Right Run Heads");
+        core_ilcp_.run_heads[i] =
+            std::remove_reference<std::remove_pointer<decltype(core_ilcp_.run_heads[i])>::type>::type(tmp_bv);
+        core_ilcp_.run_heads_rank[i].set_vector(&core_ilcp_.run_heads[i]);
+        core_ilcp_.run_heads_select[i].set_vector(&core_ilcp_.run_heads[i]);
+
+//        std::cout << "|BitVector| = " << sdsl::size_in_bytes(tmp_bv) << std::endl;
+//        sdsl::sd_vector<> sd_bv(tmp_bv);
+//        std::cout << "|sd_vector| = " << sdsl::size_in_bytes(sd_bv) << std::endl;
+//        sdsl::rrr_vector<> rrr_bv(tmp_bv);
+//        std::cout << "|rrr_vector| = " << sdsl::size_in_bytes(rrr_bv) << std::endl;
+//        std::cout << "|our_vector| = " << sdsl::size_in_bytes(core_ilcp_.run_heads[i]) << std::endl;
+      }
+    }
+
+
     // RMQ get values functors
     get_values_rmq_functors_.emplace_back(new dret::GetValuesRMQSadaFunctor<SAWrapper>(sa_wrappers_[0]));
+    get_values_rmq_functors_.emplace_back(
+        new dret::GetValuesRMQILCPFunctor<SAWrapper, decltype(core_ilcp_)>(sa_wrappers_[0], &core_ilcp_));
 
     // RMQ reporters
     rmq_reporters.emplace_back(new dret::RMQSadaReporter<decltype(mark_)>(&mark_));
+    rmq_reporters.emplace_back(
+        new dret::RMQILCPReporter<decltype(mark_), SAWrapper, decltype(core_ilcp_)>(
+            &mark_, sa_wrappers_[0], &core_ilcp_));
   }
 
   struct Config {
@@ -184,6 +213,17 @@ class Factory {
                 dret::MakeNewComputeSuffixesByDocRMQFunctor(core_sada_,
                                                             *get_values_rmq_functors_[0],
                                                             *rmq_reporters[0],
+                                                            is_marked_)),
+            compute_doc_freq_suff_wrappers_[0]
+        );
+      }
+      case IndexEnum::ILCP: {
+        return dret::MakePtrDocFreqIndexBasicScheme(
+            csa_wrappers_[0],
+            std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
+                dret::MakeNewComputeSuffixesByDocRMQFunctor(core_ilcp_,
+                                                            *get_values_rmq_functors_[1],
+                                                            *rmq_reporters[1],
                                                             is_marked_)),
             compute_doc_freq_suff_wrappers_[0]
         );
@@ -250,6 +290,10 @@ class Factory {
 
   // Sada components
   dret::RMQAlgoCoreSada<RangeMinQuery, RangeMaxQuery> core_sada_;
+
+  // ILCP components
+  //TODO Experiment with other bitvectors
+  dret::RMQAlgoCoreILCP<RangeMinQuery, RangeMinQuery, sdsl::rrr_vector<>> core_ilcp_;
 
   // RMQ get values
   std::vector<std::unique_ptr<dret::GetValuesRMQFunctor>> get_values_rmq_functors_;
