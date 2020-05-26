@@ -179,6 +179,29 @@ class GetValuesRMQSadaFunctor : public GetValuesRMQFunctor {
   const GetValue *get_value_;
 };
 
+template<typename GetValue, typename RMQAlgoCoreILCP>
+class GetValuesRMQILCPFunctor : public GetValuesRMQFunctor {
+ public:
+  GetValuesRMQILCPFunctor(const GetValue *_get_value, const RMQAlgoCoreILCP *_core_ilcp)
+      : get_value_{_get_value}, core_ilcp_{_core_ilcp} {
+  }
+
+  std::pair<std::size_t, std::size_t> operator()(std::size_t _i,
+                                                 const OccurrenceSide &_side,
+                                                 std::size_t _sp,
+                                                 std::size_t _ep) const override {
+    auto direction = _side == dret::OccurrenceSide::LEFTMOST ? 0 : 1;
+
+    auto pos = std::max(_sp, core_ilcp_->run_heads_select[direction](_i + 1));
+
+    return (*get_value_)(pos);
+  }
+
+ private:
+  const GetValue *get_value_;
+  const RMQAlgoCoreILCP *core_ilcp_;
+};
+
 class RMQReporter {
  public:
   virtual void operator()(std::size_t _i,
@@ -206,6 +229,46 @@ class RMQSadaReporter : public RMQReporter {
 
  private:
   Mark *mark_;
+};
+
+template<typename Mark, typename GetValue, typename RMQAlgoCoreILCP>
+class RMQILCPReporter : public RMQReporter {
+ public:
+  RMQILCPReporter(Mark *_mark, const GetValue *_get_value, const RMQAlgoCoreILCP *_core_ilcp)
+      : mark_{_mark}, get_value_{_get_value}, core_ilcp_{_core_ilcp} {
+  }
+
+  void operator()(std::size_t _i,
+                  const std::pair<std::size_t, std::size_t> &_suffix_doc,
+                  const OccurrenceSide &_side,
+                  const std::function<void(std::size_t)> &_report,
+                  std::size_t _sp,
+                  std::size_t _ep) const override {
+    auto direction = _side == dret::OccurrenceSide::LEFTMOST ? 0 : 1;
+
+    _report(_suffix_doc.first);
+    (*mark_)(_suffix_doc.second, _side);
+
+    auto b = std::max(_sp, core_ilcp_->run_heads_select[direction](_i + 1)) + 1;
+    auto e = std::min(_ep, core_ilcp_->run_heads_select[direction](_i + 2) - 1);
+
+    auto n = e - b + 1;
+    auto values = (*get_value_)(b, n);
+    for (std::size_t i = 0; i < n; ++i) {
+      _report(values[i].first);
+      (*mark_)(values[i].second, _side);
+    }
+//    for (auto i = b; i <= e; ++i) {
+//      auto suffix_doc = (*get_value_)(i);
+//      _report(suffix_doc.first);
+//      (*mark_)(suffix_doc.second, _side);
+//    }
+  }
+
+ private:
+  Mark *mark_;
+  const GetValue *get_value_;
+  const RMQAlgoCoreILCP *core_ilcp_;
 };
 
 template<typename AlgoCore, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsReported>
