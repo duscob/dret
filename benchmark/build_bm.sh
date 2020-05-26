@@ -35,10 +35,5 @@ for coll in "$dir_colls"/*; do
     "$dir_grm_tools"/build_dslp_samples --data "$dslp_file" --max_size 1024
   done
 
-  #  basename=(`cat $dir_colls/$coll/sample_rates.txt`)
-  #  echo $basename
-
-  #  $benchmark --data $dir_colls/$coll/$basename --patterns $dir_colls/$coll/patterns --benchmark_counters_tabular=true --benchmark_out_format=csv --benchmark_out=$coll.csv
-
   cd ..
 done
