@@ -199,7 +199,7 @@ TEST_P(AllFirstOccs_Test, Find) {
     f_occs.clear();
     l_occs.clear();
 
-    dret::FindAllFirstLastOccs(slp_, cover, f_occs_bvs, l_occs_bvs, report_f_occ, report_l_occ);
+    dret::FindAllFirstLastOccs<grammar::SLP<>>(slp_, cover, f_occs_bvs, l_occs_bvs, report_f_occ, report_l_occ);
 
     const auto &e_f_occs = cover_pos.second.first;
     EXPECT_THAT(f_occs, testing::ElementsAreArray(e_f_occs));
