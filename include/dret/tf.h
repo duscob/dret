@@ -11,7 +11,6 @@
 
 #include "algorithm.h"
 
-
 namespace dret {
 
 template<typename _SLP, typename _OccBvs>
@@ -26,8 +25,7 @@ void BuildFirstAndLastOccs(const _SLP &_slp, std::size_t _var, _OccBvs &_f_occs,
 
     _l_occs[_var] = typename _OccBvs::value_type(n_terminals, 0);
     _l_occs[_var][_var] = 1;
-  }
-  else {
+  } else {
     auto children = _slp[_var];
 
     BuildFirstAndLastOccs(_slp, children.first, _f_occs, _l_occs);
@@ -38,7 +36,6 @@ void BuildFirstAndLastOccs(const _SLP &_slp, std::size_t _var, _OccBvs &_f_occs,
     _l_occs[_var] = ~_f_occs[children.second] | _l_occs[children.second];
   }
 }
-
 
 /**
  * Build bitvectors marking the first(leftmost) and last(rightmost) occurrences of each terminal for each non-terminal.
@@ -57,7 +54,6 @@ auto BuildFirstAndLastOccs(const _SLP &_slp) {
 
   return occs;
 }
-
 
 /**
  * Find the relative position of the first occurrence for the terminal (_term) in the expansion of the non-terminal (_var).
@@ -97,12 +93,10 @@ std::size_t FindFirstOcc(const _SLP &_slp,
   auto children = _slp[_var];
   if (!f_bit) {
     return FindFirstOcc(_slp, children.first, _term, _f_occs_bvs, _l_occs_bvs);
-  }
-  else {
+  } else {
     return _slp.SpanLength(children.first) + FindFirstOcc(_slp, children.second, _term, _f_occs_bvs, _l_occs_bvs);
   }
 }
-
 
 /**
  * Find the relative position of the last occurrence for the terminal (_term) in the expansion of the non-terminal (_var).
@@ -142,12 +136,10 @@ std::size_t FindLastOcc(const _SLP &_slp,
   auto children = _slp[_var];
   if (l_bit) {
     return _slp.SpanLength(children.first) + FindLastOcc(_slp, children.second, _term, _f_occs_bvs, _l_occs_bvs);
-  }
-  else {
+  } else {
     return FindLastOcc(_slp, children.first, _term, _f_occs_bvs, _l_occs_bvs);
   }
 }
-
 
 template<typename _SLP>
 class VirtualSLP : public _SLP {
@@ -175,7 +167,6 @@ class VirtualSLP : public _SLP {
   const _SLP *slp_;
 };
 
-
 template<typename _Container>
 class VirtualContainer : public _Container {
  public:
@@ -194,7 +185,6 @@ class VirtualContainer : public _Container {
  protected:
   const _Container *container_;
 };
-
 
 template<typename _SLP, typename _Cover, typename _BVs, typename _ReportFirstOcc, typename _ReportLastOcc>
 void FindAllFirstLastOccs(const _SLP &_slp,
@@ -230,5 +220,22 @@ void FindAllFirstLastOccs(const _SLP &_slp,
   }
 }
 
+sdsl::bit_vector operator~(sdsl::bit_vector _bv) {
+  _bv.flip();
+
+  return _bv;
+}
+
+sdsl::bit_vector operator&(sdsl::bit_vector _bv1, const sdsl::bit_vector &_bv2) {
+  _bv1 &= _bv2;
+
+  return _bv1;
+}
+
+sdsl::bit_vector operator|(sdsl::bit_vector _bv1, const sdsl::bit_vector &_bv2) {
+  _bv1 |= _bv2;
+
+  return _bv1;
+}
 }
 #endif //DRET_TF_H_

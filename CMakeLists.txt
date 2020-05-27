@@ -77,6 +77,7 @@ if (dret_build_tools)
     cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${Boost_LIBRARIES};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items.cpp)
     cxx_executable_with_flags(build_items_sada "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_sada.cpp tool/definitions.h)
     cxx_executable_with_flags(build_items_ilcp "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_ilcp.cpp tool/definitions.h)
+    cxx_executable_with_flags(build_items_gcda "" "${SDSL_LIBS};${GFLAGS_LIB};${Boost_LIBRARIES};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_gcda.cpp tool/definitions.h)
 #    cxx_executable_with_flags(build_dslp "" "${SDSL_LIBS};${GFLAGS_LIB};${GRAMMAR_LIB}" tool/build_dslp.cpp)
 endif ()
 

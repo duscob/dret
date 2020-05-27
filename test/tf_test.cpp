@@ -20,25 +20,6 @@ using OccsBVs = std::vector<sdsl::bit_vector>;
 using FLOccsBVs = std::pair<OccsBVs, OccsBVs>;
 
 
-sdsl::bit_vector operator~(sdsl::bit_vector _bv) {
-  _bv.flip();
-
-  return _bv;
-}
-
-
-sdsl::bit_vector operator&(sdsl::bit_vector _bv1, const sdsl::bit_vector &_bv2) {
-  _bv1 &= _bv2;
-
-  return _bv1;
-}
-
-
-sdsl::bit_vector operator|(sdsl::bit_vector _bv1, const sdsl::bit_vector &_bv2) {
-  _bv1 |= _bv2;
-
-  return _bv1;
-}
 
 
 template<typename ... _Args>
