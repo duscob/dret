@@ -14,12 +14,15 @@
 #include <grammar/slp.h>
 #include <grammar/re_pair.h>
 #include <grammar/slp_helper.h>
+#include <grammar/sampled_slp.h>
 
 #include <dret/tf.h>
 
 #include "definitions.h"
 
 DEFINE_string(data, "", "Data file. (MANDATORY)");
+DEFINE_int32(bs, 512, "Block size.");
+DEFINE_int32(sf, 4, "Storing factor.");
 
 int main(int argc, char **argv) {
   gflags::SetUsageMessage("This program build items of GCDA index.");
@@ -32,12 +35,14 @@ int main(int argc, char **argv) {
   }
 
   sdsl::cache_config config(false, ".", sdsl::util::basename(FLAGS_data));
-  auto datafile = cache_file_name(KEY_DA_RAW, config);
+
+  auto bit_compress = [](sdsl::int_vector<> &_v) { sdsl::util::bit_compress(_v); };
 
   if (!sdsl::cache_file_exists(KEY_GCDA_FIRST_OCCS, config)
       || !sdsl::cache_file_exists(KEY_GCDA_LAST_OCCS, config)
       || !sdsl::cache_file_exists(KEY_GCDA_CSEQ_HEADS, config)) {
 
+    auto datafile = cache_file_name(KEY_DA_RAW, config);
     grammar::SLP<> slp;
     std::vector<std::size_t> compact_seq;
     {
@@ -74,6 +79,121 @@ int main(int argc, char **argv) {
       }
 
       sdsl::store_to_cache(cseq_heads, KEY_GCDA_CSEQ_HEADS, config);
+    }
+  }
+
+  grammar::CombinedSLP<> cslp;
+  if (!sdsl::load_from_cache(cslp, KEY_GCDA_CSLP, config)
+      || !sdsl::cache_file_exists(KEY_GCDA_CSLP_DOCS, config)
+      || !sdsl::cache_file_exists(KEY_GCDA_CSLP_OCCS, config)) {
+    std::cout << "Construct Combined SLP of Document Array (Raw) ..." << std::endl;
+    auto datafile = cache_file_name(KEY_DA_RAW, config);
+    grammar::SLP<> slp;
+    std::vector<std::size_t> compact_seq;
+    {
+      grammar::RePairReader<true> re_pair_reader;
+      auto slp_wrapper = grammar::BuildSLPWrapper(slp);
+
+      auto report_compact_seq = [&compact_seq](const auto &_var) {
+        compact_seq.emplace_back(_var);
+      };
+
+      re_pair_reader.Read(datafile, slp_wrapper);
+    }
+
+    cslp = grammar::CombinedSLP<>(slp);
+    grammar::Chunks<> cslp_docs;
+    grammar::Chunks<> cslp_occs;
+
+    auto add_docs = [&cslp_docs, &cslp_occs](const auto &_slp, auto _var, auto ..._args) {
+      auto set = _slp.Span(_var);
+      std::map<std::size_t, std::size_t> counter;
+      for (const auto &item : set) {
+        ++counter[item];
+      }
+
+      std::vector<std::size_t> docs;
+      docs.reserve(counter.size());
+      std::vector<std::size_t> occs;
+      occs.reserve(counter.size());
+
+      for (const auto &item : counter) {
+        docs.emplace_back(item.first);
+        occs.emplace_back(item.second);
+      }
+
+      cslp_docs.Insert(docs.begin(), docs.end());
+      cslp_occs.Insert(occs.begin(), occs.end());
+    };
+
+//    grammar::AddSet<decltype(cslp_docs)> add_set(cslp_docs);
+    cslp.Compute(FLAGS_bs, add_docs, add_docs, grammar::MustBeSampled<decltype(cslp_docs)>(
+        grammar::AreChildrenTooBig<decltype(cslp_docs)>(cslp_docs, FLAGS_sf)));
+
+    sdsl::store_to_cache(cslp, KEY_GCDA_CSLP, config);
+
+    sdsl::store_to_cache(cslp_docs, KEY_GCDA_CSLP_DOCS, config);
+    grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> cslp_docs_c(cslp_docs, bit_compress, bit_compress);
+    sdsl::store_to_cache(cslp_docs_c, KEY_GCDA_CSLP_DOCS_C, config);
+
+    sdsl::store_to_cache(cslp_occs, KEY_GCDA_CSLP_OCCS, config);
+    grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> cslp_occs_c(cslp_occs, bit_compress, bit_compress);
+    sdsl::store_to_cache(cslp_occs_c, KEY_GCDA_CSLP_OCCS_C, config);
+
+    std::cout << "DONE" << std::endl;
+  }
+
+//  {
+//    grammar::Chunks<> cslp_docs;
+//    sdsl::load_from_cache(cslp_docs, KEY_GCDA_CSLP_DOCS, config);
+//    grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> cslp_docs_c(cslp_docs, bit_compress, bit_compress);
+//    sdsl::store_to_cache(cslp_docs_c, KEY_GCDA_CSLP_DOCS_C, config);
+//
+//    grammar::Chunks<> cslp_occs;
+//    sdsl::load_from_cache(cslp_occs, KEY_GCDA_CSLP_OCCS, config);
+//    grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> cslp_occs_c(cslp_occs, bit_compress, bit_compress);
+//    sdsl::store_to_cache(cslp_occs_c, KEY_GCDA_CSLP_OCCS_C, config);
+//  }
+
+  if (!sdsl::cache_file_exists(KEY_GCDA_LSLP, config)
+      || !sdsl::cache_file_exists(KEY_GCDA_LSLP_BASIC, config)) {
+
+    grammar::LightSLP<> lslp;
+    if (!sdsl::load_from_cache(lslp, KEY_GCDA_LSLP, config)) {
+      std::cout << "Construct LSLP" << std::endl;
+
+      auto datafile = cache_file_name(KEY_DA_RAW, config);
+      grammar::SLP<> slp;
+      std::vector<std::size_t> compact_seq;
+      {
+        grammar::RePairReader<false> re_pair_reader;
+        auto slp_wrapper = grammar::BuildSLPWrapper(slp);
+
+        auto report_compact_seq = [&compact_seq](const auto &_var) {
+          compact_seq.emplace_back(_var);
+        };
+
+        re_pair_reader.Read(datafile, slp_wrapper, report_compact_seq);
+      }
+
+      lslp.Compute(slp, compact_seq, cslp);
+
+      sdsl::store_to_cache(lslp, KEY_GCDA_LSLP, config);
+
+      std::cout << "DONE" << std::endl;
+    }
+
+    if (!sdsl::cache_file_exists(KEY_GCDA_LSLP_BASIC, config)) {
+      std::cout << "Construct LSLP Basic" << std::endl;
+
+      grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
+                        grammar::SampledSLP<>,
+                        grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
+          lslp_basic(lslp, bit_compress, bit_compress, bit_compress, bit_compress);
+
+      sdsl::store_to_cache(lslp_basic, KEY_GCDA_LSLP_BASIC, config);
+
+      std::cout << "DONE" << std::endl;
     }
   }
 
