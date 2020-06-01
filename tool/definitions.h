@@ -8,6 +8,7 @@
 const char *KEY_R_INDEX = "ri";
 
 const char *KEY_DA = "da";
+const char *KEY_DA_RAW = "da_raw";
 
 const char *KEY_DOC_END = "doc_end";
 
@@ -28,5 +29,9 @@ const char *KEY_CILCP_BACKWARD_RUN_HEADS = "cilcp_b_run_heads";
 const char *KEY_CILCP_FORWARD_RUN_HEADS = "cilcp_f_run_heads";
 const char *KEY_CILCP_BACKWARD_RMQ = "cilcp_b_rmq";
 const char *KEY_CILCP_FORWARD_RMQ = "cilcp_f_rmq";
+
+const char *KEY_GCDA_FIRST_OCCS = "gcda_f_occs";
+const char *KEY_GCDA_LAST_OCCS = "gcda_l_occs";
+const char *KEY_GCDA_CSEQ_HEADS = "gcda_cseq_heads";
 
 #endif //DRET_TOOL_DEFINITIONS_H_

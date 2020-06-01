@@ -22,12 +22,15 @@ for coll in "$dir_colls"/*; do
   # Build ILCP items
   "$dir_tools"/build_items_ilcp --data "$coll"/data
 
-  for raw_file in *raw*.sdsl; do
+  for raw_file in dsa_raw_data.sdsl doc_disas_raw_data.sdsl da_raw_data.sdsl; do
     if [[ ! -f "$raw_file".R || ! -f "$raw_file".C ]]; then
       echo "Re-pair $raw_file"
       "$repair" "$raw_file"
     fi
   done
+
+  # Build GCDA items
+  "$dir_tools"/build_items_gcda --data "$coll"/data
 
   for dslp_file in dsa_raw_data.sdsl doc_disas_raw_data.sdsl; do
     "$dir_grm_tools"/build_dslp_span_sums --data "$dslp_file"

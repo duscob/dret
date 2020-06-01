@@ -20,25 +20,6 @@ using OccsBVs = std::vector<sdsl::bit_vector>;
 using FLOccsBVs = std::pair<OccsBVs, OccsBVs>;
 
 
-sdsl::bit_vector operator~(sdsl::bit_vector _bv) {
-  _bv.flip();
-
-  return _bv;
-}
-
-
-sdsl::bit_vector operator&(sdsl::bit_vector _bv1, const sdsl::bit_vector &_bv2) {
-  _bv1 &= _bv2;
-
-  return _bv1;
-}
-
-
-sdsl::bit_vector operator|(sdsl::bit_vector _bv1, const sdsl::bit_vector &_bv2) {
-  _bv1 |= _bv2;
-
-  return _bv1;
-}
 
 
 template<typename ... _Args>
@@ -218,7 +199,7 @@ TEST_P(AllFirstOccs_Test, Find) {
     f_occs.clear();
     l_occs.clear();
 
-    dret::FindAllFirstLastOccs(slp_, cover, f_occs_bvs, l_occs_bvs, report_f_occ, report_l_occ);
+    dret::FindAllFirstLastOccs<grammar::SLP<>>(slp_, cover, f_occs_bvs, l_occs_bvs, report_f_occ, report_l_occ);
 
     const auto &e_f_occs = cover_pos.second.first;
     EXPECT_THAT(f_occs, testing::ElementsAreArray(e_f_occs));

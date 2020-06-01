@@ -33,7 +33,7 @@ using namespace sdsl;
 using namespace std;
 
 //const char *KEY_DA = "da";
-const char *KEY_DA_RAW = "da_raw";
+//const char *KEY_DA_RAW = "da_raw";
 
 //const char *KEY_DSA_RAW = "dsa_raw";
 //const char *KEY_DSA_GC = "dsa_gc";

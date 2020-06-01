@@ -102,7 +102,8 @@ int main(int argc, char *argv[]) {
       {"Brute-R-Index", Factory::Config{Factory::IndexEnum::Brute}},
       {"Sada", Factory::Config{Factory::IndexEnum::SADA}},
       {"ILCP", Factory::Config{Factory::IndexEnum::ILCP}},
-      {"CILCP", Factory::Config{Factory::IndexEnum::CILCP}}
+      {"CILCP", Factory::Config{Factory::IndexEnum::CILCP}},
+      {"GCDA", Factory::Config{Factory::IndexEnum::GCDA}}
   };
 
   std::string print_bm_prefix = "Print-";

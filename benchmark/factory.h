@@ -21,6 +21,7 @@
 #include <doc_freq_index.h>
 #include <doc_freq_index_brute.h>
 #include <doc_freq_index_rmq.h>
+#include <doc_freq_index_gcda.h>
 
 #include "../tool/definitions.h"
 
@@ -91,7 +92,7 @@ class Factory {
   using RangeMinQuery = sdsl::rmq_succinct_sct<true>;
   using RangeMaxQuery = sdsl::rmq_succinct_sct<false>;
 
-  enum class IndexEnum { Brute = 0, SADA, ILCP, CILCP };
+  enum class IndexEnum { Brute = 0, SADA, ILCP, CILCP, GCDA };
 
   Factory(const sdsl::cache_config &_config) : config_{_config} {
     // Loading CSAs
@@ -220,13 +221,51 @@ class Factory {
         new dret::GetValuesRMQCILCPFunctor<SAWrapper, decltype(core_cilcp_)>(sa_wrappers_[0], &core_cilcp_));
 
     // RMQ reporters
-    rmq_reporters.emplace_back(new dret::RMQSadaReporter<decltype(mark_)>(&mark_));
-    rmq_reporters.emplace_back(
+    rmq_reporters_.emplace_back(new dret::RMQSadaReporter<decltype(mark_)>(&mark_));
+    rmq_reporters_.emplace_back(
         new dret::RMQILCPReporter<decltype(mark_), SAWrapper, decltype(core_ilcp_)>(
             &mark_, sa_wrappers_[0], &core_ilcp_));
-    rmq_reporters.emplace_back(
+    rmq_reporters_.emplace_back(
         new dret::RMQCILCPReporter<decltype(mark_), SAWrapper, decltype(core_cilcp_)>(
             &mark_, sa_wrappers_[0], &core_cilcp_));
+
+
+    // Loading GCDA components
+    auto bit_compress = [](sdsl::int_vector<> &_v) { sdsl::util::bit_compress(_v); };
+    {
+      grammar::SLP<> tmp_slp;
+      std::vector<std::size_t> tmp_roots;
+      grammar::RePairReader<false> re_pair_reader;
+      auto slp_wrapper = grammar::BuildSLPWrapper(tmp_slp);
+
+      auto report_compact_seq = [&tmp_roots](const auto &_var) {
+        tmp_roots.emplace_back(_var);
+      };
+
+      re_pair_reader.Read(cache_file_name(KEY_DA_RAW, config_), slp_wrapper, report_compact_seq);
+
+      gcda_slp_ = decltype(gcda_slp_)(tmp_slp, bit_compress, bit_compress);
+
+      grammar::Construct(gcda_roots_, tmp_roots);
+      bit_compress(gcda_roots_);
+    }
+    size_gcda_ = sdsl::size_in_bytes(gcda_slp_) + sdsl::size_in_bytes(gcda_roots_);
+
+    {
+      sdsl::bit_vector tmp_bv;
+      Load(tmp_bv, KEY_GCDA_CSEQ_HEADS, config_, "GCDA Root Heads");
+
+      gcda_root_head_bv_ = decltype(gcda_root_head_bv_)(tmp_bv);
+      gcda_root_head_bv_rank_.set_vector(&gcda_root_head_bv_);
+      gcda_root_head_bv_select_.set_vector(&gcda_root_head_bv_);
+    }
+    size_gcda_ += sdsl::size_in_bytes(gcda_root_head_bv_)
+        + sdsl::size_in_bytes(gcda_root_head_bv_rank_)
+        + sdsl::size_in_bytes(gcda_root_head_bv_select_);
+
+    Load(gcda_occs_bvs_.first, KEY_GCDA_FIRST_OCCS, config_, "GCDA First Occs BVs");
+    Load(gcda_occs_bvs_.second, KEY_GCDA_LAST_OCCS, config_, "GCDA Last Occs BVs");
+    size_gcda_ += sdsl::size_in_bytes(gcda_occs_bvs_.first) + sdsl::size_in_bytes(gcda_occs_bvs_.second);
   }
 
   auto SequenceSize() const {
@@ -250,7 +289,7 @@ class Factory {
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
                     dret::MakeNewComputeSuffixesByDocRMQFunctor(core_sada_,
                                                                 *get_values_rmq_functors_[0],
-                                                                *rmq_reporters[0],
+                                                                *rmq_reporters_[0],
                                                                 is_marked_)),
                 compute_doc_freq_suff_wrappers_[0]),
             size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_sada_
@@ -263,7 +302,7 @@ class Factory {
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
                     dret::MakeNewComputeSuffixesByDocRMQFunctor(core_ilcp_,
                                                                 *get_values_rmq_functors_[1],
-                                                                *rmq_reporters[1],
+                                                                *rmq_reporters_[1],
                                                                 is_marked_)),
                 compute_doc_freq_suff_wrappers_[0]),
             size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_ilcp_
@@ -276,10 +315,27 @@ class Factory {
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
                     dret::MakeNewComputeSuffixesByDocRMQFunctor(core_cilcp_,
                                                                 *get_values_rmq_functors_[2],
-                                                                *rmq_reporters[2],
+                                                                *rmq_reporters_[2],
                                                                 is_marked_)),
                 compute_doc_freq_suff_wrappers_[0]),
             size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_cilcp_
+        };
+      }
+      case IndexEnum::GCDA: {
+        return {
+            dret::MakePtrDocFreqIndexBasicScheme(
+                csa_wrappers_[0],
+                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
+                    dret::MakeNewComputeSuffixesByDocGCDAFunctor(gcda_slp_,
+                                                                 gcda_roots_,
+                                                                 gcda_root_head_bv_,
+                                                                 gcda_root_head_bv_rank_,
+                                                                 gcda_root_head_bv_select_,
+                                                                 gcda_occs_bvs_.first,
+                                                                 gcda_occs_bvs_.second,
+                                                                 *sa_wrappers_[0])),
+                compute_doc_freq_suff_wrappers_[0]),
+            size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_gcda_
         };
       }
     }
@@ -366,7 +422,19 @@ class Factory {
   std::vector<std::unique_ptr<dret::GetValuesRMQFunctor>> get_values_rmq_functors_;
 
   // RMQ reporters
-  std::vector<std::unique_ptr<dret::RMQReporter>> rmq_reporters;
+  std::vector<std::unique_ptr<dret::RMQReporter>> rmq_reporters_;
+
+  // GCDA components
+  grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>> gcda_slp_;
+  sdsl::int_vector<> gcda_roots_;
+
+  BitVectorCompact gcda_root_head_bv_;
+  BitVectorCompactRank gcda_root_head_bv_rank_;
+  BitVectorCompactSelect gcda_root_head_bv_select_;
+
+  using OccsBV = std::vector<sdsl::bit_vector>;
+  std::pair<OccsBV, OccsBV> gcda_occs_bvs_;
+  std::size_t size_gcda_;
 
   template<typename SLP, typename Roots, typename SpanSums, typename Samples, typename SampleRootsPos, typename SamplePos, typename SamplePosRank, typename SamplePosSelect, typename DSLP>
   std::size_t LoadDifferentialSLP(const std::string &_key,
