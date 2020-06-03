@@ -23,6 +23,7 @@
 
 //#include <dret/diff_slp.h>
 #include <dret/doc_freq_index_sada.h>
+#include <dret/run_length_encode.h>
 
 #include "definitions.h"
 
@@ -338,39 +339,100 @@ int main(int argc, char **argv) {
     cout << "DONE" << endl;
   }
 
-  if (!cache_file_exists(KEY_DA, config) || !cache_file_exists(KEY_DA_RAW, config)) {
-    std::cout << "Construct Document Array (Raw) ..." << std::endl;
+  if (!cache_file_exists(KEY_DA, config) || !cache_file_exists(KEY_DA_RAW, config)
+      || !cache_file_exists(KEY_DA_RLE_BV, config) || !cache_file_exists(KEY_DA_RLE_SDV, config)
+      || !cache_file_exists(KEY_DA_RLE_RRRV, config) || !cache_file_exists(KEY_DA_RLE_RAW, config)) {
+    int_vector<> da;
+    if (!load_from_cache(da, KEY_DA, config)) {
+      std::cout << "Construct Document Array ..." << std::endl;
 
-    sdsl::int_vector<> sa;
-    load_from_cache(sa, conf::KEY_SA, config);
+      sdsl::int_vector<> sa;
+      load_from_cache(sa, conf::KEY_SA, config);
 
-//    sdsl::bit_vector doc_endings;
-    BitVector doc_endings;
-    load_from_cache(doc_endings, KEY_DOC_END, config);
+      BitVector doc_endings;
+      load_from_cache(doc_endings, KEY_DOC_END, config);
 
-//    BitVector doc_endings_compact(doc_endings);
-//    auto doc_endings_rank = BitVector::rank_1_type(&doc_endings_compact);
-    BitVector::rank_1_type doc_endings_rank(&doc_endings);
+      BitVector::rank_1_type doc_endings_rank(&doc_endings);
 
-//    size_t doc_cnt = doc_endings_rank(doc_endings_compact.size());
-    size_t doc_cnt = doc_endings_rank(doc_endings.size());
+      size_t doc_cnt = doc_endings_rank(doc_endings.size());
 
-    int_vector<> da(sa.size(), 0, bits::hi(doc_cnt) + 1);
-    std::vector<int> da_raw;
-    da_raw.reserve(sa.size());
-    for (size_t i = 0; i < sa.size(); ++i) {
-      da[i] = doc_endings_rank(sa[i]);
-      da_raw.emplace_back(da[i]);
+      da = int_vector<>(sa.size(), 0, bits::hi(doc_cnt) + 1);
+      for (size_t i = 0; i < sa.size(); ++i) {
+        da[i] = doc_endings_rank(sa[i]);
+      }
+
+      store_to_cache(da, KEY_DA, config);
+      cout << "DONE" << endl;
     }
 
-    store_to_cache(da, KEY_DA, config);
-    {
-      auto filepath = cache_file_name(KEY_DA_RAW, config);
-      sdsl::osfstream out(filepath, std::ios::binary | std::ios::trunc | std::ios::out);
-      serialize_vector(da_raw, out);
+    if (!cache_file_exists(KEY_DA_RAW, config)) {
+      std::cout << "Construct Document Array (Raw) ..." << std::endl;
+
+      std::vector<int> da_raw;
+      da_raw.reserve(da.size());
+      for (size_t i = 0; i < da.size(); ++i) {
+        da_raw.emplace_back(da[i]);
+      }
+
+      {
+        auto filepath = cache_file_name(KEY_DA_RAW, config);
+        sdsl::osfstream out(filepath, std::ios::binary | std::ios::trunc | std::ios::out);
+        serialize_vector(da_raw, out);
+      }
+      cout << "DONE" << endl;
     }
 
-    cout << "DONE" << endl;
+    dret::RLEncoding<sdsl::bit_vector> rle_bv;
+    if (!load_from_cache(rle_bv, KEY_DA_RLE_BV, config)) {
+      std::cout << "Construct Run-Length Encoding<bit_vector>" << std::endl;
+
+      sdsl::bit_vector tmp_bv_runs;
+      dret::BuildRLEncoding(da.begin(), da.end(), tmp_bv_runs);
+
+      rle_bv = decltype(rle_bv)(tmp_bv_runs);
+
+      store_to_cache(rle_bv, KEY_DA_RLE_BV, config);
+      cout << "DONE" << endl;
+    }
+
+    if (!cache_file_exists(KEY_DA_RLE_SDV, config)) {
+      std::cout << "Construct Run-Length Encoding<sd_vector>" << std::endl;
+
+      dret::RLEncoding<sdsl::sd_vector<>> rle_sdv;
+      rle_sdv = decltype(rle_sdv)(rle_bv);
+
+      store_to_cache(rle_sdv, KEY_DA_RLE_SDV, config);
+      cout << "DONE" << endl;
+    }
+
+    if (!cache_file_exists(KEY_DA_RLE_RRRV, config)) {
+      std::cout << "Construct Run-Length Encoding<rrr_vector>" << std::endl;
+
+      dret::RLEncoding<sdsl::rrr_vector<>> rle_rrrv;
+      rle_rrrv = decltype(rle_rrrv)(rle_bv);
+
+      store_to_cache(rle_rrrv, KEY_DA_RLE_RRRV, config);
+      cout << "DONE" << endl;
+    }
+
+    if (!cache_file_exists(KEY_DA_RLE_RAW, config)) {
+      std::cout << "Construct Document Array Run Length Encoding (Raw) ..." << std::endl;
+
+      std::vector<int> da_rle_raw;
+      da_rle_raw.reserve(da.size());
+      auto bit = dret::MakeRLEIterator(da.begin(), da.end());
+      auto eit = dret::MakeRLEIterator(da.end(), da.end());
+      for (auto it = bit; it != eit; ++it) {
+        da_rle_raw.emplace_back(*it);
+      }
+
+      {
+        auto filepath = cache_file_name(KEY_DA_RLE_RAW, config);
+        sdsl::osfstream out(filepath, std::ios::binary | std::ios::trunc | std::ios::out);
+        serialize_vector(da_rle_raw, out);
+      }
+      cout << "DONE" << endl;
+    }
   }
 
   if (!cache_file_exists(KEY_DSA_RAW, config)) {

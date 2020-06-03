@@ -11,7 +11,7 @@ for coll in "$dir_idxs"/*; do
   mkdir -p "$coll_name"
   cd "$coll_name" || exit
 
-  $benchmark --data_dir $dir_idxs/$coll_name --patterns $dir_colls/$coll_name/patterns --benchmark_counters_tabular=true --benchmark_out_format=csv --benchmark_out=$coll_name.csv
+  $benchmark --data_dir $dir_idxs/$coll_name --patterns $dir_colls/$coll_name/patterns --benchmark_counters_tabular=true --benchmark_out_format=csv --benchmark_out=$coll_name.csv --print_result
 
   cd ..
 done
