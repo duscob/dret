@@ -48,9 +48,9 @@ class IsMarkedWrapper {
  public:
   IsMarkedWrapper(const BitVectors *_marked = nullptr) : bit_vectors_{_marked} {}
 
-  template<typename SuffixDoc>
-  auto operator()(std::size_t /*_i*/, const SuffixDoc &_suffix_doc, dret::OccurrenceSide _side) const {
-    return bit_vectors_[_side == dret::OccurrenceSide::LEFTMOST ? 0 : 1][_suffix_doc.second];
+  template<typename DocSuffix>
+  auto operator()(std::size_t /*_i*/, const DocSuffix &_doc_suffix, dret::OccurrenceSide _side) const {
+    return bit_vectors_[_side == dret::OccurrenceSide::LEFTMOST ? 0 : 1][_doc_suffix.first];
   }
 
  private:
@@ -323,7 +323,7 @@ class Factory {
             dret::MakePtrDocFreqIndexBasicScheme(
                 csa_wrappers_[0],
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakeNewComputeSuffixesByDocRMQFunctor(core_sada_,
+                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_sada_,
                                                                 *get_values_rmq_functors_[0],
                                                                 *rmq_reporters_[0],
                                                                 is_marked_)),
@@ -336,7 +336,7 @@ class Factory {
             dret::MakePtrDocFreqIndexBasicScheme(
                 csa_wrappers_[0],
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakeNewComputeSuffixesByDocRMQFunctor(core_ilcp_,
+                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_ilcp_,
                                                                 *get_values_rmq_functors_[1],
                                                                 *rmq_reporters_[1],
                                                                 is_marked_)),
@@ -349,7 +349,7 @@ class Factory {
             dret::MakePtrDocFreqIndexBasicScheme(
                 csa_wrappers_[0],
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakeNewComputeSuffixesByDocRMQFunctor(core_cilcp_,
+                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_cilcp_,
                                                                 *get_values_rmq_functors_[2],
                                                                 *rmq_reporters_[2],
                                                                 is_marked_)),
@@ -362,7 +362,7 @@ class Factory {
             dret::MakePtrDocFreqIndexBasicScheme(
                 csa_wrappers_[0],
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakeNewComputeSuffixesByDocGCDAFunctor(gcda_slp_,
+                    dret::MakePtrComputeSuffixesByDocGCDAFunctor(gcda_slp_,
                                                                  gcda_roots_,
                                                                  gcda_root_head_bv_,
                                                                  gcda_root_head_bv_rank_,

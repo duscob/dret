@@ -13,6 +13,7 @@
 
 class SAWrapper {
  public:
+  // return {doc; suffix}
   virtual std::pair<std::size_t, std::size_t> operator()(std::size_t _i) const {
     return (*this)(_i, 1)[0];
   }
@@ -30,7 +31,7 @@ class DSAWrapper : public SAWrapper {
     values.reserve(_n);
 
     auto report = [this, &values](std::size_t _suffix) {
-      values.emplace_back(_suffix, (*get_doc_)(_suffix));
+      values.emplace_back((*get_doc_)(_suffix), _suffix);
     };
 
     grammar::ExpandDifferentialSLP(*dslp_, _i, _i + _n - 1, report);

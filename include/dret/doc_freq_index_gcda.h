@@ -99,8 +99,8 @@ class ComputeSuffixesByDocGCDAFunctor : public ComputeSuffixesByDocFunctor {
         get_suffix_{_get_suffix} {
   }
 
-  template<typename AddSuffix>
-  void operator()(std::size_t _sp, std::size_t _ep, AddSuffix &_add_suffix) const {
+  template<typename AddDocSuffix>
+  void operator()(std::size_t _sp, std::size_t _ep, AddDocSuffix &_add_doc_suffix) const {
     if (_ep < _sp)
       return;
 
@@ -137,20 +137,20 @@ class ComputeSuffixesByDocGCDAFunctor : public ComputeSuffixesByDocFunctor {
       ComputeSpanCoverIn(slp_, roots_[l], _sp - root_cover_sp, _ep - root_cover_sp, add_var);
     }
 
-    auto report_occ = [this, &_add_suffix, &_sp](auto doc, auto pos) {
-      _add_suffix(get_suffix_(_sp + pos - 1).first);
+    auto report_occ = [this, &_add_doc_suffix, &_sp](auto doc, auto pos) {
+      _add_doc_suffix(get_suffix_(_sp + pos - 1));
     };
 
     FindAllFirstLastOccs<grammar::SLP<>>(slp_, cover, f_occs_bvs_, l_occs_bvs_, report_occ, report_occ);
   }
 
-  std::vector<std::size_t> operator()(std::size_t _sp, std::size_t _ep) const override {
-    std::vector<std::size_t> suffixes;
-    auto add_suffix = [&suffixes](auto _suffix) {
-      suffixes.emplace_back(_suffix);
+  Suffixes operator()(std::size_t _sp, std::size_t _ep) const override {
+    Suffixes suffixes;
+    auto add_doc_suffix = [&suffixes](auto _doc_suffix) {
+      suffixes.emplace_back(_doc_suffix);
     };
 
-    (*this)(_sp, _ep, add_suffix);
+    (*this)(_sp, _ep, add_doc_suffix);
 
     std::sort(suffixes.begin(), suffixes.end());
 
@@ -171,7 +171,7 @@ class ComputeSuffixesByDocGCDAFunctor : public ComputeSuffixesByDocFunctor {
 };
 
 template<typename SLP, typename Roots, typename RootHeadBV, typename OccsBVs, typename GetSuffix, typename RootHeadBVRank = typename RootHeadBV::rank_1_type, typename RootHeadBVSelect = typename RootHeadBV::select_1_type>
-auto MakeNewComputeSuffixesByDocGCDAFunctor(const SLP &_slp,
+auto MakePtrComputeSuffixesByDocGCDAFunctor(const SLP &_slp,
                                             const Roots &_roots,
                                             const RootHeadBV &_root_head_bv,
                                             const RootHeadBVRank &_root_head_bv_rank,
