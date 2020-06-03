@@ -78,6 +78,28 @@ class ComputeDocFrequencyWithSuffixesDocISAs : public ComputeDocFrequencyWithSuf
   UnmarkDoc *unmark_doc_;
 };
 
+template<typename UnmarkDoc>
+class ComputeDocFrequencyWithSuffixesOccs : public ComputeDocFrequencyWithSuffixes {
+ public:
+  ComputeDocFrequencyWithSuffixesOccs(UnmarkDoc *_unmark_doc) : unmark_doc_{_unmark_doc} {}
+
+  void operator()(const Suffixes &_suffixes,
+                  const std::function<void(std::size_t, std::size_t)> &_report_doc_freq) const override {
+    for (int i = 0; i < _suffixes.size(); i += 2) {
+      auto occ_suffix_1 = _suffixes[i].second;
+      auto occ_suffix_2 = _suffixes[i + 1].second;
+      auto doc = _suffixes[i].first;
+
+      _report_doc_freq(doc, occ_suffix_2 - occ_suffix_1 + 1);
+
+      (*unmark_doc_)(doc);
+    }
+  }
+
+ private:
+  UnmarkDoc *unmark_doc_;
+};
+
 //***********
 // Document Frequency Index
 //***********
