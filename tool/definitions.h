@@ -8,6 +8,7 @@
 const char *KEY_R_INDEX = "ri";
 
 const char *KEY_DA = "da";
+const char *KEY_DA_WT = "da_wt";
 const char *KEY_DA_RAW = "da_raw";
 const char *KEY_DA_RLE_RAW = "da_rle_raw";
 const char *KEY_DA_RLE_BV = "da_rle_bv";
