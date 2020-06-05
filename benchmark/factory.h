@@ -360,7 +360,7 @@ class Factory {
       }
       case IndexEnum::WT: {
         return {dret::MakeNewDocFreqIndexWT(n_doc_, *csa_wrappers_[0], wt_da_ap_),
-                size_r_idx_ + size_wt_da_ap_};
+                size_r_idx_basic_ + size_wt_da_ap_};
       }
       case IndexEnum::SADA_ISAs: {
         return {
