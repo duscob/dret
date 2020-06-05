@@ -23,6 +23,7 @@
 #include <doc_freq_index_brute.h>
 #include <doc_freq_index_rmq.h>
 #include <doc_freq_index_gcda.h>
+#include <doc_freq_index_wt.h>
 
 #include "../tool/definitions.h"
 
@@ -103,7 +104,8 @@ class Factory {
     CILCP_WT_DA,
     GCDA_ISAs,
     GCDA_WT_DA,
-    FULL_GCDA
+    FULL_GCDA,
+    WT
   };
 
   Factory(const sdsl::cache_config &_config) : config_{_config} {
@@ -355,6 +357,10 @@ class Factory {
       case IndexEnum::Brute: {
         return {dret::MakeNewDocFreqIndexBrute(*csa_wrappers_[0], doc_endings_rank_),
                 size_r_idx_ + size_doc_endings_};
+      }
+      case IndexEnum::WT: {
+        return {dret::MakeNewDocFreqIndexWT(n_doc_, *csa_wrappers_[0], wt_da_ap_),
+                size_r_idx_ + size_wt_da_ap_};
       }
       case IndexEnum::SADA_ISAs: {
         return {

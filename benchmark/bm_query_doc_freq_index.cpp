@@ -100,6 +100,7 @@ int main(int argc, char *argv[]) {
 
   std::vector<std::pair<const char *, Factory::Config>> index_configs = {
       {"Brute-R-Index", Factory::Config{Factory::IndexEnum::Brute}},
+      {"WT", Factory::Config{Factory::IndexEnum::WT}},
       {"Sada", Factory::Config{Factory::IndexEnum::SADA_ISAs}},
       {"Sada-WT-DA", Factory::Config{Factory::IndexEnum::SADA_WT_DA}},
       {"ILCP", Factory::Config{Factory::IndexEnum::ILCP_ISAs}},
