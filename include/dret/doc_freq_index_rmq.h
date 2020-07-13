@@ -157,6 +157,7 @@ struct RMQAlgoCoreCILCP : public RMQAlgoCoreILCP<LeftRMQ, RightRMQ, BitVector, B
 
 class GetValuesRMQFunctor {
  public:
+  // return {doc; suffix}
   virtual std::pair<std::size_t, std::size_t> operator()(std::size_t _i,
                                                          const OccurrenceSide &_side,
                                                          std::size_t _sp,
@@ -229,10 +230,11 @@ class GetValuesRMQCILCPFunctor : public GetValuesRMQFunctor {
 
 class RMQReporter {
  public:
+  using DocSuffix = std::pair<std::size_t, std::size_t>;
   virtual void operator()(std::size_t _i,
-                          const std::pair<std::size_t, std::size_t> &_suffix_doc,
+                          const DocSuffix &_doc_suffix,
                           const OccurrenceSide &_side,
-                          const std::function<void(std::size_t)> &_report,
+                          const std::function<void(const DocSuffix &)> &_report,
                           std::size_t _sp,
                           std::size_t _ep) const = 0;
 };
@@ -243,13 +245,13 @@ class RMQSadaReporter : public RMQReporter {
   RMQSadaReporter(Mark *_mark) : mark_{_mark} {}
 
   void operator()(std::size_t _i,
-                  const std::pair<std::size_t, std::size_t> &_suffix_doc,
+                  const DocSuffix &_doc_suffix,
                   const OccurrenceSide &_side,
-                  const std::function<void(std::size_t)> &_report,
+                  const std::function<void(const DocSuffix &)> &_report,
                   std::size_t _sp,
                   std::size_t _ep) const override {
-    _report(_suffix_doc.first);
-    (*mark_)(_suffix_doc.second, _side);
+    _report(_doc_suffix);
+    (*mark_)(_doc_suffix.first, _side);
   }
 
  private:
@@ -264,23 +266,23 @@ class RMQILCPReporter : public RMQReporter {
   }
 
   void operator()(std::size_t _i,
-                  const std::pair<std::size_t, std::size_t> &_suffix_doc,
+                  const DocSuffix &_doc_suffix,
                   const OccurrenceSide &_side,
-                  const std::function<void(std::size_t)> &_report,
+                  const std::function<void(const DocSuffix &)> &_report,
                   std::size_t _sp,
                   std::size_t _ep) const override {
     auto direction = _side == dret::OccurrenceSide::LEFTMOST ? 0 : 1;
 
-    _report(_suffix_doc.first);
-    (*mark_)(_suffix_doc.second, _side);
+    _report(_doc_suffix);
+    (*mark_)(_doc_suffix.first, _side);
 
     auto b = std::max(_sp, core_ilcp_->run_heads_select[direction](_i + 1)) + 1;
     auto e = std::min(_ep, core_ilcp_->run_heads_select[direction](_i + 2) - 1);
 
     for (auto i = b; i <= e; ++i) {
-      auto suffix_doc = (*get_value_)(i);
-      _report(suffix_doc.first);
-      (*mark_)(suffix_doc.second, _side);
+      auto doc_suffix = (*get_value_)(i);
+      _report(doc_suffix);
+      (*mark_)(doc_suffix.first, _side);
     }
   }
 
@@ -298,25 +300,25 @@ class RMQCILCPReporter : public RMQReporter {
   }
 
   void operator()(std::size_t _i,
-                  const std::pair<std::size_t, std::size_t> &_suffix_doc,
+                  const DocSuffix &_doc_suffix,
                   const OccurrenceSide &_side,
-                  const std::function<void(std::size_t)> &_report,
+                  const std::function<void(const DocSuffix &)> &_report,
                   std::size_t _sp,
                   std::size_t _ep) const override {
     auto direction = _side == dret::OccurrenceSide::LEFTMOST ? 0 : 1;
 
-    _report(_suffix_doc.first);
-    (*mark_)(_suffix_doc.second, _side);
+    _report(_doc_suffix);
+    (*mark_)(_doc_suffix.first, _side);
 
     auto b = std::max(_sp, core_cilcp_->run_heads_select[direction](_i + 1)) + 1 - direction;
     auto e = std::min(_ep, core_cilcp_->run_heads_select[direction](_i + 2) - 1) - direction;
 
     for (auto i = b; i <= e; ++i) {
-      auto suffix_doc = (*get_value_)(i);
-      if (_suffix_doc.second == suffix_doc.second) break;
+      auto doc_suffix = (*get_value_)(i);
+      if (_doc_suffix.first == doc_suffix.first) break;
 
-      _report(suffix_doc.first);
-      (*mark_)(suffix_doc.second, _side);
+      _report(doc_suffix);
+      (*mark_)(doc_suffix.first, _side);
     }
   }
 
@@ -326,40 +328,40 @@ class RMQCILCPReporter : public RMQReporter {
   const RMQAlgoCoreCILCP *core_cilcp_;
 };
 
-template<typename AlgoCore, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsReported>
+template<typename AlgoCore, typename GetValue, typename ReportValue, typename IsReported>
 class ComputeSuffixesByDocRMQFunctor : public ComputeSuffixesByDocFunctor {
  public:
   ComputeSuffixesByDocRMQFunctor(const AlgoCore &_core,
-                                 const GetSuffixDocValue &_get_suffix_doc_value,
-                                 const ReportSuffixDocValue &_report_suffix_doc_value,
+                                 const GetValue &_get_value,
+                                 const ReportValue &_report_value,
                                  const IsReported &_is_reported)
       : core_{_core},
-        get_suffix_doc_value_{_get_suffix_doc_value},
-        report_suffix_doc_value_{_report_suffix_doc_value},
+        get_value_{_get_value},
+        report_value_{_report_value},
         is_reported_{_is_reported} {
   }
 
-  template<typename AddSuffix>
-  void operator()(std::size_t _sp, std::size_t _ep, AddSuffix &_add_suffix) const {
-    auto report_suffix =
-        [this, &_add_suffix](auto _i, const auto &_suffix_doc, OccurrenceSide _side, auto _sp, auto _ep) {
-          report_suffix_doc_value_(_i, _suffix_doc, _side, _add_suffix, _sp, _ep);
+  template<typename AddDocSuffix>
+  void operator()(std::size_t _sp, std::size_t _ep, AddDocSuffix &_add_doc_suffix) const {
+    auto report_value =
+        [this, &_add_doc_suffix](auto _i, const auto &_doc_suffix, OccurrenceSide _side, auto _sp, auto _ep) {
+          report_value_(_i, _doc_suffix, _side, _add_doc_suffix, _sp, _ep);
         };
 
     GetExtremeOccurrencesRMQ<OccurrenceSide::LEFTMOST>(
-        _sp, _ep, core_, core_.left_rmq, get_suffix_doc_value_, is_reported_, report_suffix);
+        _sp, _ep, core_, core_.left_rmq, get_value_, is_reported_, report_value);
 
     GetExtremeOccurrencesRMQ<OccurrenceSide::RIGHTMOST>(
-        _sp, _ep, core_, core_.right_rmq, get_suffix_doc_value_, is_reported_, report_suffix);
+        _sp, _ep, core_, core_.right_rmq, get_value_, is_reported_, report_value);
   }
 
-  std::vector<std::size_t> operator()(std::size_t _sp, std::size_t _ep) const override {
-    std::vector<std::size_t> suffixes;
-    auto add_suffix = [&suffixes](auto _suffix) {
-      suffixes.emplace_back(_suffix);
+  Suffixes operator()(std::size_t _sp, std::size_t _ep) const override {
+    Suffixes suffixes;
+    auto add_doc_suffix = [&suffixes](const auto &_doc_suffix) {
+      suffixes.emplace_back(_doc_suffix);
     };
 
-    (*this)(_sp, _ep, add_suffix);
+    (*this)(_sp, _ep, add_doc_suffix);
 
     std::sort(suffixes.begin(), suffixes.end());
 
@@ -369,18 +371,18 @@ class ComputeSuffixesByDocRMQFunctor : public ComputeSuffixesByDocFunctor {
  private:
   const AlgoCore &core_;
 
-  const GetSuffixDocValue &get_suffix_doc_value_;
-  const ReportSuffixDocValue &report_suffix_doc_value_;
+  const GetValue &get_value_;
+  const ReportValue &report_value_;
   const IsReported &is_reported_;
 };
 
-template<typename AlgoCore, typename GetSuffixDocValue, typename ReportSuffixDocValue, typename IsReported>
-auto MakeNewComputeSuffixesByDocRMQFunctor(const AlgoCore &_core,
-                                           const GetSuffixDocValue &_get_suffix_doc_value,
-                                           const ReportSuffixDocValue &_report_suffix_doc_value,
+template<typename AlgoCore, typename GetValue, typename ReportValue, typename IsReported>
+auto MakePtrComputeSuffixesByDocRMQFunctor(const AlgoCore &_core,
+                                           const GetValue &_get_value,
+                                           const ReportValue &_report_value,
                                            const IsReported &_is_reported) {
-  return new ComputeSuffixesByDocRMQFunctor<AlgoCore, GetSuffixDocValue, ReportSuffixDocValue, IsReported>(
-      _core, _get_suffix_doc_value, _report_suffix_doc_value, _is_reported);
+  return new ComputeSuffixesByDocRMQFunctor<AlgoCore, GetValue, ReportValue, IsReported>(
+      _core, _get_value, _report_value, _is_reported);
 }
 
 template<typename RAContainer, typename Report, typename DocBorderRank, typename DocBorderSelect, typename GetSuffixPosInDoc>

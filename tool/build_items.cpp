@@ -341,7 +341,15 @@ int main(int argc, char **argv) {
 
   if (!cache_file_exists(KEY_DA, config) || !cache_file_exists(KEY_DA_RAW, config)
       || !cache_file_exists(KEY_DA_RLE_BV, config) || !cache_file_exists(KEY_DA_RLE_SDV, config)
-      || !cache_file_exists(KEY_DA_RLE_RRRV, config) || !cache_file_exists(KEY_DA_RLE_RAW, config)) {
+      || !cache_file_exists(KEY_DA_RLE_RRRV, config) || !cache_file_exists(KEY_DA_RLE_RAW, config)
+      || !cache_file_exists(KEY_DA_WT, config)) {
+
+    BitVector doc_endings;
+    load_from_cache(doc_endings, KEY_DOC_END, config);
+    BitVector::rank_1_type doc_endings_rank(&doc_endings);
+
+    size_t doc_cnt = doc_endings_rank(doc_endings.size());
+
     int_vector<> da;
     if (!load_from_cache(da, KEY_DA, config)) {
       std::cout << "Construct Document Array ..." << std::endl;
@@ -349,19 +357,85 @@ int main(int argc, char **argv) {
       sdsl::int_vector<> sa;
       load_from_cache(sa, conf::KEY_SA, config);
 
-      BitVector doc_endings;
-      load_from_cache(doc_endings, KEY_DOC_END, config);
-
-      BitVector::rank_1_type doc_endings_rank(&doc_endings);
-
-      size_t doc_cnt = doc_endings_rank(doc_endings.size());
-
       da = int_vector<>(sa.size(), 0, bits::hi(doc_cnt) + 1);
       for (size_t i = 0; i < sa.size(); ++i) {
         da[i] = doc_endings_rank(sa[i]);
       }
 
       store_to_cache(da, KEY_DA, config);
+      cout << "DONE" << endl;
+    }
+
+    if (!cache_file_exists(KEY_DA_WT + std::string("_huff"), config)) {
+      std::cout << "Construct Document Array Wavelet Tree ..." << std::endl;
+
+//      {
+//        sdsl::wt_blcd<> wt;
+//        sdsl::construct_im(wt, da);
+//        std::cout << "|wt_blcd| = " << sdsl::size_in_bytes(wt) << std::endl;
+//      }
+
+      {
+        sdsl::wt_blcd_int<> wt;
+        sdsl::construct_im(wt, da);
+        std::cout << "|wt_blcd_int| = " << sdsl::size_in_bytes(wt) << std::endl;
+        sdsl::store_to_cache(wt, KEY_DA_WT + std::string("_blcd"), config);
+      }
+
+//      {
+//        sdsl::wt_huff<> wt;
+//        sdsl::construct_im(wt, da);
+//        std::cout << "|wt_huff| = " << sdsl::size_in_bytes(wt) << std::endl;
+//          sdsl::store_to_cache(wt, KEY_DA_WT, config);
+//      }
+
+      {
+        sdsl::wt_huff_int<> wt;
+        sdsl::construct_im(wt, da);
+        std::cout << "|wt_huff_int| = " << sdsl::size_in_bytes(wt) << std::endl;
+        sdsl::store_to_cache(wt, KEY_DA_WT + std::string("_huff"), config);
+      }
+
+//      {
+//        sdsl::wt_hutu<> wt;
+//        sdsl::construct_im(wt, da);
+//        std::cout << "|wt_hutu| = " << sdsl::size_in_bytes(wt) << std::endl;
+//      }
+
+      {
+        sdsl::wt_hutu_int<> wt;
+        sdsl::construct_im(wt, da);
+        std::cout << "|wt_hutu_int| = " << sdsl::size_in_bytes(wt) << std::endl;
+        sdsl::store_to_cache(wt, KEY_DA_WT + std::string("_hutu"), config);
+      }
+
+      {
+        sdsl::wt_gmr<> wt;
+        sdsl::construct_im(wt, da);
+        std::cout << "|wt_gmr| = " << sdsl::size_in_bytes(wt) << std::endl;
+        sdsl::store_to_cache(wt, KEY_DA_WT + std::string("_gmr"), config);
+      }
+
+      {
+        sdsl::wt_gmr_rs<> wt;
+        sdsl::construct_im(wt, da);
+        std::cout << "|wt_gmr_rs| = " << sdsl::size_in_bytes(wt) << std::endl;
+        sdsl::store_to_cache(wt, KEY_DA_WT + std::string("_gmr_rs"), config);
+      }
+
+      {
+        sdsl::wt_ap<> wt;
+        sdsl::construct_im(wt, da);
+        std::cout << "|wt_ap| = " << sdsl::size_in_bytes(wt) << std::endl;
+        sdsl::store_to_cache(wt, KEY_DA_WT + std::string("_ap"), config);
+      }
+
+//      {
+//        sdsl::wt_rlmn<> wt;
+//        sdsl::construct_im(wt, da);
+//        std::cout << "|wt_rlmn| = " << sdsl::size_in_bytes(wt) << std::endl;
+//      }
+
       cout << "DONE" << endl;
     }
 

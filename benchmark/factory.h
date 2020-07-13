@@ -48,9 +48,9 @@ class IsMarkedWrapper {
  public:
   IsMarkedWrapper(const BitVectors *_marked = nullptr) : bit_vectors_{_marked} {}
 
-  template<typename SuffixDoc>
-  auto operator()(std::size_t /*_i*/, const SuffixDoc &_suffix_doc, dret::OccurrenceSide _side) const {
-    return bit_vectors_[_side == dret::OccurrenceSide::LEFTMOST ? 0 : 1][_suffix_doc.second];
+  template<typename DocSuffix>
+  auto operator()(std::size_t /*_i*/, const DocSuffix &_doc_suffix, dret::OccurrenceSide _side) const {
+    return bit_vectors_[_side == dret::OccurrenceSide::LEFTMOST ? 0 : 1][_doc_suffix.first];
   }
 
  private:
@@ -93,11 +93,23 @@ class Factory {
   using RangeMinQuery = sdsl::rmq_succinct_sct<true>;
   using RangeMaxQuery = sdsl::rmq_succinct_sct<false>;
 
-  enum class IndexEnum { Brute = 0, SADA, ILCP, CILCP, GCDA, FULL_GCDA };
+  enum class IndexEnum {
+    Brute = 0,
+    SADA_ISAs,
+    SADA_WT_DA,
+    ILCP_ISAs,
+    ILCP_WT_DA,
+    CILCP_ISAs,
+    CILCP_WT_DA,
+    GCDA_ISAs,
+    GCDA_WT_DA,
+    FULL_GCDA
+  };
 
   Factory(const sdsl::cache_config &_config) : config_{_config} {
     std::ofstream breakdown_csv("breakdown.csv");
-    breakdown_csv << "R-Index-Basic,R-Index,Doc-Endings,DSA,Doc-DISAs,Sada,ILCP,CILCP,GCDA,GCDA-Index" << std::endl;
+    breakdown_csv << "R-Index-Basic,R-Index,Doc-Endings,DSA,Doc-DISAs,WT-DA,Sada,ILCP,CILCP,GCDA,GCDA-Index"
+                  << std::endl;
 
     // Loading CSAs
     Load(r_idx_, KEY_R_INDEX, config_, "R-Index");
@@ -181,6 +193,20 @@ class Factory {
     );
 
 
+    // Loading wavelet tree on document array
+//    Load(wt_da_huff_, KEY_DA_WT + std::string("_huff"), config_, "WT DA");
+//    size_wt_da_huff_ = sdsl::size_in_bytes(wt_da_huff_);
+//    sa_wrappers_.emplace_back(new WTOnDAWrapper<sdsl::wt_huff_int<>>(&wt_da_huff_));
+
+    Load(wt_da_ap_, KEY_DA_WT + std::string("_ap"), config_, "WT DA");
+    size_wt_da_ap_ = sdsl::size_in_bytes(wt_da_ap_);
+    sa_wrappers_.emplace_back(new WTOnDAWrapper<sdsl::wt_ap<>>(&wt_da_ap_));
+
+    breakdown_csv << size_wt_da_ap_ << ",";
+
+    compute_doc_freq_suff_wrappers_.emplace_back(
+        new dret::ComputeDocFrequencyWithSuffixesOccs<decltype(unmark_)>(&unmark_));
+
     // Loading Sada components
     Load(core_sada_.left_rmq, KEY_SADA_RMINQ, config_, "Sada RMinQ");
     Load(core_sada_.right_rmq, KEY_SADA_RMAXQ, config_, "Sada RMaxQ");
@@ -237,6 +263,11 @@ class Factory {
         new dret::GetValuesRMQILCPFunctor<SAWrapper, decltype(core_ilcp_)>(sa_wrappers_[0], &core_ilcp_));
     get_values_rmq_functors_.emplace_back(
         new dret::GetValuesRMQCILCPFunctor<SAWrapper, decltype(core_cilcp_)>(sa_wrappers_[0], &core_cilcp_));
+    get_values_rmq_functors_.emplace_back(new dret::GetValuesRMQSadaFunctor<SAWrapper>(sa_wrappers_[1]));
+    get_values_rmq_functors_.emplace_back(
+        new dret::GetValuesRMQILCPFunctor<SAWrapper, decltype(core_ilcp_)>(sa_wrappers_[1], &core_ilcp_));
+    get_values_rmq_functors_.emplace_back(
+        new dret::GetValuesRMQCILCPFunctor<SAWrapper, decltype(core_cilcp_)>(sa_wrappers_[1], &core_cilcp_));
 
     // RMQ reporters
     rmq_reporters_.emplace_back(new dret::RMQSadaReporter<decltype(mark_)>(&mark_));
@@ -246,6 +277,13 @@ class Factory {
     rmq_reporters_.emplace_back(
         new dret::RMQCILCPReporter<decltype(mark_), SAWrapper, decltype(core_cilcp_)>(
             &mark_, sa_wrappers_[0], &core_cilcp_));
+    rmq_reporters_.emplace_back(new dret::RMQSadaReporter<decltype(mark_)>(&mark_));
+    rmq_reporters_.emplace_back(
+        new dret::RMQILCPReporter<decltype(mark_), SAWrapper, decltype(core_ilcp_)>(
+            &mark_, sa_wrappers_[1], &core_ilcp_));
+    rmq_reporters_.emplace_back(
+        new dret::RMQCILCPReporter<decltype(mark_), SAWrapper, decltype(core_cilcp_)>(
+            &mark_, sa_wrappers_[1], &core_cilcp_));
 
 
     // Loading GCDA components
@@ -318,12 +356,12 @@ class Factory {
         return {dret::MakeNewDocFreqIndexBrute(*csa_wrappers_[0], doc_endings_rank_),
                 size_r_idx_ + size_doc_endings_};
       }
-      case IndexEnum::SADA: {
+      case IndexEnum::SADA_ISAs: {
         return {
             dret::MakePtrDocFreqIndexBasicScheme(
                 csa_wrappers_[0],
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakeNewComputeSuffixesByDocRMQFunctor(core_sada_,
+                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_sada_,
                                                                 *get_values_rmq_functors_[0],
                                                                 *rmq_reporters_[0],
                                                                 is_marked_)),
@@ -331,12 +369,12 @@ class Factory {
             size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_sada_
         };
       }
-      case IndexEnum::ILCP: {
+      case IndexEnum::ILCP_ISAs: {
         return {
             dret::MakePtrDocFreqIndexBasicScheme(
                 csa_wrappers_[0],
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakeNewComputeSuffixesByDocRMQFunctor(core_ilcp_,
+                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_ilcp_,
                                                                 *get_values_rmq_functors_[1],
                                                                 *rmq_reporters_[1],
                                                                 is_marked_)),
@@ -344,12 +382,12 @@ class Factory {
             size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_ilcp_
         };
       }
-      case IndexEnum::CILCP: {
+      case IndexEnum::CILCP_ISAs: {
         return {
             dret::MakePtrDocFreqIndexBasicScheme(
                 csa_wrappers_[0],
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakeNewComputeSuffixesByDocRMQFunctor(core_cilcp_,
+                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_cilcp_,
                                                                 *get_values_rmq_functors_[2],
                                                                 *rmq_reporters_[2],
                                                                 is_marked_)),
@@ -357,12 +395,12 @@ class Factory {
             size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_cilcp_
         };
       }
-      case IndexEnum::GCDA: {
+      case IndexEnum::GCDA_ISAs: {
         return {
             dret::MakePtrDocFreqIndexBasicScheme(
                 csa_wrappers_[0],
                 std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakeNewComputeSuffixesByDocGCDAFunctor(gcda_slp_,
+                    dret::MakePtrComputeSuffixesByDocGCDAFunctor(gcda_slp_,
                                                                  gcda_roots_,
                                                                  gcda_root_head_bv_,
                                                                  gcda_root_head_bv_rank_,
@@ -372,6 +410,63 @@ class Factory {
                                                                  *sa_wrappers_[0])),
                 compute_doc_freq_suff_wrappers_[0]),
             size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_gcda_
+        };
+      }
+      case IndexEnum::SADA_WT_DA: {
+        return {
+            dret::MakePtrDocFreqIndexBasicScheme(
+                csa_wrappers_[0],
+                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
+                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_sada_,
+                                                                *get_values_rmq_functors_[3],
+                                                                *rmq_reporters_[3],
+                                                                is_marked_)),
+                compute_doc_freq_suff_wrappers_[1]),
+            size_r_idx_basic_ + size_doc_endings_ + size_wt_da_ap_ + size_sada_
+        };
+      }
+      case IndexEnum::ILCP_WT_DA: {
+        return {
+            dret::MakePtrDocFreqIndexBasicScheme(
+                csa_wrappers_[0],
+                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
+                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_ilcp_,
+                                                                *get_values_rmq_functors_[4],
+                                                                *rmq_reporters_[4],
+                                                                is_marked_)),
+                compute_doc_freq_suff_wrappers_[1]),
+            size_r_idx_basic_ + size_doc_endings_ + size_wt_da_ap_ + size_ilcp_
+        };
+      }
+
+      case IndexEnum::CILCP_WT_DA: {
+        return {
+            dret::MakePtrDocFreqIndexBasicScheme(
+                csa_wrappers_[0],
+                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
+                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_cilcp_,
+                                                                *get_values_rmq_functors_[5],
+                                                                *rmq_reporters_[5],
+                                                                is_marked_)),
+                compute_doc_freq_suff_wrappers_[1]),
+            size_r_idx_basic_ + size_doc_endings_ + size_wt_da_ap_ + size_cilcp_
+        };
+      }
+      case IndexEnum::GCDA_WT_DA: {
+        return {
+            dret::MakePtrDocFreqIndexBasicScheme(
+                csa_wrappers_[0],
+                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
+                    dret::MakePtrComputeSuffixesByDocGCDAFunctor(gcda_slp_,
+                                                                 gcda_roots_,
+                                                                 gcda_root_head_bv_,
+                                                                 gcda_root_head_bv_rank_,
+                                                                 gcda_root_head_bv_select_,
+                                                                 gcda_occs_bvs_.first,
+                                                                 gcda_occs_bvs_.second,
+                                                                 *sa_wrappers_[1])),
+                compute_doc_freq_suff_wrappers_[1]),
+            size_r_idx_basic_ + size_doc_endings_ + size_wt_da_ap_ + size_gcda_
         };
       }
       case IndexEnum::FULL_GCDA: {
@@ -444,6 +539,13 @@ class Factory {
   std::vector<std::unique_ptr<DocISAsWrapper>> doc_isas_wrappers_;
   // Differential Document Inverse Suffix Arrays
   DSLPWrapper doc_disas_;
+
+  // Wavetree on document array
+//  sdsl::wt_huff_int<> wt_da_huff_;
+//  std::size_t size_wt_da_huff_;
+
+  sdsl::wt_ap<> wt_da_ap_;
+  std::size_t size_wt_da_ap_;
 
   // Sada components
   dret::RMQAlgoCoreSada<RangeMinQuery, RangeMaxQuery> core_sada_;
