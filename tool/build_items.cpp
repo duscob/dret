@@ -6,8 +6,6 @@
 #include <algorithm>
 #include <cstdio>
 
-#include <boost/filesystem.hpp>
-
 #include <gflags/gflags.h>
 
 #include <sdsl/io.hpp>
