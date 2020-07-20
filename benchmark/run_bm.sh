@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
 dir_idxs=$1
 dir_colls=$2
-benchmark=$3
+benchmark=${3:-"$SCRIPT_DIR/../build/bm_query_doc_freq_index"}
 
 for coll in "$dir_idxs"/*; do
   coll_name=$(basename "$coll")

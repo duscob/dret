@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
 dir_colls=$1
-dir_tools=$2
-repair=$3
-dir_grm_tools=$4
+repair=$2
+dir_grm_tools=${3:-"$SCRIPT_DIR/../build/grammar-build"}
+dir_tools=${4:-"$SCRIPT_DIR/../build"}
 
 for coll in "$dir_colls"/*; do
   coll_name=$(basename "$coll")

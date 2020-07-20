@@ -3,8 +3,7 @@
 //
 
 #include <iostream>
-
-#include <boost/filesystem.hpp>
+#include <sys/stat.h>
 
 #include <gflags/gflags.h>
 
@@ -23,6 +22,15 @@
 DEFINE_string(data, "", "Data file. (MANDATORY)");
 DEFINE_int32(bs, 512, "Block size.");
 DEFINE_int32(sf, 4, "Storing factor.");
+
+
+auto GetFileSize(const std::string &filename)
+{
+  struct stat64 stat_buf;
+  int rc = stat64(filename.c_str(), &stat_buf);
+  return rc == 0 ? stat_buf.st_size : -1;
+}
+
 
 int main(int argc, char **argv) {
   gflags::SetUsageMessage("This program build items of GCDA index.");
@@ -69,7 +77,7 @@ int main(int argc, char **argv) {
     }
 
     if (!sdsl::cache_file_exists(KEY_GCDA_CSEQ_HEADS, config)) {
-      std::size_t seq_size = boost::filesystem::file_size(datafile) / 4;
+      std::size_t seq_size = GetFileSize(datafile) / 4;
 
       sdsl::bit_vector cseq_heads(seq_size, 0);
       std::size_t pos = 0;
