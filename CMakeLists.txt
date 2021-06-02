@@ -24,7 +24,7 @@ include(ConfigSafeGuards)
 
 
 #Global Setup
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
 
 # Set common include folder for module
