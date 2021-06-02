@@ -44,7 +44,8 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_sada.h
         ${PROJECT_SOURCE_DIR}/include/dret/tf.h
         ${PROJECT_SOURCE_DIR}/include/dret/algorithm.h
-        ${PROJECT_SOURCE_DIR}/include/dret/run_length_encode.h)
+        ${PROJECT_SOURCE_DIR}/include/dret/run_length_encode.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index.h)
 
 add_library(dret INTERFACE)
 target_sources(dret INTERFACE ${SOURCE_FILES})
@@ -70,6 +71,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(doc_freq_index_brute_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_freq_index_brute_test.cpp)
     cxx_test_with_flags_and_args(tf_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/tf_test.cpp)
     cxx_test_with_flags_and_args(algorithm_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/algorithm_test.cpp)
+    cxx_test_with_flags_and_args(doc_list_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_test.cpp)
 endif ()
 
 # TODO use find_package(gflags) instead find_library(...)
