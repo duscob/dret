@@ -49,10 +49,11 @@ if __name__ == "__main__":
     # Generate patterns
     end = d_file.stat().st_size - 2
     with open('patterns', 'w') as writer:
-        with open(d_file, 'r') as reader:
+        with open(d_file, 'r', errors='ignore') as reader:
             i = 0
             while i < 1000:
-                pattern_size = random.choice([8, 12, 16])
+                # pattern_size = random.choice([8, 12, 16])
+                pattern_size = random.choice([10])
                 pos = random.randint(0, end - pattern_size)
 
                 reader.seek(pos)
