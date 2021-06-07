@@ -16,7 +16,7 @@ class DocListIndex {
   using TPattern = std::string;
   using TDocId = std::size_t;
 
-  virtual void Search(const TPattern &t_pattern, const std::function<void(TDocId)> &t_report) = 0;
+  virtual void Search(const TPattern &t_pattern, const std::function<void(TDocId)> &t_report) const = 0;
 };
 
 template<typename TLocate, typename TGetDoc>
@@ -24,7 +24,7 @@ class DocListIndexBrute : public DocListIndex {
  public:
   DocListIndexBrute(const TLocate &t_locate, const TGetDoc &t_get_doc) : locate_{t_locate}, get_doc_{t_get_doc} {}
 
-  void Search(const TPattern &t_pattern, const std::function<void(TDocId)> &t_report) override {
+  void Search(const TPattern &t_pattern, const std::function<void(TDocId)> &t_report) const override {
     auto occurrences = locate_(t_pattern);
 
     for (const auto &item : occurrences) {
@@ -45,7 +45,7 @@ class DocListIndexBasicScheme : public DocListIndex {
       : compute_sa_range_{t_csa}, compute_docs_{t_compute_docs} {
   }
 
-  void Search(const TPattern &t_pattern, const std::function<void(TDocId)> &t_report) override {
+  void Search(const TPattern &t_pattern, const std::function<void(TDocId)> &t_report) const override {
     auto[sp, ep] = compute_sa_range_(t_pattern);
 
     compute_docs_(sp, ep, t_report);
