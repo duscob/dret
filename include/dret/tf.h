@@ -10,6 +10,7 @@
 #include <cassert>
 
 #include "algorithm.h"
+#include "util.h"
 
 namespace dret {
 
@@ -241,23 +242,6 @@ void FindAllFirstLastOccs(const SLP &_slp,
   ReportAllFirstLastOccs(vslp, vslp.Start(), v_f_occs_bvs, v_l_occs_bvs, _report_f_occ, _report_l_occ);
 }
 
-
-sdsl::bit_vector operator~(sdsl::bit_vector _bv) {
-  _bv.flip();
-
-  return _bv;
 }
 
-sdsl::bit_vector operator&(sdsl::bit_vector _bv1, const sdsl::bit_vector &_bv2) {
-  _bv1 &= _bv2;
-
-  return _bv1;
-}
-
-sdsl::bit_vector operator|(sdsl::bit_vector _bv1, const sdsl::bit_vector &_bv2) {
-  _bv1 |= _bv2;
-
-  return _bv1;
-}
-}
 #endif //DRET_TF_H_
