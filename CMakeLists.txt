@@ -53,10 +53,6 @@ target_include_directories(dret INTERFACE ${PROJECT_SOURCE_DIR}/include/dret)
 
 include(internal_utils)
 
-find_library(SDSL_LIB sdsl)
-find_library(DIVSUFSORT_LIB divsufsort)
-find_library(DIVSUFSORT64_LIB divsufsort64)
-set(SDSL_LIBS ${SDSL_LIB} ${DIVSUFSORT_LIB} ${DIVSUFSORT64_LIB})
 find_package(sdsl 3.0)
 if (NOT sdsl_FOUND)
     include(ConfigSDSL)
