@@ -13,7 +13,7 @@
 class SAWrapper {
  public:
   using DocSuffix = std::pair<std::size_t, std::size_t>; // {doc; suffix}
-  typedef vector<DocSuffix> Suffixes;
+  typedef std::vector<DocSuffix> Suffixes;
 
   virtual DocSuffix operator()(std::size_t _i) const {
     return (*this)(_i, 1)[0];

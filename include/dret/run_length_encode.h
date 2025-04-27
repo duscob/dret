@@ -23,7 +23,7 @@ template<typename IIter, typename BVRuns>
 void BuildRLEncoding(IIter _first, IIter _last, BVRuns &_bv_runs) {
   if (_first == _last) return;
 
-  _bv_runs = BVRuns(distance(_first, _last));
+  _bv_runs = BVRuns(std::distance(_first, _last));
   std::size_t i = 0;
 //  _bv_runs[i] = 0;
   _bv_runs[i] = 1;

@@ -27,6 +27,12 @@ include(ConfigSafeGuards)
 set(CMAKE_CXX_STANDARD 17)
 
 
+#Global C++ Flags
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb -g")
+set(CMAKE_CXX_FLAGS_RELEASE "-Ofast -fstrict-aliasing -DNDEBUG -march=native")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-g -ggdb -Ofast -fstrict-aliasing -march=native")
+
+
 # Set common include folder for module
 set(COMMON_INCLUDES
         ${PROJECT_SOURCE_DIR}/include
