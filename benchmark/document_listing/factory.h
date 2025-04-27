@@ -9,6 +9,7 @@
 
 #include <sdsl/config.hpp>
 #include <sdsl/io.hpp>
+#include <sdsl/hyb_vector.hpp>
 
 #include <rindex/r_index.hpp>
 

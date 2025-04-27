@@ -11,6 +11,7 @@
 #include <sdsl/config.hpp>
 #include <sdsl/bit_vectors.hpp>
 #include <sdsl/rmq_support.hpp>
+#include <sdsl/rmq_succinct_sct.hpp>
 
 #include <rindex/r_index.hpp>
 

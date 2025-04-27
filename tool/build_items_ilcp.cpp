@@ -10,8 +10,8 @@
 #include <sdsl/construct_sa.hpp>
 #include <sdsl/construct_isa.hpp>
 #include <sdsl/construct_lcp.hpp>
-
-#include <sdsl/rmq_support.hpp>
+#include <sdsl/rmq_succinct_sct.hpp>
+#include <sdsl/sd_vector.hpp>
 
 #include "definitions.h"
 

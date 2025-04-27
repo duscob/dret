@@ -10,7 +10,7 @@
 #include <sdsl/util.hpp>
 #include <sdsl/int_vector.hpp>
 #include <sdsl/sd_vector.hpp>
-#include <sdsl/rmq_support.hpp>
+#include <sdsl/rmq_succinct_sct.hpp>
 
 #include <dret/doc_freq_index_sada.h>
 

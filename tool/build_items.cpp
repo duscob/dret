@@ -12,6 +12,8 @@
 #include <sdsl/construct.hpp>
 #include <sdsl/csa_wt.hpp>
 #include <sdsl/rmq_succinct_sada.hpp>
+#include <sdsl/wavelet_trees.hpp>
+#include <sdsl/hyb_vector.hpp>
 
 #include <rindex/r_index.hpp>
 
@@ -279,7 +281,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  construct_config::byte_algo_sa = FLAGS_sais ? SE_SAIS
+  construct_config().byte_algo_sa = FLAGS_sais ? SE_SAIS
                                               : LIBDIVSUFSORT; // or LIBDIVSUFSORT for less space-efficient but faster construction
 
   string data_path = FLAGS_data;
