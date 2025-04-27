@@ -12,7 +12,7 @@ endif ()
 include(DownloadProject)
 download_project(PROJ googlebenchmark
         GIT_REPOSITORY https://github.com/google/benchmark.git
-        GIT_TAG master
+        GIT_TAG v1.9.0
         ${UPDATE_DISCONNECTED_IF_AVAILABLE})
 
 #Benchmark
@@ -20,6 +20,9 @@ download_project(PROJ googlebenchmark
 #
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "BENCHMARK_ENABLE_TESTING")
 set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "BENCHMARK_ENABLE_GTEST_TESTS")
+
+# Prevent Benchmark installation
+set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${googlebenchmark_SOURCE_DIR} ${googlebenchmark_BINARY_DIR})
 
