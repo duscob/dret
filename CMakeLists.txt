@@ -1,11 +1,13 @@
+########################################################################
+# CMake build script for DRet Library.
+
+cmake_minimum_required(VERSION 3.10)
+
 option(dret_build_tests "Build all of drl's tests." ON)
 
 option(dret_build_tools "Build all of drl's tools." ON)
 
 option(dret_build_benchmarks "Build all of drl's benchmarks." ON)
-
-
-cmake_minimum_required(VERSION 3.0)
 
 
 #Project Information
@@ -64,6 +66,14 @@ if (NOT sdsl_FOUND)
     include(ConfigSDSL)
 endif ()
 
+# TODO use find_package(gflags) instead find_library(...)
+find_library(GFLAGS_LIB gflags)
+if (NOT GFLAGS_LIB)
+    include(ConfigGFlags)
+    set(GFLAGS_LIB gflags::gflags)
+endif ()
+
+
 #find_library(GRAMMAR_LIB grammar REQUIRED)
 include(ConfigGrammar)
 set(GRAMMAR_LIB grammar)
@@ -80,8 +90,6 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(doc_list_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_test.cpp)
 endif ()
 
-# TODO use find_package(gflags) instead find_library(...)
-find_library(GFLAGS_LIB gflags)
 find_package(Threads)
 
 if (dret_build_tools)
