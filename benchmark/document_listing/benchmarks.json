@@ -1,0 +1,6 @@
+{
+  "sr-index": {
+    "index_dir": "sri",
+    "cmd_build": "sr-index-build/benchmark/sr-index/bm_construct_ri --min_s=4 --max_s=16"
+  }
+}
