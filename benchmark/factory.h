@@ -13,7 +13,7 @@
 #include <sdsl/rmq_support.hpp>
 #include <sdsl/rmq_succinct_sct.hpp>
 
-#include <rindex/r_index.hpp>
+#include <r_index.hpp>
 
 #include <grammar/re_pair.h>
 #include <grammar/slp.h>
