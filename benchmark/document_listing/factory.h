@@ -2,8 +2,8 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 6/3/21.
 //
 
-#ifndef DRET_BENCHMARK_DOCUMENT_LISTING_FACTORY_H_
-#define DRET_BENCHMARK_DOCUMENT_LISTING_FACTORY_H_
+#pragma once
+
 
 #include <utility>
 
@@ -47,21 +47,14 @@ class Factory {
     n_doc_ = doc_endings_rank_.item(doc_endings_.item.size());
   }
 
-  std::pair<dret::DocListIndex *, std::size_t> Make(const Config &t_config) {
-    return MakeInner(t_config);
-  }
+  std::pair<dret::DocListIndex*, std::size_t> Make(const Config& t_config) { return MakeInner(t_config); }
 
-  [[nodiscard]] auto SequenceSize() const {
-    return seq_size_;
-  }
+  [[nodiscard]] auto SequenceSize() const { return seq_size_; }
 
-  [[nodiscard]] auto NDocs() const {
-    return n_doc_;
-  }
+  [[nodiscard]] auto NDocs() const { return n_doc_; }
 
  private:
-
-  template<typename T>
+  template <typename T>
   struct Item {
     std::string key;
     bool initialized = false;
@@ -69,9 +62,10 @@ class Factory {
     std::size_t size_in_bytes = 0;
   };
 
-  template<typename T>
-  void load(Item<T> &t_item, const std::string &t_key) {
-    if (t_item.initialized) return;
+  template <typename T>
+  void load(Item<T>& t_item, const std::string& t_key) {
+    if (t_item.initialized)
+      return;
 
     if (!sdsl::cache_file_exists(t_key, config_))
       std::cerr << "ERROR: File '" << sdsl::cache_file_name(t_key, config_) << "' not exist!!!";
@@ -81,14 +75,15 @@ class Factory {
     t_item.size_in_bytes = sdsl::size_in_bytes(t_item.item);
   }
 
-  template<typename T>
-  void load(Item<T> &t_item) {
+  template <typename T>
+  void load(Item<T>& t_item) {
     load(t_item, t_item.key);
   }
 
-  template<typename T, typename TInit>
-  void load(Item<T> &t_item, const TInit &t_init) {
-    if (t_item.initialized) return;
+  template <typename T, typename TInit>
+  void load(Item<T>& t_item, const TInit& t_init) {
+    if (t_item.initialized)
+      return;
 
     t_item.item = t_init();
     t_item.initialized = true;
@@ -139,5 +134,3 @@ class Factory {
   std::size_t n_doc_;
 
 };
-
-#endif  //DRET_BENCHMARK_DOCUMENT_LISTING_FACTORY_H_
