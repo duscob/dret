@@ -24,6 +24,7 @@ class Factory {
  public:
   enum class IndexEnum {
     BRUTE_R_INDEX,
+    BRUTE_SR_INDEX,
   };
 
   struct Config {
@@ -37,6 +38,9 @@ class Factory {
 
     r_index_ = std::make_shared<sri::RIndex<ExternalGenericStorage>>(std::ref(storage_));
     r_index_->load(config_);
+
+    sr_index_ = std::make_shared<sri::SrIndexValidArea<ExternalGenericStorage>>(std::ref(storage_), 8);
+    sr_index_->load(config_);
 
     load(doc_endings_);
     load(doc_endings_rank_, [this]() { return TDocEndingsRank(&this->doc_endings_.item); });
@@ -103,6 +107,14 @@ class Factory {
         index_size = sdsl::size_in_bytes(*r_index_) + doc_endings_rank_.size_in_bytes;
         break;
       }
+
+      case IndexEnum::BRUTE_SR_INDEX: {
+        auto locate = [this](const auto& tt_pattern) { return this->sr_index_->Locate(tt_pattern); };
+
+        index = new dret::DocListIndexBrute(locate, doc_endings_rank_.item);
+        index_size = sdsl::size_in_bytes(*sr_index_) + doc_endings_rank_.size_in_bytes;
+        break;
+      }
     }
 
     return std::make_pair(index, index_size);
@@ -115,6 +127,7 @@ class Factory {
   sri::GenericStorage storage_;
 
   std::shared_ptr<sri::RIndex<ExternalGenericStorage>> r_index_;
+  std::shared_ptr<sri::SrIndexValidArea<ExternalGenericStorage>> sr_index_;
 
   // Document endings marks
   using TDocEndings = sdsl::sd_vector<>;
@@ -127,4 +140,4 @@ class Factory {
 
 };
 
-#endif //DRET_BENCHMARK_DOCUMENT_LISTING_FACTORY_H_
+#endif  //DRET_BENCHMARK_DOCUMENT_LISTING_FACTORY_H_
