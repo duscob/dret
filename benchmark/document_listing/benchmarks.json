@@ -1,6 +1,11 @@
 {
   "sr-index": {
     "index_dir": "sri",
-    "cmd_build": "sr-index-build/benchmark/sr-index/bm_construct_ri --min_s=4 --max_s=16"
+    "cmd_build": "sr-index-build/benchmark/sr-index/bm_construct_ri --min_s=4 --max_s=16",
+    "cmd_list": "bm_query_doc_list --max_s=4"
+  },
+  "common": {
+    "index_dir": "sri",
+    "cmd_build": "bm_build_items"
   }
 }
