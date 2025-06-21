@@ -196,9 +196,12 @@ int main(int argc, char *argv[]) {
   auto create_result_vector_bool = [n_docs = factory.NDocs()]() { return new DocListResultVectorBool(n_docs); };
 
   std::vector<Config> index_configs = {
-      {"Brute-R-Index-V", Factory::Config{Factory::IndexEnum::BRUTE}, create_result_vector},
-      {"Brute-R-Index-Bv", Factory::Config{Factory::IndexEnum::BRUTE}, create_result_bitvector},
-      {"Brute-R-Index-VB", Factory::Config{Factory::IndexEnum::BRUTE}, create_result_vector_bool},
+      {"Brute-R-Index-V", Factory<>::Config{Factory<>::IndexEnum::BRUTE_R_INDEX}, create_result_vector},
+      {"Brute-R-Index-Bv", Factory<>::Config{Factory<>::IndexEnum::BRUTE_R_INDEX}, create_result_bitvector},
+      {"Brute-R-Index-VB", Factory<>::Config{Factory<>::IndexEnum::BRUTE_R_INDEX}, create_result_vector_bool},
+      {"Brute-SR-Index-V", Factory<>::Config{Factory<>::IndexEnum::BRUTE_SR_INDEX}, create_result_vector},
+      {"Brute-SR-Index-Bv", Factory<>::Config{Factory<>::IndexEnum::BRUTE_SR_INDEX}, create_result_bitvector},
+      {"Brute-SR-Index-VB", Factory<>::Config{Factory<>::IndexEnum::BRUTE_SR_INDEX}, create_result_vector_bool},
   };
 
   auto seq_size = factory.SequenceSize();
