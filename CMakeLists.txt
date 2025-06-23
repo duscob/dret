@@ -93,6 +93,10 @@ endif ()
 find_package(Threads)
 
 if (dret_build_tools)
+    include(ConfigRIndexLib)
+    include(ConfigNJSON)
+    include(ConfigSRIndex)
+
     cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items.cpp)
     cxx_executable_with_flags(build_items_sada "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_sada.cpp tool/definitions.h)
     cxx_executable_with_flags(build_items_ilcp "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_ilcp.cpp tool/definitions.h)
@@ -102,11 +106,14 @@ endif ()
 
 
 if (dret_build_benchmarks)
-    include(ConfigGBenchmark)
+    if (NOT TARGET benchmark)
+        include(ConfigGBenchmark)
+    endif ()
 
     #    cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/query_doc_freq_index_bm.cpp)
     cxx_executable_with_flags(bm_query_doc_freq_index "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/bm_query_doc_freq_index.cpp)
 
+    cxx_executable_with_flags(bm_build_items "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/document_listing/bm_build_items.cpp)
     cxx_executable_with_flags(bm_query_doc_list "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/document_listing/bm_query_doc_list.cpp)
 endif ()
 

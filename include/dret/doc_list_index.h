@@ -16,6 +16,8 @@ class DocListIndex {
   using TPattern = std::string;
   using TDocId = std::size_t;
 
+  virtual ~DocListIndex() = default;
+
   virtual void Search(const TPattern &t_pattern, const std::function<void(TDocId)> &t_report) const = 0;
 };
 

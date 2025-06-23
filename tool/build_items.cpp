@@ -15,7 +15,7 @@
 #include <sdsl/wavelet_trees.hpp>
 #include <sdsl/hyb_vector.hpp>
 
-#include <rindex/r_index.hpp>
+#include <r_index.hpp>
 
 #include <grammar/re_pair.h>
 #include <grammar/slp.h>
