@@ -4,31 +4,41 @@
 
 #pragma once
 
+#include "sdsl/io.hpp"
+
 #include "doc_list_index.h"
+#include "index_base.h"
 
 namespace dret {
 
-template <typename TStorage,
-          typename TComputeSARange,
-          typename TComputeCover,
-          typename TGetDocs,
-          typename TGetDocSet,
-          typename TMergeSets>
-class DLSampledTreeScheme : public DocListIndex {};
+template <typename TStorage = GenericStorage>
+class DLSampledTreeScheme : public DocListIndex {
+ public:
+  DLSampledTreeScheme() = default;
+
+  void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {}
+};
 
 //~~~~~~~
 
 
-template <typename TStorage,
-          typename TComputeSARange,
-          typename TComputeCover,
-          typename TGetDocs,
-          typename TGetDocSet,
-          typename TMergeSets>
-void constructItems(
-    DLSampledTreeScheme<TStorage, TComputeSARange, TComputeCover, TGetDocs, TGetDocSet, TMergeSets>& t_index,
-    const std::string& t_data_path,
-    Config& t_config) {}
+template <typename TStorage = GenericStorage>
+void constructItems(DLSampledTreeScheme<TStorage>& t_index, Config& t_config) {
+  if (!sdsl::cache_file_exists(sdsl::conf::KEY_SA, t_config)) {
+    auto event = sdsl::memory_monitor::event("SA");
+    sdsl::construct_sa<8>(t_config);
+  }
+
+  if (!cache_file_exists(dret::conf::KEY_DOC_END, t_config)) {
+    auto event = sdsl::memory_monitor::event("DocEnds");
+    ConstructDocEnd(t_config);
+  }
+
+  if (!cache_file_exists(dret::conf::KEY_DA, t_config)) {
+    auto event = sdsl::memory_monitor::event("DA");
+    ConstructDocArray(t_config);
+  }
+}
 
 //~~~~~~~
 
