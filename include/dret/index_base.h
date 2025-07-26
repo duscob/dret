@@ -16,4 +16,14 @@ using GenericStorage = std::map<std::string, std::any>;
 
 using Config = sri::Config;
 
+//~~~~~~~
+
+
+template <typename TIndex>
+void construct(TIndex& t_index, const std::string& t_data_path, Config& t_config) {
+  constructItems(t_index, t_config);
+
+  // t_index.load(t_config);
+}
+
 }  // namespace dret
