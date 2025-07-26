@@ -1,13 +1,11 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 6/2/21.
 //
+#pragma once
 
-#ifndef DRET_DOC_LIST_INDEX_H_
-#define DRET_DOC_LIST_INDEX_H_
-
-#include <string>
 #include <functional>
 #include <memory>
+#include <string>
 
 namespace dret {
 
@@ -18,18 +16,21 @@ class DocListIndex {
 
   virtual ~DocListIndex() = default;
 
-  virtual void Search(const TPattern &t_pattern, const std::function<void(TDocId)> &t_report) const = 0;
+  virtual void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const = 0;
 };
 
-template<typename TLocate, typename TGetDoc>
+//~~~~~~~
+
+
+template <typename TLocate, typename TGetDoc>
 class DocListIndexBrute : public DocListIndex {
  public:
-  DocListIndexBrute(const TLocate &t_locate, const TGetDoc &t_get_doc) : locate_{t_locate}, get_doc_{t_get_doc} {}
+  DocListIndexBrute(const TLocate& t_locate, const TGetDoc& t_get_doc) : locate_{t_locate}, get_doc_{t_get_doc} {}
 
-  void Search(const TPattern &t_pattern, const std::function<void(TDocId)> &t_report) const override {
+  void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
     auto occurrences = locate_(t_pattern);
 
-    for (const auto &item : occurrences) {
+    for (const auto& item : occurrences) {
       t_report(get_doc_(item));
     }
   }
@@ -39,16 +40,17 @@ class DocListIndexBrute : public DocListIndex {
   TGetDoc get_doc_;
 };
 
-template<typename TComputeSARange, typename TComputeDocs>
+//~~~~~~~
+
+
+template <typename TComputeSARange, typename TComputeDocs>
 class DocListIndexBasicScheme : public DocListIndex {
  public:
-  DocListIndexBasicScheme(const TComputeSARange &t_csa,
-                          const TComputeDocs &t_compute_docs)
-      : compute_sa_range_{t_csa}, compute_docs_{t_compute_docs} {
-  }
+  DocListIndexBasicScheme(const TComputeSARange& t_csa, const TComputeDocs& t_compute_docs)
+      : compute_sa_range_{t_csa}, compute_docs_{t_compute_docs} {}
 
-  void Search(const TPattern &t_pattern, const std::function<void(TDocId)> &t_report) const override {
-    auto[sp, ep] = compute_sa_range_(t_pattern);
+  void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
+    auto [sp, ep] = compute_sa_range_(t_pattern);
 
     compute_docs_(sp, ep, t_report);
   }
@@ -58,6 +60,4 @@ class DocListIndexBasicScheme : public DocListIndex {
   TComputeDocs compute_docs_;
 };
 
-}
-
-#endif //DRET_DOC_LIST_INDEX_H_
+}  // namespace dret
