@@ -66,6 +66,8 @@ void ConstructDocEnd(sdsl::cache_config& t_config, uint8_t kDocDelimiter = 2) {
   static_assert(t_width == 0 or t_width == 8,
                 "constructDocEnd: width must be `0` for integer alphabet and `8` for byte alphabet");
 
+  auto event = sdsl::memory_monitor::event("Doc Ends");
+
   sdsl::bit_vector tmp_doc_endings;
   ConstructDocBorder<t_width>(sdsl::cache_file_name(sdsl::conf::KEY_TEXT, t_config), tmp_doc_endings, kDocDelimiter);
   BitVector doc_endings(tmp_doc_endings);
