@@ -7,6 +7,7 @@
 #include <string>
 
 #include <sdsl/bit_vectors.hpp>
+#include <sdsl/config.hpp>
 #include <sdsl/int_vector_buffer.hpp>
 
 namespace dret {
@@ -14,6 +15,8 @@ namespace dret {
 namespace conf {
 
 const std::string KEY_DOC_END = "doc_end";
+const std::string KEY_DA = "da";
+const std::string KEY_DA_RAW = KEY_DA + "_raw";
 
 }  // namespace conf
 
@@ -74,6 +77,46 @@ void ConstructDocEnd(sdsl::cache_config& t_config, uint8_t kDocDelimiter = 2) {
 
   sdsl::store_to_cache(doc_endings, conf::KEY_DOC_END, t_config);
 }
+
+//~~~~~~~
+
+
+template <typename BitVector = sdsl::sd_vector<>>
+void ConstructDocArray(sdsl::cache_config& t_config) {
+  auto event = sdsl::memory_monitor::event("Doc Array");
+  sdsl::int_vector<> da;
+
+  {
+    sdsl::int_vector_buffer<> sa_buf(sdsl::cache_file_name(sdsl::conf::KEY_SA, t_config), std::ios::in, 1024 * 1024);
+
+    BitVector doc_endings;
+    load_from_cache(doc_endings, conf::KEY_DOC_END, t_config);
+    typename BitVector::rank_1_type doc_endings_rank(&doc_endings);
+    auto doc_cnt = doc_endings_rank(doc_endings.size());
+
+
+    da = sdsl::int_vector<>(sa_buf.size(), 0, sdsl::bits::hi(doc_cnt) + 1);
+    for (size_t i = 0; i < sa_buf.size(); ++i) {
+      da[i] = doc_endings_rank(sa_buf[i]);
+    }
+
+    store_to_cache(da, conf::KEY_DA, t_config);
+  }
+
+  {
+    std::vector<int> da_raw;
+    da_raw.reserve(da.size());
+    for (auto&& i : da) {
+      da_raw.emplace_back(i);
+    }
+
+    auto filepath = cache_file_name(conf::KEY_DA_RAW, t_config);
+    sdsl::osfstream out(filepath, std::ios::binary | std::ios::trunc | std::ios::out);
+    serialize_vector(da_raw, out);
+  }
+}
+
+//~~~~~~~
 
 
 }  // namespace dret
