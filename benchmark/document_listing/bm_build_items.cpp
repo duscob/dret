@@ -126,7 +126,20 @@ int main(int argc, char** argv) {
   benchmark::RegisterBenchmark("BuildDA", BM_BuildDocArray, config);
 
   benchmark::Initialize(&argc, argv);
+
+  sdsl::memory_monitor::start();
   benchmark::RunSpecifiedBenchmarks();
+  sdsl::memory_monitor::stop();
+  {
+    std::ofstream ofs("construction-common-items.html");
+    sdsl::memory_monitor::write_memory_log<sdsl::HTML_FORMAT>(ofs);
+    ofs.close();
+  }
+  {
+    std::ofstream ofs("construction-common-items.json");
+    sdsl::memory_monitor::write_memory_log<sdsl::JSON_FORMAT>(ofs);
+    ofs.close();
+  }
 
   return 0;
 }
