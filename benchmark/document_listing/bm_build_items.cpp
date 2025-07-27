@@ -11,13 +11,14 @@
 
 #include <sdsl/config.hpp>
 #include <sdsl/construct.hpp>
+#include <sdsl/io.hpp>
 
 #include "dret/construct_base.h"
+#include "dret/index_base.h"
 
 
 DEFINE_string(data, "", "Data file. (MANDATORY)");
-DEFINE_bool(rebuild, false, "Rebuild all the items.");
-DEFINE_bool(sais, true, "SE_SAIS or LIBDIVSUFSORT algorithm for Suffix Array construction.");
+DEFINE_string(sa_algo, "SDSL_SE_SAIS", "Suffix Array Algorithm: SDSL_SE_SAIS, SDSL_LIBDIVSUFSORT, BIG_BWT");
 
 const char kDocDelimiter = '\3';
 
@@ -29,16 +30,81 @@ void SetupCommonCounters(benchmark::State& t_state) {
   t_state.counters["mr'"] = 0;
 }
 
-/// Build document endings
-void BM_BuildDocEndings(benchmark::State& t_state, sdsl::cache_config* t_config) {
-
+/// Build text representation to use with SDSL functionalities.
+void BM_BuildText(benchmark::State& t_state, dret::Config t_config, const std::string& t_data_path) {
+  std::size_t n;
   for (auto _ : t_state) {
-    auto event = sdsl::memory_monitor::event("Doc Ends");
-    dret::ConstructDocEnd(*t_config);
+    if (!cache_file_exists(sdsl::conf::KEY_TEXT, t_config)) {
+      auto event = sdsl::memory_monitor::event("Text");
+      sdsl::int_vector<8> text;
+      {
+        // Load input text by streaming from disc
+        std::string input;
+        {
+          std::ifstream fs(t_data_path);
+          std::stringstream buffer;
+          buffer << fs.rdbuf();
+
+          input = buffer.str();
+        }
+
+        // Construct text representation for SDSL use.
+        n = input.size();
+        text.resize(input.size() + 1);
+
+        std::replace_copy(input.begin(), input.end(), text.begin(), '\0', kDocDelimiter);
+
+        text[text.size() - 1] = 0;  // Append symbol zero at the end
+      }
+
+      sdsl::store_to_cache(text, sdsl::conf::KEY_TEXT, t_config);
+      //    sdsl::util::clear(text);
+    }
+  }
+
+  SetupCommonCounters(t_state);
+  t_state.counters["n"] = n;
+};
+
+/// Build Suffix Array
+void BM_BuildSA(benchmark::State& t_state, dret::Config t_config) {
+  for (auto _ : t_state) {
+    if (!cache_file_exists(sdsl::conf::KEY_SA, t_config)) {
+      auto event = sdsl::memory_monitor::event("SA");
+
+      // Use SDSL functionality to build the SA
+      sdsl::construct_config().byte_algo_sa =
+          t_config.sa_algo == sri::SDSL_LIBDIVSUFSORT ? sdsl::LIBDIVSUFSORT : sdsl::SE_SAIS;
+      sdsl::construct_sa<8>(t_config);
+    }
   }
 
   SetupCommonCounters(t_state);
 };
+
+/// Build document endings
+void BM_BuildDocEndings(benchmark::State& t_state, dret::Config t_config) {
+  for (auto _ : t_state) {
+    if (!cache_file_exists(dret::conf::KEY_DOC_END, t_config)) {
+      auto event = sdsl::memory_monitor::event("Doc Ends");
+      dret::ConstructDocEnd(t_config);
+    }
+  }
+
+  SetupCommonCounters(t_state);
+}
+
+/// Build document array
+void BM_BuildDocArray(benchmark::State& t_state, dret::Config t_config) {
+  for (auto _ : t_state) {
+    if (!cache_file_exists(dret::conf::KEY_DA, t_config)) {
+      auto event = sdsl::memory_monitor::event("DA");
+      dret::ConstructDocArray(t_config);
+    }
+  }
+
+  SetupCommonCounters(t_state);
+}
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("This program calculates the ri items for the given text.");
@@ -50,17 +116,14 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  sdsl::construct_config().byte_algo_sa =
-      FLAGS_sais ? sdsl::SE_SAIS
-                 : sdsl::LIBDIVSUFSORT;  // or LIBDIVSUFSORT for less space-efficient but faster construction
-
   std::string data_path = FLAGS_data;
 
-  sdsl::cache_config config(false, ".", sdsl::util::basename(FLAGS_data));
+  dret::Config config(data_path, std::filesystem::current_path(), sri::toSAAlgo(FLAGS_sa_algo));
 
-  if (!cache_file_exists(dret::conf::KEY_DOC_END, config) || FLAGS_rebuild) {
-    benchmark::RegisterBenchmark("BuildDocEndings", BM_BuildDocEndings, &config);
-  }
+  benchmark::RegisterBenchmark("BuildText", BM_BuildText, config, data_path);
+  benchmark::RegisterBenchmark("BuildSA", BM_BuildSA, config);
+  benchmark::RegisterBenchmark("BuildDocEndings", BM_BuildDocEndings, config);
+  benchmark::RegisterBenchmark("BuildDA", BM_BuildDocArray, config);
 
   benchmark::Initialize(&argc, argv);
   benchmark::RunSpecifiedBenchmarks();
