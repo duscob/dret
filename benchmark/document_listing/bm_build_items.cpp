@@ -19,8 +19,10 @@
 
 DEFINE_string(data, "", "Data file. (MANDATORY)");
 DEFINE_string(sa_algo, "SDSL_SE_SAIS", "Suffix Array Algorithm: SDSL_SE_SAIS, SDSL_LIBDIVSUFSORT, BIG_BWT");
+DEFINE_int32(doc_delim, 3, "Document delimiter.");
 
-const char kDocDelimiter = '\3';
+//~~~~~~~
+
 
 void SetupCommonCounters(benchmark::State& t_state) {
   t_state.counters["n"] = 0;
@@ -29,6 +31,9 @@ void SetupCommonCounters(benchmark::State& t_state) {
   t_state.counters["r'"] = 0;
   t_state.counters["mr'"] = 0;
 }
+
+//~~~~~~~
+
 
 /// Build text representation to use with SDSL functionalities.
 void BM_BuildText(benchmark::State& t_state, dret::Config t_config, const std::string& t_data_path) {
@@ -52,7 +57,7 @@ void BM_BuildText(benchmark::State& t_state, dret::Config t_config, const std::s
         n = input.size();
         text.resize(input.size() + 1);
 
-        std::replace_copy(input.begin(), input.end(), text.begin(), '\0', kDocDelimiter);
+        std::replace_copy(input.begin(), input.end(), text.begin(), '\0', static_cast<char>(FLAGS_doc_delim));
 
         text[text.size() - 1] = 0;  // Append symbol zero at the end
       }
@@ -65,6 +70,9 @@ void BM_BuildText(benchmark::State& t_state, dret::Config t_config, const std::s
   SetupCommonCounters(t_state);
   t_state.counters["n"] = n;
 };
+
+//~~~~~~~
+
 
 /// Build Suffix Array
 void BM_BuildSA(benchmark::State& t_state, dret::Config t_config) {
@@ -80,7 +88,10 @@ void BM_BuildSA(benchmark::State& t_state, dret::Config t_config) {
   }
 
   SetupCommonCounters(t_state);
-};
+}
+
+//~~~~~~~
+
 
 /// Build document endings
 void BM_BuildDocEndings(benchmark::State& t_state, dret::Config t_config) {
@@ -94,6 +105,9 @@ void BM_BuildDocEndings(benchmark::State& t_state, dret::Config t_config) {
   SetupCommonCounters(t_state);
 }
 
+//~~~~~~~
+
+
 /// Build document array
 void BM_BuildDocArray(benchmark::State& t_state, dret::Config t_config) {
   for (auto _ : t_state) {
@@ -105,6 +119,9 @@ void BM_BuildDocArray(benchmark::State& t_state, dret::Config t_config) {
 
   SetupCommonCounters(t_state);
 }
+
+//~~~~~~~
+
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("This program calculates the ri items for the given text.");
