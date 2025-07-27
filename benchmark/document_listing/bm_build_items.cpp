@@ -39,32 +39,34 @@ void SetupCommonCounters(benchmark::State& t_state) {
 void BM_BuildText(benchmark::State& t_state, dret::Config t_config, const std::string& t_data_path) {
   std::size_t n;
   for (auto _ : t_state) {
-    if (!cache_file_exists(sdsl::conf::KEY_TEXT, t_config)) {
-      auto event = sdsl::memory_monitor::event("Text");
-      sdsl::int_vector<8> text;
+    if (cache_file_exists(sdsl::conf::KEY_TEXT, t_config)) {
+      continue;
+    }
+
+    auto event = sdsl::memory_monitor::event("Text");
+    sdsl::int_vector<8> text;
+    {
+      // Load input text by streaming from disc
+      std::string input;
       {
-        // Load input text by streaming from disc
-        std::string input;
-        {
-          std::ifstream fs(t_data_path);
-          std::stringstream buffer;
-          buffer << fs.rdbuf();
+        std::ifstream fs(t_data_path);
+        std::stringstream buffer;
+        buffer << fs.rdbuf();
 
-          input = buffer.str();
-        }
-
-        // Construct text representation for SDSL use.
-        n = input.size();
-        text.resize(input.size() + 1);
-
-        std::replace_copy(input.begin(), input.end(), text.begin(), '\0', static_cast<char>(FLAGS_doc_delim));
-
-        text[text.size() - 1] = 0;  // Append symbol zero at the end
+        input = buffer.str();
       }
 
-      sdsl::store_to_cache(text, sdsl::conf::KEY_TEXT, t_config);
-      //    sdsl::util::clear(text);
+      // Construct text representation for SDSL use.
+      n = input.size();
+      text.resize(input.size() + 1);
+
+      std::replace_copy(input.begin(), input.end(), text.begin(), '\0', static_cast<char>(FLAGS_doc_delim));
+
+      text[text.size() - 1] = 0;  // Append symbol zero at the end
     }
+
+    sdsl::store_to_cache(text, sdsl::conf::KEY_TEXT, t_config);
+    //    sdsl::util::clear(text);
   }
 
   SetupCommonCounters(t_state);
@@ -77,14 +79,16 @@ void BM_BuildText(benchmark::State& t_state, dret::Config t_config, const std::s
 /// Build Suffix Array
 void BM_BuildSA(benchmark::State& t_state, dret::Config t_config) {
   for (auto _ : t_state) {
-    if (!cache_file_exists(sdsl::conf::KEY_SA, t_config)) {
-      auto event = sdsl::memory_monitor::event("SA");
-
-      // Use SDSL functionality to build the SA
-      sdsl::construct_config().byte_algo_sa =
-          t_config.sa_algo == sri::SDSL_LIBDIVSUFSORT ? sdsl::LIBDIVSUFSORT : sdsl::SE_SAIS;
-      sdsl::construct_sa<8>(t_config);
+    if (cache_file_exists(sdsl::conf::KEY_SA, t_config)) {
+      continue;
     }
+
+    auto event = sdsl::memory_monitor::event("SA");
+
+    // Use SDSL functionality to build the SA
+    sdsl::construct_config().byte_algo_sa =
+        t_config.sa_algo == sri::SDSL_LIBDIVSUFSORT ? sdsl::LIBDIVSUFSORT : sdsl::SE_SAIS;
+    sdsl::construct_sa<8>(t_config);
   }
 
   SetupCommonCounters(t_state);
@@ -96,10 +100,12 @@ void BM_BuildSA(benchmark::State& t_state, dret::Config t_config) {
 /// Build document endings
 void BM_BuildDocEndings(benchmark::State& t_state, dret::Config t_config) {
   for (auto _ : t_state) {
-    if (!cache_file_exists(dret::conf::KEY_DOC_END, t_config)) {
-      auto event = sdsl::memory_monitor::event("Doc Ends");
-      dret::ConstructDocEnd(t_config);
+    if (cache_file_exists(dret::conf::KEY_DOC_END, t_config)) {
+      continue;
     }
+
+    auto event = sdsl::memory_monitor::event("Doc Ends");
+    dret::ConstructDocEnd(t_config);
   }
 
   SetupCommonCounters(t_state);
@@ -111,10 +117,12 @@ void BM_BuildDocEndings(benchmark::State& t_state, dret::Config t_config) {
 /// Build document array
 void BM_BuildDocArray(benchmark::State& t_state, dret::Config t_config) {
   for (auto _ : t_state) {
-    if (!cache_file_exists(dret::conf::KEY_DA, t_config)) {
-      auto event = sdsl::memory_monitor::event("DA");
-      dret::ConstructDocArray(t_config);
+    if (cache_file_exists(dret::conf::KEY_DA, t_config)) {
+      continue;
     }
+
+    auto event = sdsl::memory_monitor::event("DA");
+    dret::ConstructDocArray(t_config);
   }
 
   SetupCommonCounters(t_state);
