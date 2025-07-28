@@ -10,11 +10,16 @@
 #include <sdsl/config.hpp>
 #include <sdsl/int_vector_buffer.hpp>
 
+#ifndef REPAIR_EXE
+#define REPAIR_EXE nullptr
+#endif
+
 namespace dret {
 
 namespace conf {
 
 const std::string KEY_DOC_END = "doc_end";
+
 const std::string KEY_DA = "da";
 const std::string KEY_DA_RAW = KEY_DA + "_raw";
 

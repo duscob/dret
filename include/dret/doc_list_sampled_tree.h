@@ -4,8 +4,11 @@
 
 #pragma once
 
+#include <filesystem>
+
 #include "sdsl/io.hpp"
 
+#include "construct_base.h"
 #include "doc_list_index.h"
 #include "index_base.h"
 
@@ -37,6 +40,13 @@ void constructItems(DLSampledTreeScheme<TStorage>& t_index, Config& t_config) {
   if (!cache_file_exists(dret::conf::KEY_DA, t_config)) {
     auto event = sdsl::memory_monitor::event("DA");
     ConstructDocArray(t_config);
+  }
+
+  if (std::string file_da = cache_file_name(conf::KEY_DA_RAW, t_config);
+      !std::filesystem::exists(file_da + ".R") && REPAIR_EXE) {
+    auto event = sdsl::memory_monitor::event("Repair DA");
+    std::string cmd = REPAIR_EXE + (" " + file_da);
+    std::system(cmd.c_str());
   }
 }
 

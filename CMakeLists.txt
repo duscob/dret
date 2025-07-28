@@ -53,7 +53,9 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/tf.h
         ${PROJECT_SOURCE_DIR}/include/dret/algorithm.h
         ${PROJECT_SOURCE_DIR}/include/dret/run_length_encode.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index.h)
+        ${PROJECT_SOURCE_DIR}/include/dret/index_base.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree.h)
 
 add_library(dret INTERFACE)
 target_sources(dret INTERFACE ${SOURCE_FILES})
@@ -79,6 +81,13 @@ include(ConfigGrammar)
 set(GRAMMAR_LIB grammar)
 set(LIBS ${SDSL_LIB} ${GRAMMAR_LIB})
 
+include(ConfigNJSON)
+include(ConfigSRIndex)
+
+include(ConfigRePair)
+set(REPAIR_EXE "\"${${ExternalProjectName}_SOURCE_DIR}/bal/irepair\"")
+target_compile_definitions(dret INTERFACE REPAIR_EXE=${REPAIR_EXE})
+
 if (dret_build_tests)
     enable_testing()
 
@@ -94,8 +103,6 @@ find_package(Threads)
 
 if (dret_build_tools)
     include(ConfigRIndexLib)
-    include(ConfigNJSON)
-    include(ConfigSRIndex)
 
     cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items.cpp)
     cxx_executable_with_flags(build_items_sada "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_sada.cpp tool/definitions.h)
@@ -109,8 +116,6 @@ if (dret_build_benchmarks)
     if (NOT TARGET benchmark)
         include(ConfigGBenchmark)
     endif ()
-
-    include(ConfigRePair)
 
     #    cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/query_doc_freq_index_bm.cpp)
     cxx_executable_with_flags(bm_query_doc_freq_index "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/bm_query_doc_freq_index.cpp)
