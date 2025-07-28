@@ -11,7 +11,8 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     script_dir = Path(__file__).resolve().parent
-    parser.add_argument("-b", "--benchmarks", default=script_dir / "benchmarks.json", help="Benchmarks config file")
+    parser.add_argument("-b", "--benchmarks", default=script_dir / "benchmarks_list.json",
+                        help="Benchmarks config file")
     parser.add_argument("-c", "--cmd_path", default=script_dir / "build", help="Benchmarks command path")
     parser.add_argument("-o", "--output_path", default="./", help="Output path")
     parser.add_argument("-s", "--stats", action="store_true", help="Report statistics (mean, median, ...)")
@@ -64,17 +65,18 @@ def process_collection(global_benchmarks, collection_path, index_path, args):
 
     # Running each benchmark
     for key, value in benchmarks.items():
-        cmd_list = value.get("cmd_list")
-        if cmd_list is None:
-            continue
-
         print(f" {esc('34')}Index '{key}'{esc(0)}")
 
-        cmd = str(bm_cmd_path / cmd_list)
+        cmd = Path(value["cmd"])  # .resolve()
+
+        if not cmd.is_absolute():
+            cmd = bm_cmd_path / cmd
+        cmd = str(cmd)
+
         cmd += " --benchmark_counters_tabular=true" \
                " --benchmark_out_format=json" \
                " --benchmark_out=" + collection_name + "-" + key + "-list.json"
-        cmd += " --data_dir=" + str(index_path / value.get("index_dir", ""))
+        cmd += " --data_dir=" + str(index_path / value.get("subdir", ""))
         cmd += " --patterns=" + str(patterns_path)
         cmd += " --pattern_code=" + args.pattern_code
         if args.stats:

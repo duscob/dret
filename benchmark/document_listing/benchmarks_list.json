@@ -1,0 +1,6 @@
+{
+  "doc-list": {
+    "subdir": "idx",
+    "cmd": "bm_query_doc_list --max_s=16"
+  }
+}
