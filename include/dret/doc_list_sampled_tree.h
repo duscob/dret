@@ -49,6 +49,8 @@ class GCDA : public DLSampledTreeScheme<TStorage> {
   using typename Base::TDocId;
   using typename Base::TPattern;
 
+  GCDA(uint32_t t_block_size, float t_storing_factor) : block_size_(t_block_size), storing_factor_(t_storing_factor) {}
+
   GCDA() = default;
 
   const uint32_t& block_size() const { return block_size_; }
