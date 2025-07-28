@@ -110,6 +110,8 @@ if (dret_build_benchmarks)
         include(ConfigGBenchmark)
     endif ()
 
+    include(ConfigRePair)
+
     #    cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/query_doc_freq_index_bm.cpp)
     cxx_executable_with_flags(bm_query_doc_freq_index "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/bm_query_doc_freq_index.cpp)
 
