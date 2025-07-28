@@ -10,15 +10,5 @@
     "cmd": "bm_build_items",
     "benchmark_args": true,
     "args": "--data=data"
-  },
-  "repair-da": {
-    "subdir": "idx",
-    "cmd": "repair-prefix/src/repair/bal/irepair",
-    "benchmark_args": false,
-    "args": "da_raw_data.sdsl",
-    "output_files": [
-      "da_raw_data.sdsl.C",
-      "da_raw_data.sdsl.R"
-    ]
   }
 }
