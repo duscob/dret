@@ -14,6 +14,7 @@
 #include <sdsl/io.hpp>
 
 #include "dret/construct_base.h"
+#include "dret/doc_list_sampled_tree.h"
 #include "dret/index_base.h"
 
 
@@ -26,10 +27,8 @@ DEFINE_int32(doc_delim, 3, "Document delimiter.");
 
 void SetupCommonCounters(benchmark::State& t_state) {
   t_state.counters["n"] = 0;
-  t_state.counters["r"] = 0;
-  t_state.counters["s"] = 0;
-  t_state.counters["r'"] = 0;
-  t_state.counters["mr'"] = 0;
+  t_state.counters["bs"] = 0;  // Block size
+  t_state.counters["sf"] = 0;  // Storing factor
 }
 
 //~~~~~~~
@@ -132,6 +131,41 @@ void BM_BuildDocArray(benchmark::State& t_state, dret::Config t_config) {
 //~~~~~~~
 
 
+void BM_ConstructGCDA(benchmark::State& t_state, sri::Config t_config, const std::string& t_data_path) {
+  std::size_t block_size = t_state.range(0);
+  std::size_t storing_factor = t_state.range(1);
+
+  dret::GCDA<> index(block_size, storing_factor);
+
+  for (auto _ : t_state) {
+    sdsl::memory_monitor::start();
+    dret::construct(index, t_data_path, t_config);
+    sdsl::memory_monitor::stop();
+  }
+
+  auto bm_name = t_state.name();
+  std::string idx_name = bm_name.substr(bm_name.find('/') + 1);
+  {
+    std::ofstream ofs("construction-" + idx_name + "-" + std::to_string(block_size) + "-"
+                      + std::to_string(storing_factor) + ".html");
+    sdsl::memory_monitor::write_memory_log<sdsl::HTML_FORMAT>(ofs);
+    ofs.close();
+  }
+  {
+    std::ofstream ofs("construction-" + idx_name + "-" + std::to_string(block_size) + "-"
+                      + std::to_string(storing_factor) + ".json");
+    sdsl::memory_monitor::write_memory_log<sdsl::JSON_FORMAT>(ofs);
+    ofs.close();
+  }
+
+  SetupCommonCounters(t_state);
+  t_state.counters["bs"] = block_size;
+  t_state.counters["sf"] = storing_factor;
+}
+
+//~~~~~~~
+
+
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("This program calculates the ri items for the given text.");
   gflags::AllowCommandLineReparsing();
@@ -146,26 +180,28 @@ int main(int argc, char** argv) {
 
   dret::Config config(data_path, std::filesystem::current_path(), sri::toSAAlgo(FLAGS_sa_algo));
 
-  benchmark::RegisterBenchmark("BuildText", BM_BuildText, config, data_path);
-  benchmark::RegisterBenchmark("BuildSA", BM_BuildSA, config);
-  benchmark::RegisterBenchmark("BuildDocEndings", BM_BuildDocEndings, config);
-  benchmark::RegisterBenchmark("BuildDA", BM_BuildDocArray, config);
+  // benchmark::RegisterBenchmark("BuildText", BM_BuildText, config, data_path);
+  // benchmark::RegisterBenchmark("BuildSA", BM_BuildSA, config);
+  // benchmark::RegisterBenchmark("BuildDocEndings", BM_BuildDocEndings, config);
+  // benchmark::RegisterBenchmark("BuildDA", BM_BuildDocArray, config);
+
+  benchmark::RegisterBenchmark("GCDA", BM_ConstructGCDA, config, data_path)->ArgsProduct({{512}, {4}});
 
   benchmark::Initialize(&argc, argv);
 
-  sdsl::memory_monitor::start();
+  // sdsl::memory_monitor::start();
   benchmark::RunSpecifiedBenchmarks();
-  sdsl::memory_monitor::stop();
-  {
-    std::ofstream ofs("construction-common-items.html");
-    sdsl::memory_monitor::write_memory_log<sdsl::HTML_FORMAT>(ofs);
-    ofs.close();
-  }
-  {
-    std::ofstream ofs("construction-common-items.json");
-    sdsl::memory_monitor::write_memory_log<sdsl::JSON_FORMAT>(ofs);
-    ofs.close();
-  }
+  // sdsl::memory_monitor::stop();
+  // {
+  //   std::ofstream ofs("construction-common-items.html");
+  //   sdsl::memory_monitor::write_memory_log<sdsl::HTML_FORMAT>(ofs);
+  //   ofs.close();
+  // }
+  // {
+  //   std::ofstream ofs("construction-common-items.json");
+  //   sdsl::memory_monitor::write_memory_log<sdsl::JSON_FORMAT>(ofs);
+  //   ofs.close();
+  // }
 
   return 0;
 }
