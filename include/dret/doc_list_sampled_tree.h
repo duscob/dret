@@ -26,6 +26,27 @@ class DLSampledTreeScheme : public DocListIndex {
 
 
 template <typename TStorage = GenericStorage>
+class GCDA : public DLSampledTreeScheme<TStorage> {
+ public:
+  using Base = DLSampledTreeScheme<TStorage>;
+  using typename Base::TDocId;
+  using typename Base::TPattern;
+
+  GCDA() = default;
+
+  const uint32_t& block_size() const { return block_size_; }
+
+  const float& storing_factor() const { return storing_factor_; }
+
+ protected:
+  uint32_t block_size_ = 512;
+  float storing_factor_ = 4;
+};
+
+//~~~~~~~
+
+
+template <typename TStorage = GenericStorage>
 void constructItems(DLSampledTreeScheme<TStorage>& t_index, Config& t_config) {
   if (!sdsl::cache_file_exists(sdsl::conf::KEY_SA, t_config)) {
     auto event = sdsl::memory_monitor::event("SA");
