@@ -37,7 +37,7 @@ void SetupCommonCounters(benchmark::State& t_state) {
 
 /// Build text representation to use with SDSL functionalities.
 void BM_BuildText(benchmark::State& t_state, dret::Config t_config, const std::string& t_data_path) {
-  std::size_t n;
+  std::size_t n = 0;
   for (auto _ : t_state) {
     if (cache_file_exists(sdsl::conf::KEY_TEXT, t_config)) {
       continue;
@@ -67,10 +67,11 @@ void BM_BuildText(benchmark::State& t_state, dret::Config t_config, const std::s
 
     sdsl::store_to_cache(text, sdsl::conf::KEY_TEXT, t_config);
     //    sdsl::util::clear(text);
+
+    t_state.counters["n"] = n;
   }
 
   SetupCommonCounters(t_state);
-  t_state.counters["n"] = n;
 };
 
 //~~~~~~~
