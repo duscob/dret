@@ -50,7 +50,7 @@ def process_collection(benchmarks, collection_path, output_path, bm_cmd_path, en
 
     # Running each benchmark
     for key, value in benchmarks.items():
-        print(f" {esc('34')}Index '{key}'{esc(0)}")
+        print(f"\n {esc('34')}Index '{key}'{esc(0)}")
 
         # Creating output directory for the given collection
         index_output_path = output_path / value.get("subdir", "")
@@ -70,12 +70,24 @@ def process_collection(benchmarks, collection_path, output_path, bm_cmd_path, en
                    " --benchmark_dry_run" \
                    " --benchmark_repetitions=1" \
                    " --benchmark_out_format=json" \
-                   " --benchmark_out=" + collection_name + "-" + key + "-build.json "
+                   " --benchmark_out=" + collection_name + "-" + key + "-build.json"
 
         # cmd += " --data=./data"
-        cmd += value["args"]
+        cmd += " " + value["args"]
 
         cmd += " 2>" + key + "_build-error.txt"
+
+        must_run = True
+        if value.get("output_files", []):
+            must_run = False
+            for file in value["output_files"]:
+                if Path(file).exists():
+                    must_run = True
+                    break
+
+        if not must_run:
+            print(f"  {esc('93')}WARNING: Skipping '{cmd}'{esc(0)}")
+            return
 
         print(f"  {esc('38;5;22')}Running '{cmd}'{esc(0)}")
 
