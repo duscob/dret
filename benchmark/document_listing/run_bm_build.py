@@ -15,7 +15,7 @@ def main():
     parser.add_argument("-c", "--cmd_path", default="./build", help="Benchmarks command path")
     parser.add_argument("-o", "--output_path", default="./", help="Output path")
     parser.add_argument("-g", "--group", action="store_true", help="Group of collections")
-    parser.add_argument("-e", "--end_of_text", default="\\x02", help="End of text char")
+    parser.add_argument("-e", "--end_of_text", default="\\x03", help="End of text char")
     parser.add_argument("collection", help="Collection path")
     args = parser.parse_args()
 
@@ -51,23 +51,31 @@ def process_collection(benchmarks, collection_path, output_path, bm_cmd_path, en
     for key, value in benchmarks.items():
         print(f" {esc('34')}Index '{key}'{esc(0)}")
 
+        build_settings = value
+
         # Creating output directory for the given collection
-        index_output_path = output_path / value.get("index_dir", "")
+        index_output_path = output_path / value.get("subdir", "")
         index_output_path.mkdir(parents=True, exist_ok=True)
 
         if not create_output_data(collection_path, index_output_path, end_of_text):
             return
 
-        cmd = Path(value["cmd_build"])  # .resolve()
+        cmd = Path(build_settings["cmd"])  # .resolve()
 
         if not cmd.is_absolute():
             cmd = bm_cmd_path / cmd
         cmd = str(cmd)
-        cmd += " --benchmark_counters_tabular=true" \
-               " --benchmark_repetitions=1" \
-               " --benchmark_out_format=json" \
-               " --benchmark_out=" + collection_name + "-" + key + "-build.json"
-        cmd += " --data=./data"
+
+        if build_settings.get("benchmark_args", True):
+            cmd += " --benchmark_counters_tabular=true" \
+                   " --benchmark_dry_run" \
+                   " --benchmark_repetitions=1" \
+                   " --benchmark_out_format=json" \
+                   " --benchmark_out=" + collection_name + "-" + key + "-build.json "
+
+        # cmd += " --data=./data"
+        cmd += build_settings["args"]
+
         cmd += " 2>" + key + "_build-error.txt"
 
         print(f"  {esc('38;5;22')}Running '{cmd}'{esc(0)}")
