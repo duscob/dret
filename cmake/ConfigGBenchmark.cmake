@@ -1,9 +1,11 @@
+set(ExternalProjectName googlebenchmark)
 
 include(FetchContent)
 FetchContent_Declare(
-        googlebenchmark
+        ${ExternalProjectName}
         GIT_REPOSITORY https://github.com/google/benchmark.git
         GIT_TAG v1.9.4
+        FIND_PACKAGE_ARGS
 )
 
 #Benchmark
@@ -14,4 +16,4 @@ set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "BENCHMARK_ENABLE_GTEST_TESTS")
 # Prevent Benchmark installation
 set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(googlebenchmark)
+FetchContent_MakeAvailable(${ExternalProjectName})

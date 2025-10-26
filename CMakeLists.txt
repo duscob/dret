@@ -63,10 +63,7 @@ target_include_directories(dret INTERFACE ${PROJECT_SOURCE_DIR}/include/dret)
 
 include(internal_utils)
 
-find_package(sdsl 3.0)
-if (NOT sdsl_FOUND)
-    include(ConfigSDSL)
-endif ()
+include(ConfigSDSL)
 
 # TODO use find_package(gflags) instead find_library(...)
 find_library(GFLAGS_LIB gflags)

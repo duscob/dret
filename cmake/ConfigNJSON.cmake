@@ -1,23 +1,15 @@
-# Adapted from https://github.com/Crascit/DownloadProject/blob/master/CMakeLists.txt
-#
-# CAVEAT: use DownloadProject.cmake
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-if (CMAKE_VERSION VERSION_LESS 3.2)
-    set(UPDATE_DISCONNECTED_IF_AVAILABLE "")
-else ()
-    set(UPDATE_DISCONNECTED_IF_AVAILABLE "UPDATE_DISCONNECTED 1")
-endif ()
+set(ExternalProjectName json)
 
-include(DownloadProject)
-download_project(PROJ json
+include(FetchContent)
+FetchContent_Declare(
+        ${ExternalProjectName}
         GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v3.11.3
-        ${UPDATE_DISCONNECTED_IF_AVAILABLE})
+        GIT_TAG v3.12.0
+        #        DOWNLOAD_EXTRACT_TIMESTAMP true
+        #        URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+)
 
+FetchContent_MakeAvailable(${ExternalProjectName})
 
-#add_subdirectory(${json_SOURCE_DIR} ${json_BINARY_DIR})
-
-#include_directories("${json_SOURCE_DIR}/include")
-include_directories("${json_SOURCE_DIR}/single_include")
-
+FetchContent_GetProperties(${ExternalProjectName})
+include_directories(${${ExternalProjectName}_SOURCE_DIR}/single_include)

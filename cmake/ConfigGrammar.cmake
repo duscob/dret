@@ -1,26 +1,19 @@
-# Adapted from https://github.com/Crascit/DownloadProject/blob/master/CMakeLists.txt
-#
-# CAVEAT: use DownloadProject.cmake
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-if (CMAKE_VERSION VERSION_LESS 3.2)
-    set(UPDATE_DISCONNECTED_IF_AVAILABLE "")
-else ()
-    set(UPDATE_DISCONNECTED_IF_AVAILABLE "UPDATE_DISCONNECTED 1")
-endif ()
+set(ExternalProjectName grammar)
 
-include(DownloadProject)
-download_project(PROJ grammar
+include(FetchContent)
+FetchContent_Declare(
+        ${ExternalProjectName}
         GIT_REPOSITORY https://github.com/duscob/grammar.git
         GIT_TAG compact
-        ${UPDATE_DISCONNECTED_IF_AVAILABLE})
+        FIND_PACKAGE_ARGS
+)
 
+set(${ExternalProjectName}_build_tools ON CACHE BOOL "")
+set(${ExternalProjectName}_build_tests OFF CACHE BOOL "")
+set(${ExternalProjectName}_build_benchmarks ON CACHE BOOL "")
+set(${ExternalProjectName}_install OFF CACHE BOOL "")
 
-set(grammar_build_tools ON CACHE BOOL "grammar_build_tools")
-set(grammar_build_tests OFF CACHE BOOL "")
-set(grammar_build_benchmarks ON CACHE BOOL "")
-set(grammar_install OFF CACHE BOOL "grammar_install")
+FetchContent_MakeAvailable(${ExternalProjectName})
 
-add_subdirectory(${grammar_SOURCE_DIR} ${grammar_BINARY_DIR})
-
-include_directories("${grammar_SOURCE_DIR}/include")
+FetchContent_GetProperties(${ExternalProjectName})
+include_directories(${${ExternalProjectName}_SOURCE_DIR}/include)
