@@ -58,6 +58,11 @@ class GCDA : public DLSampledTreeScheme<TStorage> {
 
   GCDA() = default;
 
+  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
+    // TODO Add implementation
+    return 0;
+  }
+
   const uint32_t& block_size() const {
     return block_size_;
   }
