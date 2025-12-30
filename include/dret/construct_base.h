@@ -75,7 +75,8 @@ void ConstructDocEnd(sdsl::cache_config& t_config, uint8_t kDocDelimiter = 2) {
                 "constructDocEnd: width must be `0` for integer alphabet and `8` for byte alphabet");
 
   sdsl::bit_vector tmp_doc_endings;
-  ConstructDocBorder<t_width>(sdsl::cache_file_name(sdsl::conf::KEY_TEXT, t_config), tmp_doc_endings, kDocDelimiter);
+  ConstructDocBorder<t_width>(
+      sdsl::cache_file_name(sdsl::key_text_trait<t_width>::KEY_TEXT, t_config), tmp_doc_endings, kDocDelimiter);
   BitVector doc_endings(tmp_doc_endings);
 
   sdsl::store_to_cache(doc_endings, conf::KEY_DOC_END, t_config);
