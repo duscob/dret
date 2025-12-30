@@ -43,15 +43,25 @@ class Factory {
     sr_index_->load(config_);
 
     load(doc_endings_);
-    load(doc_endings_rank_, [this]() { return TDocEndingsRank(&this->doc_endings_.item); });
+    load(doc_endings_rank_, [this]() {
+      return TDocEndingsRank(&this->doc_endings_.item);
+    });
     n_doc_ = doc_endings_rank_.item(doc_endings_.item.size());
   }
 
   std::pair<dret::DocListIndex*, std::size_t> Make(const Config& t_config) { return MakeInner(t_config); }
 
-  [[nodiscard]] auto SequenceSize() const { return seq_size_; }
+  std::pair<dret::DocListIndex<dret::Alphabet<>::string_type>*, std::size_t> Make(const Config& t_config) {
+    return MakeInner(t_config);
+  }
 
-  [[nodiscard]] auto NDocs() const { return n_doc_; }
+  [[nodiscard]] auto SequenceSize() const {
+    return seq_size_;
+  }
+
+  [[nodiscard]] auto NDocs() const {
+    return n_doc_;
+  }
 
  private:
   template <typename T>
@@ -90,13 +100,15 @@ class Factory {
     t_item.size_in_bytes = sdsl::size_in_bytes(t_item.item);
   }
 
-  std::pair<dret::DocListIndex*, std::size_t> MakeInner(const Config& t_config) {
-    dret::DocListIndex* index = nullptr;
+  std::pair<dret::DocListIndex<dret::Alphabet<>::string_type>*, std::size_t> MakeInner(const Config& t_config) {
+    dret::DocListIndex<dret::Alphabet<>::string_type>* index = nullptr;
     std::size_t index_size = 0;
 
     switch (t_config.index_t) {
       case IndexEnum::BRUTE_R_INDEX: {
-        auto locate = [this](const auto& tt_pattern) { return this->r_index_->Locate(tt_pattern); };
+        auto locate = [this](const auto& tt_pattern) {
+          return this->r_index_->Locate(tt_pattern);
+        };
 
         index = new dret::DocListIndexBrute(locate, doc_endings_rank_.item);
         index_size = sdsl::size_in_bytes(*r_index_) + doc_endings_rank_.size_in_bytes;
@@ -104,7 +116,9 @@ class Factory {
       }
 
       case IndexEnum::BRUTE_SR_INDEX: {
-        auto locate = [this](const auto& tt_pattern) { return this->sr_index_->Locate(tt_pattern); };
+        auto locate = [this](const auto& tt_pattern) {
+          return this->sr_index_->Locate(tt_pattern);
+        };
 
         index = new dret::DocListIndexBrute(locate, doc_endings_rank_.item);
         index_size = sdsl::size_in_bytes(*sr_index_) + doc_endings_rank_.size_in_bytes;

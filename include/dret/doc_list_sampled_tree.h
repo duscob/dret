@@ -31,9 +31,13 @@ const std::string KEY_GCDA_LSLP_BASIC = "gcda_lslp_basic";
 //~~~~~~~
 
 
-template <typename TStorage = GenericStorage>
-class DLSampledTreeScheme : public DocListIndex {
+template <typename TStorage = GenericStorage, typename TAlphabet = Alphabet<>>
+class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, typename TAlphabet::string_type> {
  public:
+  using Base = DocListIndexExtStorage<TStorage, typename TAlphabet::string_type>;
+  using typename Base::TDocId;
+  using typename Base::TPattern;
+
   DLSampledTreeScheme() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {}
@@ -46,6 +50,7 @@ template <typename TStorage = GenericStorage>
 class GCDA : public DLSampledTreeScheme<TStorage> {
  public:
   using Base = DLSampledTreeScheme<TStorage>;
+  using typename Base::size_type;
   using typename Base::TDocId;
   using typename Base::TPattern;
 
@@ -53,9 +58,13 @@ class GCDA : public DLSampledTreeScheme<TStorage> {
 
   GCDA() = default;
 
-  const uint32_t& block_size() const { return block_size_; }
+  const uint32_t& block_size() const {
+    return block_size_;
+  }
 
-  const float& storing_factor() const { return storing_factor_; }
+  const float& storing_factor() const {
+    return storing_factor_;
+  }
 
  protected:
   uint32_t block_size_ = 512;
@@ -127,12 +136,16 @@ inline void ConstructCombinedSLPOnDA(Config& t_config, uint32_t t_block_size, fl
   grammar::Chunks<> cslp_docs;
 
   grammar::AddSet add_set(cslp_docs);
-  cslp.Compute(t_block_size, add_set, add_set,
+  cslp.Compute(t_block_size,
+               add_set,
+               add_set,
                grammar::MustBeSampled<decltype(cslp_docs)>(grammar::AreChildrenTooBig(cslp_docs, t_storing_factor)));
 
   sdsl::store_to_cache(cslp, conf::KEY_GCDA_CSLP, t_config);
 
-  auto bit_compress = [](sdsl::int_vector<>& _v) { sdsl::util::bit_compress(_v); };
+  auto bit_compress = [](sdsl::int_vector<>& _v) {
+    sdsl::util::bit_compress(_v);
+  };
 
   sdsl::store_to_cache(cslp_docs, conf::KEY_GCDA_CSLP_DOCS, t_config);
   grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> cslp_docs_c(cslp_docs, bit_compress, bit_compress);
@@ -152,7 +165,9 @@ void ConstructLightSLPOnDA(Config& t_config) {
       grammar::RePairReader<false> re_pair_reader;
       auto slp_wrapper = grammar::BuildSLPWrapper(slp);
 
-      auto report_compact_seq = [&compact_seq](const auto& _var) { compact_seq.emplace_back(_var); };
+      auto report_compact_seq = [&compact_seq](const auto& _var) {
+        compact_seq.emplace_back(_var);
+      };
 
       re_pair_reader.Read(datafile, slp_wrapper, report_compact_seq);
     }
@@ -166,8 +181,11 @@ void ConstructLightSLPOnDA(Config& t_config) {
   sdsl::store_to_cache(lslp, conf::KEY_GCDA_LSLP, t_config);
 
   // Construct Light SLP Basic on DA
-  auto bit_compress = [](sdsl::int_vector<>& _v) { sdsl::util::bit_compress(_v); };
-  grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>, grammar::SampledSLP<>,
+  auto bit_compress = [](sdsl::int_vector<>& _v) {
+    sdsl::util::bit_compress(_v);
+  };
+  grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
+                    grammar::SampledSLP<>,
                     grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
       lslp_basic(lslp, bit_compress, bit_compress, bit_compress, bit_compress);
 
