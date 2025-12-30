@@ -78,7 +78,7 @@ include(ConfigGrammar)
 set(GRAMMAR_LIB grammar)
 set(LIBS ${SDSL_LIB} ${GRAMMAR_LIB})
 
-include(ConfigNJSON)
+#include(ConfigNJSON)
 include(ConfigSRIndex)
 
 include(ConfigRePair)
