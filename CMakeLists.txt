@@ -4,10 +4,10 @@
 cmake_minimum_required(VERSION 3.10)
 
 option(dret_build_tests "Build all of drl's tests." ON)
-
 option(dret_build_tools "Build all of drl's tools." ON)
-
 option(dret_build_benchmarks "Build all of drl's benchmarks." ON)
+
+set(DRET_DEFAULT_ALPHABET_WIDTH 8 CACHE STRING "Default alphabet width for the ${PROJECT_NAME} project.")
 
 
 #Project Information
@@ -60,6 +60,8 @@ set(SOURCE_FILES
 add_library(dret INTERFACE)
 target_sources(dret INTERFACE ${SOURCE_FILES})
 target_include_directories(dret INTERFACE ${PROJECT_SOURCE_DIR}/include/dret)
+
+add_compile_definitions(DRET_DEFAULT_ALPHABET_WIDTH=${DRET_DEFAULT_ALPHABET_WIDTH})
 
 include(internal_utils)
 
