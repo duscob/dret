@@ -53,6 +53,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/tf.h
         ${PROJECT_SOURCE_DIR}/include/dret/algorithm.h
         ${PROJECT_SOURCE_DIR}/include/dret/run_length_encode.h
+        ${PROJECT_SOURCE_DIR}/include/dret/config.h
         ${PROJECT_SOURCE_DIR}/include/dret/index_base.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree.h)

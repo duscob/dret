@@ -5,18 +5,16 @@
 #pragma once
 
 #include <any>
+#include <functional>
 #include <map>
 #include <string>
+#include <variant>
 
-#include "sr-index/config.h"
+#include <sdsl/io.hpp>
+
+#include "config.h"
 
 namespace dret {
-
-using GenericStorage = std::map<std::string, std::any>;
-
-using Config = sri::Config;
-
-//~~~~~~~
 
 
 template <typename TIndex>
