@@ -10,6 +10,8 @@
 #include <sdsl/config.hpp>
 #include <sdsl/int_vector_buffer.hpp>
 
+#include "config.h"
+
 #ifndef REPAIR_EXE
 #define REPAIR_EXE nullptr
 #endif
@@ -24,6 +26,32 @@ const std::string KEY_DA = "da";
 const std::string KEY_DA_RAW = KEY_DA + "_raw";
 
 }  // namespace conf
+
+//~~~~~~~
+
+
+template <uint8_t t_width>
+void ConstructText(const std::string& t_file, Config& t_config) {
+  static_assert(t_width == 0 or t_width == 8,
+                "constructText: width must be `0` for integer alphabet and `8` for byte alphabet");
+
+  using TText = sdsl::int_vector<t_width>;
+
+  const auto KEY_TEXT = sdsl::key_text_trait<t_width>::KEY_TEXT;
+
+  TText text;
+  auto num_bytes = t_config.data_width / 8;
+  load_vector_from_file(text, t_file, num_bytes);
+
+  auto it_zero = std::find(text.begin(), text.end(), static_cast<uint64_t>(0));
+  if (it_zero == text.end()) {
+    sdsl::append_zero_symbol(text);
+  } else if (it_zero != text.end() - 1) {
+    throw std::logic_error(std::string("Error: File \"") + t_file + "\" contains inner zero symbol.");
+  }
+
+  sdsl::store_to_cache(text, KEY_TEXT, t_config);
+}
 
 //~~~~~~~
 
@@ -48,7 +76,7 @@ void ConstructDocBorder(II begin, II end, DocBorder& doc_border, const DocDelim&
 //~~~~~~~
 
 
-template <uint8_t t_width = 8, typename DocBorder, typename DocDelim>
+template <uint8_t t_width, typename DocBorder, typename DocDelim>
 void ConstructDocBorder(const std::string& data_file, DocBorder& doc_border, const DocDelim& doc_delim) {
   sdsl::int_vector_buffer<t_width> data_buf(data_file, std::ios::in, 1024 * 1024, t_width, true);
 

@@ -3,3 +3,4 @@
 //
 
 #include "dret/doc_list_index.h"
+#include "dret/doc_list_index_brute.h"
