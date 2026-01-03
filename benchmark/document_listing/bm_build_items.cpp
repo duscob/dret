@@ -14,6 +14,7 @@
 #include <sdsl/io.hpp>
 
 #include "dret/construct_base.h"
+#include "dret/doc_list_index_brute.h"
 #include "dret/doc_list_sampled_tree.h"
 #include "dret/index_base.h"
 
@@ -131,6 +132,44 @@ void BM_BuildDocArray(benchmark::State& t_state, dret::Config t_config) {
 //~~~~~~~
 
 
+template <typename TIndex>
+void BM_ConstructBruteIdx(benchmark::State& t_state, sri::Config t_config, const std::string& t_data_path) {
+  TIndex index;
+
+  for (auto _ : t_state) {
+    sdsl::memory_monitor::start();
+    dret::construct(index, t_data_path, t_config);
+    sdsl::memory_monitor::stop();
+  }
+
+  auto bm_name = t_state.name();
+  std::string idx_name = bm_name.substr(bm_name.find('/') + 1);
+  {
+    std::ofstream ofs("construction-" + idx_name + ".html");
+    sdsl::memory_monitor::write_memory_log<sdsl::HTML_FORMAT>(ofs);
+    ofs.close();
+  }
+  {
+    std::ofstream ofs("construction-" + idx_name + ".json");
+    sdsl::memory_monitor::write_memory_log<sdsl::JSON_FORMAT>(ofs);
+    ofs.close();
+  }
+
+  SetupCommonCounters(t_state);
+  {
+    using namespace sri::conf;
+    sdsl::int_vector_buffer<> buf(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
+    t_state.counters["n"] = buf.size();
+  }
+  // {
+  //   sdsl::int_vector_buffer<> buf(sdsl::cache_file_name(sri::conf::KEY_BWT_RUN_FIRST, t_config));
+  //   t_state.counters["r"] = buf.size();
+  // }
+}
+
+//~~~~~~~
+
+
 void BM_ConstructGCDA(benchmark::State& t_state, sri::Config t_config, const std::string& t_data_path) {
   std::size_t block_size = t_state.range(0);
   std::size_t storing_factor = t_state.range(1);
@@ -184,6 +223,8 @@ int main(int argc, char** argv) {
   // benchmark::RegisterBenchmark("BuildSA", BM_BuildSA, config);
   // benchmark::RegisterBenchmark("BuildDocEndings", BM_BuildDocEndings, config);
   // benchmark::RegisterBenchmark("BuildDA", BM_BuildDocArray, config);
+
+  benchmark::RegisterBenchmark("SrIndex-Brute", BM_ConstructBruteIdx<dret::DocListIdxBrute<>>, config, data_path);
 
   benchmark::RegisterBenchmark("GCDA", BM_ConstructGCDA, config, data_path)->ArgsProduct({{512}, {4}});
 
