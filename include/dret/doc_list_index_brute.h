@@ -98,7 +98,7 @@ class GetDocBv : public IndexBaseWithExternalStorage<TStorage> {
   }
 
   uint32_t operator()(uint32_t t_position) const {
-    return doc_ends_rank_.get(t_position);
+    return get_doc_(t_position);
   }
 
  protected:
@@ -109,14 +109,16 @@ class GetDocBv : public IndexBaseWithExternalStorage<TStorage> {
     key_ = t_keys[kDocEnds].get<std::string>();
 
     this->template loadItem<TBvDocEnds>(key_, t_source, true);
-    doc_ends_rank_ = this->template loadBVRank<TBvDocEnds>(key_, t_source, true);
+    auto doc_ends_rank_cref = this->template loadBVRank<TBvDocEnds>(key_, t_source, true);
+    get_doc_ = [doc_ends_rank_cref](uint32_t t_position) {
+      return doc_ends_rank_cref.get()(t_position);
+    };
   }
 
   //~~~~~~~
 
   std::string key_;
-  // std::reference_wrapper<TBvDocEnds> doc_ends_bv_;
-  std::reference_wrapper<typename TBvDocEnds::rank_1_type> doc_ends_rank_;
+  std::function<uint32_t(uint32_t)> get_doc_;
 };
 
 //~~~~~~~
