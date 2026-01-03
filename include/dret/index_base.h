@@ -72,6 +72,10 @@ class IndexBaseWithExternalStorage {
 
   virtual size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const = 0;
 
+  TStorage& storage() {
+    return storage_;
+  }
+
  protected:
   using TSource = std::variant<std::reference_wrapper<Config>, std::reference_wrapper<std::istream>>;
 
