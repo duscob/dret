@@ -34,6 +34,8 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, typename TAlphab
   explicit DocListIdxBrute(const TStorage& t_storage)
       : IndexBaseWithExternalStorage<TStorage>(t_storage), locate_idx_(t_storage), get_doc_(t_storage) {}
 
+  DocListIdxBrute() = default;
+
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
     auto occurrences = locate_idx_.Locate(t_pattern);
 
@@ -83,7 +85,7 @@ class GetDocBv : public IndexBaseWithExternalStorage<TStorage> {
 
   GetDocBv(const TStorage& t_storage) : IndexBaseWithExternalStorage<TStorage>(t_storage) {}
 
-  GetDocBv() : IndexBaseWithExternalStorage<TStorage>() {}
+  GetDocBv() = default;
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
