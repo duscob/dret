@@ -68,10 +68,13 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, typename TAlphab
 //~~~~~~~
 
 
-template <typename TStorage, typename TLocateIdx, typename TGetDoc>
-void constructItems(DocListIdxBrute<TStorage, TLocateIdx, TGetDoc>& t_index, Config& t_config) {
-  construct(TLocateIdx{}, t_config);
-  construct(TGetDoc{}, t_config);
+template <typename TStorage, typename TAlphabet, typename TLocateIdx, typename TGetDoc>
+void constructItems(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_index, Config& t_config) {
+  TLocateIdx locate_index(t_index.storage());
+  construct(locate_index, t_config.data_path, t_config);
+
+  TGetDoc get_doc(t_index.storage());
+  construct(get_doc, t_config.data_path, t_config);
 }
 
 //~~~~~~~
