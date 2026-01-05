@@ -69,6 +69,15 @@ add_compile_definitions(DRET_DEFAULT_ALPHABET_WIDTH=${DRET_DEFAULT_ALPHABET_WIDT
 include(internal_utils)
 
 include(ConfigSDSL)
+include(ConfigGrammar)
+include(ConfigSRIndex)
+set(LIBS ${SDSL_LIB} grammar sr-index nlohmann_json::nlohmann_json)
+target_link_libraries(dret INTERFACE ${LIBS})
+
+include(ConfigRePair)
+set(REPAIR_EXE "\"${${ExternalProjectName}_SOURCE_DIR}/bal/irepair\"")
+target_compile_definitions(dret INTERFACE REPAIR_EXE=${REPAIR_EXE})
+
 
 # TODO use find_package(gflags) instead find_library(...)
 find_library(GFLAGS_LIB gflags)
@@ -77,52 +86,40 @@ if (NOT GFLAGS_LIB)
     set(GFLAGS_LIB gflags::gflags)
 endif ()
 
-
-#find_library(GRAMMAR_LIB grammar REQUIRED)
-include(ConfigGrammar)
-set(GRAMMAR_LIB grammar)
-set(LIBS ${SDSL_LIB} ${GRAMMAR_LIB})
-
-#include(ConfigNJSON)
-include(ConfigSRIndex)
-
-include(ConfigRePair)
-set(REPAIR_EXE "\"${${ExternalProjectName}_SOURCE_DIR}/bal/irepair\"")
-target_compile_definitions(dret INTERFACE REPAIR_EXE=${REPAIR_EXE})
-
 if (dret_build_tests)
     enable_testing()
 
-    include(ConfigGTest)
+    list(APPEND test_LIBS dret ${LIBS})
 
-    cxx_test_with_flags_and_args(doc_freq_index_brute_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_freq_index_brute_test.cpp)
-    cxx_test_with_flags_and_args(tf_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/tf_test.cpp)
-    cxx_test_with_flags_and_args(algorithm_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/algorithm_test.cpp)
-    cxx_test_with_flags_and_args(doc_list_test "" "gtest;gtest_main;gmock;dret;${LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_test.cpp)
+    include(ConfigGTest)
+    list(APPEND test_LIBS gtest gtest_main gmock)
+
+    cxx_test_with_flags_and_args(doc_freq_index_brute_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_freq_index_brute_test.cpp)
+    cxx_test_with_flags_and_args(tf_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/tf_test.cpp)
+    cxx_test_with_flags_and_args(algorithm_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/algorithm_test.cpp)
+    cxx_test_with_flags_and_args(doc_list_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_test.cpp)
 endif ()
+
 
 find_package(Threads)
 
 if (dret_build_tools)
     include(ConfigRIndexLib)
 
-    cxx_executable_with_flags(build_items "" "${SDSL_LIBS};${GFLAGS_LIB};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items.cpp)
-    cxx_executable_with_flags(build_items_sada "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_sada.cpp tool/definitions.h)
-    cxx_executable_with_flags(build_items_ilcp "" "${SDSL_LIBS};${GFLAGS_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_ilcp.cpp tool/definitions.h)
-    cxx_executable_with_flags(build_items_gcda "" "${SDSL_LIBS};${GFLAGS_LIB};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" tool/build_items_gcda.cpp tool/definitions.h)
-    #    cxx_executable_with_flags(build_dslp "" "${SDSL_LIBS};${GFLAGS_LIB};${GRAMMAR_LIB}" tool/build_dslp.cpp)
+    list(APPEND tool_LIBS dret ${LIBS} ${GFLAGS_LIB})
+
+    find_package(Threads)
+    list(APPEND tool_LIBS ${CMAKE_THREAD_LIBS_INIT})
+
+    cxx_executable_with_flags(build_items "" "${tool_LIBS}" tool/build_items.cpp)
+    cxx_executable_with_flags(build_items_sada "" "${tool_LIBS}" tool/build_items_sada.cpp tool/definitions.h)
+    cxx_executable_with_flags(build_items_ilcp "" "${tool_LIBS}" tool/build_items_ilcp.cpp tool/definitions.h)
+    cxx_executable_with_flags(build_items_gcda "" "${tool_LIBS}" tool/build_items_gcda.cpp tool/definitions.h)
+    #    cxx_executable_with_flags(build_dslp "" "${tool_LIBS}" tool/build_dslp.cpp)
 endif ()
 
 
 if (dret_build_benchmarks)
-    if (NOT TARGET benchmark)
-        include(ConfigGBenchmark)
-    endif ()
-
-    #    cxx_executable_with_flags(query_doc_freq_index_bm "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/query_doc_freq_index_bm.cpp)
-    cxx_executable_with_flags(bm_query_doc_freq_index "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/bm_query_doc_freq_index.cpp)
-
-    cxx_executable_with_flags(bm_build_items "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/document_listing/bm_build_items.cpp)
-    cxx_executable_with_flags(bm_query_doc_list "" "${GFLAGS_LIB};benchmark;dret;${LIBS};${GRAMMAR_LIB};${CMAKE_THREAD_LIBS_INIT}" benchmark/document_listing/bm_query_doc_list.cpp)
+    add_subdirectory(benchmark)
 endif ()
 
