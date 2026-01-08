@@ -25,11 +25,12 @@
 #include <doc_freq_index_rmq.h>
 #include <doc_freq_index_gcda.h>
 
-#include "../tool/definitions.h"
+#include "../../tool/definitions.h"
 
-#include "csa_wrapper.h"
-#include "sa_wrapper.h"
+#include "../csa_wrapper.h"
+
 #include "doc_isas_wrapper.h"
+#include "sa_wrapper.h"
 
 const char *KEY_GRM_SPAN_SUMS = "grm_sums";
 const char *KEY_GRM_SAMPLE_VALUES = "grm_sample_val";

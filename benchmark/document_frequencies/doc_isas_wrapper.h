@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include <grammar/differential_slp.h>
+
 class DocISAsWrapper {
  public:
   virtual std::pair<std::size_t, std::size_t> operator()(std::size_t _doc,
