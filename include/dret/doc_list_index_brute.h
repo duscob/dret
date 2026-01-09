@@ -31,8 +31,7 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, typename TAlphab
   using typename Base::TDocId;
   using typename Base::TPattern;
 
-  explicit DocListIdxBrute(const TStorage& t_storage)
-      : IndexBaseWithExternalStorage<TStorage>(t_storage), locate_idx_(t_storage), get_doc_(t_storage) {}
+  explicit DocListIdxBrute(const TStorage& t_storage) : Base(t_storage), locate_idx_(t_storage), get_doc_(t_storage) {}
 
   DocListIdxBrute() = default;
 
