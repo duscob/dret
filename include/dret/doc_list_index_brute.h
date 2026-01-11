@@ -22,8 +22,8 @@ class GetDocBv;
 
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
-          typename TLocateIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 8>,
-          typename TGetDoc = GetDocBv<TStorage>>
+          typename TLocateIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
+          typename TGetDoc = GetDocBv<TStorage, sdsl::sd_vector<>, TAlphabet::int_width>>
 class DocListIdxBrute : public DocListIndexExtStorage<TStorage, typename TAlphabet::string_type> {
  public:
   using Base = DocListIndexExtStorage<TStorage, typename TAlphabet::string_type>;
@@ -68,12 +68,19 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, typename TAlphab
 
 
 template <typename TStorage, typename TAlphabet, typename TLocateIdx, typename TGetDoc>
-void constructItems(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_index, Config& t_config) {
+void construct(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_index, Config& t_config) {
+  if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
+    auto event = sdsl::memory_monitor::event("Text");
+    ConstructText<TAlphabet::int_width>(t_config);
+  }
+
   TLocateIdx locate_index(t_index.storage());
   construct(locate_index, t_config.data_path, t_config);
 
   TGetDoc get_doc(t_index.storage());
-  construct(get_doc, t_config.data_path, t_config);
+  construct(get_doc, t_config);
+
+  t_index.load(t_config);
 }
 
 //~~~~~~~
@@ -127,8 +134,8 @@ class GetDocBv : public IndexBaseWithExternalStorage<TStorage> {
 
 
 template <typename TStorage, typename TBvDocEnds, uint8_t t_width>
-void construct(GetDocBv<TStorage, TBvDocEnds, t_width>& t_index, const std::string& t_data_path, Config& t_config) {
-  if (!cache_file_exists(sdsl::key_text_trait<t_width>::KEY_TEXT, t_config)) {
+void construct(GetDocBv<TStorage, TBvDocEnds, t_width>& t_index, Config& t_config) {
+  if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
     auto event = sdsl::memory_monitor::event("Text");
     ConstructText<t_width>(t_config);
   }
