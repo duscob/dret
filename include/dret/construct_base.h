@@ -31,26 +31,47 @@ const std::string KEY_DA_RAW = KEY_DA + "_raw";
 
 
 template <uint8_t t_width>
-void ConstructText(const std::string& t_file, Config& t_config) {
+void ConstructText(Config& t_config) {
   static_assert(t_width == 0 or t_width == 8,
                 "constructText: width must be `0` for integer alphabet and `8` for byte alphabet");
-
-  using TText = sdsl::int_vector<t_width>;
-
-  const auto KEY_TEXT = sdsl::key_text_trait<t_width>::KEY_TEXT;
-
-  TText text;
+  sdsl::int_vector<t_width> text;
   auto num_bytes = t_config.data_width / 8;
-  load_vector_from_file(text, t_file, num_bytes);
+  load_vector_from_file(text, t_config.data_path, num_bytes);
 
-  auto it_zero = std::find(text.begin(), text.end(), static_cast<uint64_t>(0));
-  if (it_zero == text.end()) {
-    sdsl::append_zero_symbol(text);
-  } else if (it_zero != text.end() - 1) {
-    throw std::logic_error(std::string("Error: File \"") + t_file + "\" contains inner zero symbol.");
+  if (t_config.data_delim != 0 && std::find(text.begin(), text.end(), 0) != text.end()) {
+    throw std::logic_error(std::string("Data file `") + t_config.data_path.string() + "` contains inner zero symbol.");
   }
 
-  sdsl::store_to_cache(text, KEY_TEXT, t_config);
+  if (t_config.data_delim != 1) {
+    if (std::find(text.begin(), text.end(), 1) != text.end()) {
+      throw std::logic_error(std::string("Data file `") + t_config.data_path.string()
+                             + "` contains document delimiter used internally.");
+    }
+
+    std::replace(text.begin(), text.end(), t_config.data_delim, static_cast<uint64_t>(1u));
+  }
+
+  if (auto last = text.end() - 1; *last == 1) {
+    // Data ends with a document delimiter, but the data end symbol (zero) is missing
+    text.resize(text.size() + 1);
+    text[text.size() - 1] = 0;
+  } else {
+    if (*last == 0) {
+      if (*(last - 1) != 1) {
+        // Data ends with the data end symbol (zero), but the previous document delimiter is missing
+        text.resize(text.size() + 1);
+        text[text.size() - 2] = 1;
+        text[text.size() - 1] = 0;
+      }
+    } else {
+      // A document delimiter and the data end symbol (zero) are missing
+      text.resize(text.size() + 2);
+      text[text.size() - 2] = 1;
+      text[text.size() - 1] = 0;
+    }
+  }
+
+  sdsl::store_to_cache(text, t_config.keys[conf::kText].get<std::string>(), t_config);
 }
 
 //~~~~~~~

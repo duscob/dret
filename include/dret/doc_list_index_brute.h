@@ -130,13 +130,15 @@ template <typename TStorage, typename TBvDocEnds, uint8_t t_width>
 void construct(GetDocBv<TStorage, TBvDocEnds, t_width>& t_index, const std::string& t_data_path, Config& t_config) {
   if (!cache_file_exists(sdsl::key_text_trait<t_width>::KEY_TEXT, t_config)) {
     auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<t_width>(t_config.data_path, t_config);
+    ConstructText<t_width>(t_config);
   }
 
   if (const auto key = t_config.keys[conf::kDocEnds].get<std::string>(); !cache_file_exists(key, t_config)) {
     auto event = sdsl::memory_monitor::event("DocEnds");
     ConstructDocEnd<t_width, TBvDocEnds>(t_config);
   }
+
+  t_index.load(t_config);
 }
 
 
