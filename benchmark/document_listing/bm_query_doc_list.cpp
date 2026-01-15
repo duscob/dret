@@ -12,11 +12,24 @@
 
 #include <sdsl/config.hpp>
 
+#include "../bm_query.h"
+#include "../bm_query_set.h"
+
 #include "factory.h"
 
 DEFINE_string(patterns, "", "Patterns file. (MANDATORY)");
 DEFINE_string(data_dir, "./", "Data directory.");
 DEFINE_string(data_name, "data", "Data file basename.");
+DEFINE_int32(data_width, 8, "Data width in bits: 8, 16, 32 or 64.");
+DEFINE_int32(pattern_delim, '\n', "Pattern delimiter.");
+
+DEFINE_int32(min_s, 4, "Minimum sampling parameter s.");
+DEFINE_int32(max_s, 128, "Maximum sampling parameter s.");
+
+DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
+DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");
+DEFINE_double(min_time, 0, "Minimum time (seconds) for the locate query micro benchmark.");
+
 DEFINE_bool(print_result, false, "Execute benchmark that print results per index.");
 
 //~~~~~~~
@@ -180,6 +193,8 @@ int main(int argc, char* argv[]) {
     }
     pattern_file.close();
   }
+  auto patterns_encoded =
+      ReadPatterns<dret::Alphabet<>::string_type>(FLAGS_patterns, FLAGS_data_width / 8, FLAGS_pattern_delim);
 
   // Benchmarks configs
   dret::Config config(FLAGS_data_name, FLAGS_data_dir, sri::SDSL_LIBDIVSUFSORT, true);
@@ -222,6 +237,34 @@ int main(int argc, char* argv[]) {
           print_bm_name.c_str(), BM_PrintQueryDocList, idx_config.name, &factory, idx_config, patterns);
     }
   }
+
+  std::vector<IndexConfig<Factory<>::Config>> idx_configs = {
+      {"Brute-RIndex", Factory<>::Config{Factory<>::IndexEnum::BRUTE_R_INDEX}, false},
+  };
+
+  QueryBenchmarkConfig query_bm_config{FLAGS_report_stats, FLAGS_reps, FLAGS_min_time, FLAGS_print_result};
+
+  auto factory_result_vector_int = [&factory](const auto& tt_config) {
+    auto idx = factory.MakeIndex(tt_config);
+
+    auto query = [idx = idx.idx](const auto& tt_pattern) {
+      DocListResultVector results;
+      idx->Search(tt_pattern, std::ref(results));
+      results();
+      return results;
+    };
+
+    return std::make_pair(query, idx.size);
+  };
+
+  RegisterAllQueryBenchmarks(factory_result_vector_int,
+                             factory.SequenceSize(),
+                             idx_configs,
+                             patterns_encoded,
+                             query_bm_config,
+                             FLAGS_min_s,
+                             FLAGS_max_s,
+                             2);
 
   benchmark::Initialize(&argc, argv);
   benchmark::RunSpecifiedBenchmarks();
