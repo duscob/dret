@@ -119,16 +119,24 @@ void ConstructDocBorder(const std::string& data_file, DocBorder& doc_border, con
 
 
 template <uint8_t t_width = 8, typename BitVector = sdsl::sd_vector<>>
-void ConstructDocEnd(sdsl::cache_config& t_config, uint8_t kDocDelimiter = 2) {
+void ConstructDocEnd(Config& t_config, uint8_t kDocDelimiter = 1) {
   static_assert(t_width == 0 or t_width == 8,
                 "constructDocEnd: width must be `0` for integer alphabet and `8` for byte alphabet");
 
   sdsl::bit_vector tmp_doc_endings;
-  ConstructDocBorder<t_width>(
-      sdsl::cache_file_name(sdsl::key_text_trait<t_width>::KEY_TEXT, t_config), tmp_doc_endings, kDocDelimiter);
-  BitVector doc_endings(tmp_doc_endings);
+  auto key_text = t_config.keys[conf::kText].get<std::string>();
+  ConstructDocBorder<t_width>(sdsl::cache_file_name(key_text, t_config), tmp_doc_endings, kDocDelimiter);
 
-  sdsl::store_to_cache(doc_endings, conf::KEY_DOC_END, t_config);
+  BitVector doc_endings(tmp_doc_endings);
+  auto key_doc_end = t_config.keys[conf::kDocEnds].get<std::string>();
+  sdsl::store_to_cache(doc_endings, key_doc_end, t_config);
+  sdsl::store_to_cache(doc_endings, key_doc_end, t_config, true);
+
+  typename BitVector::rank_1_type doc_endings_rank(&doc_endings);
+  sdsl::store_to_cache(doc_endings_rank, key_doc_end, t_config, true);
+
+  typename BitVector::select_1_type doc_endings_select(&doc_endings);
+  sdsl::store_to_cache(doc_endings_select, key_doc_end, t_config, true);
 }
 
 //~~~~~~~
