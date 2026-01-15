@@ -44,6 +44,10 @@ class DocListResultVector : public DocListResult {
     result_.erase(unique(result_.begin(), result_.end()), result_.end());
   }
 
+  auto size() const {
+    return result_.size();
+  }
+
   void Print(std::ostream& t_os) const override {
     for (const auto& item : result_) {
       t_os << item << '\n';
@@ -53,6 +57,10 @@ class DocListResultVector : public DocListResult {
  private:
   std::vector<std::size_t> result_;
 };
+
+void PrintResults(std::ostream& t_os, const DocListResultVector& t_result) {
+  t_result.Print(t_os);
+}
 
 class DocListResultBitvector : public DocListResult {
  public:
