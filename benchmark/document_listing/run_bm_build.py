@@ -16,7 +16,7 @@ def main():
     parser.add_argument("-c", "--cmd_path", default="./build", help="Benchmarks command path")
     parser.add_argument("-o", "--output_path", default="./", help="Output path")
     parser.add_argument("-g", "--group", action="store_true", help="Group of collections")
-    parser.add_argument("-e", "--end_of_text", default="\\x03", help="End of text char")
+    parser.add_argument("-e", "--end_of_text", default="\\x01", help="End of text char")
     parser.add_argument("collection", help="Collection path")
     args = parser.parse_args()
 
