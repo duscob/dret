@@ -20,8 +20,9 @@
 
 
 DEFINE_string(data, "", "Data file. (MANDATORY)");
+DEFINE_int32(data_width, 8, "Data width in bits: 8, 16, 32 or 64");
 DEFINE_string(sa_algo, "SDSL_SE_SAIS", "Suffix Array Algorithm: SDSL_SE_SAIS, SDSL_LIBDIVSUFSORT, BIG_BWT");
-DEFINE_int32(doc_delim, 3, "Document delimiter.");
+DEFINE_int32(doc_delim, 0, "Document delimiter.");
 
 //~~~~~~~
 
@@ -133,12 +134,12 @@ void BM_BuildDocArray(benchmark::State& t_state, dret::Config t_config) {
 
 
 template <typename TIndex>
-void BM_ConstructBruteIdx(benchmark::State& t_state, sri::Config t_config, const std::string& t_data_path) {
+void BM_ConstructBruteIdx(benchmark::State& t_state, dret::Config t_config, const std::string& t_data_path) {
   TIndex index;
 
   for (auto _ : t_state) {
     sdsl::memory_monitor::start();
-    dret::construct(index, t_data_path, t_config);
+    construct(index, t_config);
     sdsl::memory_monitor::stop();
   }
 
@@ -217,7 +218,12 @@ int main(int argc, char** argv) {
 
   std::string data_path = FLAGS_data;
 
-  dret::Config config(data_path, std::filesystem::current_path(), sri::toSAAlgo(FLAGS_sa_algo));
+  dret::Config config(data_path,
+                      std::filesystem::current_path(),
+                      sri::toSAAlgo(FLAGS_sa_algo),
+                      false,
+                      FLAGS_data_width,
+                      FLAGS_doc_delim);
 
   // benchmark::RegisterBenchmark("BuildText", BM_BuildText, config, data_path);
   // benchmark::RegisterBenchmark("BuildSA", BM_BuildSA, config);
