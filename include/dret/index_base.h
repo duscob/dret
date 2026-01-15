@@ -16,17 +16,6 @@
 
 namespace dret {
 
-
-template <typename TIndex>
-void construct(TIndex& t_index, const std::string& t_data_path, Config& t_config) {
-  constructItems(t_index, t_config);
-
-  // t_index.load(t_config);
-}
-
-//~~~~~~~
-
-
 template <typename TItem>
 const TItem* get(const GenericStorage& t_storage, const std::string& t_key) {
   auto it = t_storage.find(t_key);
