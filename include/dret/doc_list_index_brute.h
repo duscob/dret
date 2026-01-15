@@ -140,7 +140,7 @@ void construct(GetDocBv<TStorage, TBvDocEnds, t_width>& t_index, Config& t_confi
     ConstructText<t_width>(t_config);
   }
 
-  if (const auto key = t_config.keys[conf::kDocEnds].get<std::string>(); !cache_file_exists(key, t_config)) {
+  if (!sdsl::cache_file_exists<TBvDocEnds>(t_config.keys[conf::kDocEnds].get<std::string>(), t_config)) {
     auto event = sdsl::memory_monitor::event("DocEnds");
     ConstructDocEnd<t_width, TBvDocEnds>(t_config);
   }
