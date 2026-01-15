@@ -11,12 +11,16 @@
 #include <sdsl/hyb_vector.hpp>
 #include <sdsl/io.hpp>
 
-#include <sr-index/sr_index.h>
+#include "sr-index/r_index.h"
+#include "sr-index/sr_idx_generic.h"
+#include "sr-index/sr_index.h"
 
 #include "../tool/definitions.h"
 
 #include "dret/config.h"
 #include "dret/doc_list_index.h"
+#include "dret/doc_list_index_brute.h"
+
 
 using ExternalGenericStorage = std::reference_wrapper<sri::GenericStorage>;
 
@@ -30,6 +34,11 @@ class Factory {
 
   struct Config {
     IndexEnum index_t;
+    std::size_t sampling_size;
+
+    bool operator<(const Config& t_c) const {
+      return index_t < t_c.index_t || (index_t == t_c.index_t && sampling_size < t_c.sampling_size);
+    }
   };
 
   explicit Factory(dret::Config t_config, uint32_t t_block_size = 512, float t_storing_factor = 4)
@@ -61,6 +70,47 @@ class Factory {
   [[nodiscard]] auto NDocs() const {
     return n_doc_;
   }
+
+  struct Index {
+    std::shared_ptr<dret::DocListIndex<>> idx;
+    std::size_t size = 0;
+  };
+
+  Index MakeIndex(const Config& t_config) {
+    auto it = indexes_.find(t_config);
+    if (it != indexes_.end()) {
+      return it->second;
+    }
+
+    Index index;
+    switch (t_config.index_t) {
+      case IndexEnum::BRUTE_R_INDEX: {
+        auto idx = std::make_shared<dret::DocListIdxBrute<ExternalGenericStorage,
+                                                          dret::Alphabet<>,
+                                                          sri::RIndex<ExternalGenericStorage, dret::Alphabet<>>>>(
+            std::ref(storage_));
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*r_index_) + doc_endings_rank_.size_in_bytes};
+        break;
+      }
+
+      case IndexEnum::BRUTE_SR_INDEX: {
+        auto idx = std::make_shared<dret::DocListIdxBrute<
+            ExternalGenericStorage,
+            dret::Alphabet<>,
+            sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 8>>>(std::ref(storage_));
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*r_index_) + doc_endings_rank_.size_in_bytes};
+      }
+    }
+
+    if (index.idx) {
+      indexes_[t_config] = index;
+    }
+
+    return index;
+  }
+
 
  private:
   template <typename T>
@@ -134,6 +184,8 @@ class Factory {
 
   sri::GenericStorage storage_;
 
+  std::map<Config, Index> indexes_;
+
   std::shared_ptr<sri::RIndex<ExternalGenericStorage>> r_index_;
   std::shared_ptr<sri::SrIndexValidArea<ExternalGenericStorage>> sr_index_;
 
@@ -145,5 +197,4 @@ class Factory {
 
   // Documents
   std::size_t n_doc_;
-
 };
