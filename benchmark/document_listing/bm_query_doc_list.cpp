@@ -19,23 +19,8 @@ DEFINE_string(data_dir, "./", "Data directory.");
 DEFINE_string(data_name, "data", "Data file basename.");
 DEFINE_bool(print_result, false, "Execute benchmark that print results per index.");
 
-static void SetupDefaultCounters(benchmark::State& t_state) {
-  t_state.counters["Size(bytes)"] = 0;
-  t_state.counters["Bits_x_Symbol"] = 0;
-  t_state.counters["Patterns"] = 0;
-  t_state.counters["Time_x_Pattern"] = 0;
-}
+//~~~~~~~
 
-// Benchmark Warm-up
-static void BM_WarmUp(benchmark::State& t_state) {
-  for (auto _ : t_state) {
-    std::vector<int> empty_vector(1000000, 0);
-  }
-
-  SetupDefaultCounters(t_state);
-}
-
-BENCHMARK(BM_WarmUp);
 
 class DocListResult {
  public:
@@ -189,7 +174,7 @@ int main(int argc, char* argv[]) {
   }
 
   // Benchmarks configs
-  sri::Config config(FLAGS_data_name, FLAGS_data_dir, sri::SDSL_LIBDIVSUFSORT, true);
+  dret::Config config(FLAGS_data_name, FLAGS_data_dir, sri::SDSL_LIBDIVSUFSORT, true);
 
   Factory<> factory(config);
 
