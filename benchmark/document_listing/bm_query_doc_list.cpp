@@ -50,7 +50,9 @@ class DocListResult {
 
 class DocListResultVector : public DocListResult {
  public:
-  void operator()(std::size_t t_doc) override { result_.emplace_back(t_doc); }
+  void operator()(std::size_t t_doc) override {
+    result_.emplace_back(t_doc);
+  }
 
   void operator()() override {
     sort(result_.begin(), result_.end());
@@ -71,7 +73,9 @@ class DocListResultBitvector : public DocListResult {
  public:
   explicit DocListResultBitvector(std::size_t t_size) : result_(t_size) {}
 
-  void operator()(std::size_t t_doc) override { result_[t_doc] = true; }
+  void operator()(std::size_t t_doc) override {
+    result_[t_doc] = true;
+  }
 
   void Print(std::ostream& t_os) const override {
     for (int i = 0; i < result_.size(); ++i) {
@@ -88,7 +92,9 @@ class DocListResultVectorBool : public DocListResult {
  public:
   explicit DocListResultVectorBool(std::size_t t_size) : result_(t_size) {}
 
-  void operator()(std::size_t t_doc) override { result_[t_doc] = true; }
+  void operator()(std::size_t t_doc) override {
+    result_[t_doc] = true;
+  }
 
   void Print(std::ostream& t_os) const override {
     for (int i = 0; i < result_.size(); ++i) {
@@ -193,9 +199,15 @@ int main(int argc, char* argv[]) {
     std::function<DocListResult*()> create_result;
   };
 
-  auto create_result_vector = []() { return new DocListResultVector(); };
-  auto create_result_bitvector = [n_docs = factory.NDocs()]() { return new DocListResultBitvector(n_docs); };
-  auto create_result_vector_bool = [n_docs = factory.NDocs()]() { return new DocListResultVectorBool(n_docs); };
+  auto create_result_vector = []() {
+    return new DocListResultVector();
+  };
+  auto create_result_bitvector = [n_docs = factory.NDocs()]() {
+    return new DocListResultBitvector(n_docs);
+  };
+  auto create_result_vector_bool = [n_docs = factory.NDocs()]() {
+    return new DocListResultVectorBool(n_docs);
+  };
 
   std::vector<Config> index_configs = {
       {"Brute-R-Index-V", Factory<>::Config{Factory<>::IndexEnum::BRUTE_R_INDEX}, create_result_vector},
@@ -213,8 +225,8 @@ int main(int argc, char* argv[]) {
 
     if (FLAGS_print_result) {
       auto print_bm_name = print_bm_prefix + idx_config.name;
-      benchmark::RegisterBenchmark(print_bm_name.c_str(), BM_PrintQueryDocList, idx_config.name, &factory, idx_config,
-                                   patterns);
+      benchmark::RegisterBenchmark(
+          print_bm_name.c_str(), BM_PrintQueryDocList, idx_config.name, &factory, idx_config, patterns);
     }
   }
 
