@@ -15,6 +15,7 @@
 
 #include "../tool/definitions.h"
 
+#include "dret/config.h"
 #include "dret/doc_list_index.h"
 
 using ExternalGenericStorage = std::reference_wrapper<sri::GenericStorage>;
@@ -31,7 +32,7 @@ class Factory {
     IndexEnum index_t;
   };
 
-  explicit Factory(sri::Config t_config, uint32_t t_block_size = 512, float t_storing_factor = 4)
+  explicit Factory(dret::Config t_config, uint32_t t_block_size = 512, float t_storing_factor = 4)
       : config_{std::move(t_config)} {
     sdsl::int_vector_buffer<t_width> buf(sdsl::cache_file_name(sdsl::key_bwt_trait<t_width>::KEY_BWT, config_));
     seq_size_ = buf.size();
@@ -129,7 +130,7 @@ class Factory {
     return std::make_pair(index, index_size);
   }
 
-  sri::Config config_;
+  dret::Config config_;
 
   std::size_t seq_size_;
 
