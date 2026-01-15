@@ -50,9 +50,7 @@ class Factory {
     n_doc_ = doc_endings_rank_.item(doc_endings_.item.size());
   }
 
-  std::pair<dret::DocListIndex*, std::size_t> Make(const Config& t_config) { return MakeInner(t_config); }
-
-  std::pair<dret::DocListIndex<dret::Alphabet<>::string_type>*, std::size_t> Make(const Config& t_config) {
+  std::pair<dret::DocListIndex<>*, std::size_t> Make(const Config& t_config) {
     return MakeInner(t_config);
   }
 
@@ -101,8 +99,8 @@ class Factory {
     t_item.size_in_bytes = sdsl::size_in_bytes(t_item.item);
   }
 
-  std::pair<dret::DocListIndex<dret::Alphabet<>::string_type>*, std::size_t> MakeInner(const Config& t_config) {
-    dret::DocListIndex<dret::Alphabet<>::string_type>* index = nullptr;
+  std::pair<dret::DocListIndex<>*, std::size_t> MakeInner(const Config& t_config) {
+    dret::DocListIndex<>* index = nullptr;
     std::size_t index_size = 0;
 
     switch (t_config.index_t) {
