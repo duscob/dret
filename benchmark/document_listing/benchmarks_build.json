@@ -1,13 +1,13 @@
 {
   "sr-index": {
-    "subdir": "idx",
-    "cmd": "sr-index-build/benchmark/sr-index/bm_construct_ri --min_s=8 --max_s=32",
+    "subdir": "dret",
+    "cmd": "_deps/sr-index-build/benchmark/sr-index/bm_construct_ri --min_s=8 --max_s=32",
     "benchmark_args": true,
     "args": "--data=data"
   },
   "common": {
-    "subdir": "idx",
-    "cmd": "bm_build_items",
+    "subdir": "dret",
+    "cmd": "benchmark/bm_build_items",
     "benchmark_args": true,
     "args": "--data=data"
   }
