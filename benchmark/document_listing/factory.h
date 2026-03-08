@@ -95,10 +95,10 @@ class Factory {
       }
 
       case IndexEnum::BRUTE_SR_INDEX: {
-        auto idx = std::make_shared<dret::DocListIdxBrute<
-            ExternalGenericStorage,
-            dret::Alphabet<>,
-            sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 8>>>(std::ref(storage_));
+        auto idx = std::make_shared<dret::DocListIdxBrute<ExternalGenericStorage,
+                                                          dret::Alphabet<>,
+                                                          sri::SrIndexValidArea<ExternalGenericStorage>>>(
+            std::ref(storage_), sri::SrIndexValidArea<ExternalGenericStorage>(storage_, t_config.sampling_size));
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*r_index_) + doc_endings_rank_.size_in_bytes};
       }
