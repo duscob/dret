@@ -1,6 +1,6 @@
 {
   "doc-list": {
     "subdir": "dret",
-    "cmd": "benchmark/bm_query_doc_list --max_s=16"
+    "cmd": "benchmark/bm_query_doc_list --min_s=8 --max_s=16"
   }
 }

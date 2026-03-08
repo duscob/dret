@@ -240,6 +240,7 @@ int main(int argc, char* argv[]) {
 
   std::vector<IndexConfig<Factory<>::Config>> idx_configs = {
       {"Brute-RIndex", Factory<>::Config{Factory<>::IndexEnum::BRUTE_R_INDEX}, false},
+      {"Brute-SRIndex", Factory<>::Config{Factory<>::IndexEnum::BRUTE_SR_INDEX}, true},
   };
 
   QueryBenchmarkConfig query_bm_config{FLAGS_report_stats, FLAGS_reps, FLAGS_min_time, FLAGS_print_result};
