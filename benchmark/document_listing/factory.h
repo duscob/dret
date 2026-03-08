@@ -85,12 +85,11 @@ class Factory {
     Index index;
     switch (t_config.index_t) {
       case IndexEnum::BRUTE_R_INDEX: {
-        auto idx = std::make_shared<dret::DocListIdxBrute<ExternalGenericStorage,
-                                                          dret::Alphabet<>,
-                                                          sri::RIndex<ExternalGenericStorage, dret::Alphabet<>>>>(
+        auto idx = std::make_shared<
+            dret::DocListIdxBrute<ExternalGenericStorage, dret::Alphabet<>, sri::RIndex<ExternalGenericStorage>>>(
             std::ref(storage_));
         idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*r_index_) + doc_endings_rank_.size_in_bytes};
+        index = {idx, sdsl::size_in_bytes(*idx)};
         break;
       }
 
@@ -100,7 +99,7 @@ class Factory {
                                                           sri::SrIndexValidArea<ExternalGenericStorage>>>(
             std::ref(storage_), sri::SrIndexValidArea<ExternalGenericStorage>(storage_, t_config.sampling_size));
         idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*r_index_) + doc_endings_rank_.size_in_bytes};
+        index = {idx, sdsl::size_in_bytes(*idx)};
       }
     }
 
