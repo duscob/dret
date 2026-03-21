@@ -51,6 +51,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_gcda.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_sada.h
         ${PROJECT_SOURCE_DIR}/include/dret/tf.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp_tools.h
         ${PROJECT_SOURCE_DIR}/include/dret/algorithm.h
         ${PROJECT_SOURCE_DIR}/include/dret/run_length_encode.h
         ${PROJECT_SOURCE_DIR}/include/dret/config.h

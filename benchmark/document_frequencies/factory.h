@@ -24,6 +24,7 @@
 #include <doc_freq_index_brute.h>
 #include <doc_freq_index_rmq.h>
 #include <doc_freq_index_gcda.h>
+#include <slp_tools.h>
 
 #include "../../tool/definitions.h"
 
