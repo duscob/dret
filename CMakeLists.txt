@@ -59,6 +59,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index_brute.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree_gcda.h
 )
 
 add_library(dret INTERFACE)
