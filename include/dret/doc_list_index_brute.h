@@ -33,8 +33,8 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, typename TAlphab
 
   explicit DocListIdxBrute(const TStorage& t_storage) : Base(t_storage), locate_idx_(t_storage), get_doc_(t_storage) {}
 
-  explicit DocListIdxBrute(const TStorage& t_storage, const TLocateIdx& t_locate)
-      : Base(t_storage), locate_idx_(t_locate), get_doc_(t_storage) {}
+  explicit DocListIdxBrute(const TStorage& t_storage, const TLocateIdx& t_locate_idx)
+      : Base(t_storage), locate_idx_(t_locate_idx), get_doc_(t_storage) {}
 
   explicit DocListIdxBrute(const TStorage& t_storage, const TLocateIdx& t_locate, const TGetDoc& t_get_doc)
       : Base(t_storage), locate_idx_(t_locate), get_doc_(t_get_doc) {}
