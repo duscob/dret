@@ -31,7 +31,7 @@ const TItem* set(GenericStorage& t_storage, const std::string& t_key, TItem&& t_
 //~~~~~~~
 
 
-template <typename TStorage = GenericStorage>
+template <typename TStorage = GenericStorage, uint8_t t_width = Alphabet<>::int_width>
 class IndexBaseWithExternalStorage {
  public:
   typedef std::size_t size_type;
@@ -53,6 +53,10 @@ class IndexBaseWithExternalStorage {
   virtual void load(std::istream& in, const JSON& t_keys) {
     TSource source(std::ref(in));
     loadInner(source, t_keys);
+  }
+
+  virtual void load(std::istream& in) {
+    load(in, createDefaultKeys<t_width>());
   }
 
   virtual size_type serialize(std::ostream& out) const {

@@ -26,8 +26,9 @@ class DocListIndex {
 //~~~~~~~
 
 
-template <typename TStorage = GenericStorage, typename TSequence = Alphabet<>::string_type>
-class DocListIndexExtStorage : public DocListIndex<TSequence>, public IndexBaseWithExternalStorage<TStorage> {
+template <typename TStorage = GenericStorage, typename TAlphabet = Alphabet<>>
+class DocListIndexExtStorage : public DocListIndex<typename TAlphabet::string_type>,
+                               public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
   DocListIndexExtStorage(const TStorage& t_storage) : IndexBaseWithExternalStorage<TStorage>(t_storage) {}
 

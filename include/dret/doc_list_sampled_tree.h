@@ -27,9 +27,9 @@ template <typename TStorage,
           typename TGetDocs,
           typename TGetDocSet,
           typename TMergeSets>
-class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, typename TAlphabet::string_type> {
+class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
  public:
-  using Base = DocListIndexExtStorage<TStorage, typename TAlphabet::string_type>;
+  using Base = DocListIndexExtStorage<TStorage, TAlphabet>;
   using typename Base::size_type;
   using typename Base::TDocId;
   using typename Base::TPattern;
