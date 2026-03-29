@@ -98,8 +98,8 @@ void ConstructDocBorder(II begin, II end, DocBorder& doc_border, const DocDelim&
 
 
 template <uint8_t t_width, typename DocBorder, typename DocDelim>
-void ConstructDocBorder(const std::string& data_file, DocBorder& doc_border, const DocDelim& doc_delim) {
-  sdsl::int_vector_buffer<t_width> data_buf(data_file, std::ios::in, 1024 * 1024, t_width, true);
+void ConstructDocBorder(const std::string& data_file, DocBorder& doc_border, const DocDelim& doc_delim, bool is_plain) {
+  sdsl::int_vector_buffer<t_width> data_buf(data_file, std::ios::in, 1024 * 1024, t_width, is_plain);
 
   DocBorder tmp_doc_border(data_buf.size(), 0);
 
@@ -125,7 +125,7 @@ void ConstructDocEnd(Config& t_config, uint8_t kDocDelimiter = 1) {
 
   sdsl::bit_vector tmp_doc_endings;
   auto key_text = t_config.keys[conf::kText].get<std::string>();
-  ConstructDocBorder<t_width>(sdsl::cache_file_name(key_text, t_config), tmp_doc_endings, kDocDelimiter);
+  ConstructDocBorder<t_width>(sdsl::cache_file_name(key_text, t_config), tmp_doc_endings, kDocDelimiter, false);
 
   BitVector doc_endings(tmp_doc_endings);
   auto key_doc_end = t_config.keys[conf::kDocEnds].get<std::string>();
