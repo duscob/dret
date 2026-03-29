@@ -4,7 +4,7 @@ include(FetchContent)
 FetchContent_Declare(
         ${ExternalProjectName}
         GIT_REPOSITORY https://github.com/duscob/sr-index.git
-        GIT_TAG main
+        GIT_TAG feature/io
         FIND_PACKAGE_ARGS
 )
 
