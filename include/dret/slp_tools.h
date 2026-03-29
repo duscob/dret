@@ -163,6 +163,7 @@ template<typename SLP>
 class ExpandSLPFunctor {
  public:
   explicit ExpandSLPFunctor(const SLP &_slp) : slp_{_slp} {}
+  ExpandSLPFunctor() = default;
 
   template<typename Report>
   void operator()(std::size_t _bp, std::size_t _ep, Report &_report) const {
