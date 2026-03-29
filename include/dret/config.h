@@ -21,13 +21,17 @@ using sri::Alphabet;
 namespace conf {
 using namespace sri::conf;
 constexpr std::string_view kDocEnds = "docEnd";
+constexpr std::string_view kDA = "da";
 }  // namespace conf
 
 template <uint8_t t_width>
 auto createDefaultKeys() {
   auto keys = sri::createDefaultKeys<t_width>();
 
-  keys.update({{conf::kDocEnds, "doc_end"}});
+  keys.update({
+      {conf::kDocEnds, "doc_end"},
+      {conf::kDA, "da"},
+  });
 
   return keys;
 }

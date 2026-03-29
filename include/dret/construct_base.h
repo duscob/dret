@@ -143,14 +143,17 @@ void ConstructDocEnd(Config& t_config, uint8_t kDocDelimiter = 1) {
 
 
 template <typename BitVector = sdsl::sd_vector<>>
-void ConstructDocArray(sdsl::cache_config& t_config) {
+void ConstructDocArray(Config& t_config) {
   sdsl::int_vector<> da;
+  auto key_da = t_config.keys[conf::kDA].get<std::string>();
 
   {
-    sdsl::int_vector_buffer<> sa_buf(sdsl::cache_file_name(sdsl::conf::KEY_SA, t_config), std::ios::in, 1024 * 1024);
+    auto key_sa = t_config.keys[conf::kSA].get<std::string>();
+    sdsl::int_vector_buffer<> sa_buf(sdsl::cache_file_name(key_sa, t_config), std::ios::in);
 
     BitVector doc_endings;
-    load_from_cache(doc_endings, conf::KEY_DOC_END, t_config);
+    auto key_doc_end = t_config.keys[conf::kDocEnds].get<std::string>();
+    load_from_cache(doc_endings, key_doc_end, t_config, true);
     typename BitVector::rank_1_type doc_endings_rank(&doc_endings);
     auto doc_cnt = doc_endings_rank(doc_endings.size());
 
@@ -160,7 +163,7 @@ void ConstructDocArray(sdsl::cache_config& t_config) {
       da[i] = doc_endings_rank(sa_buf[i]);
     }
 
-    store_to_cache(da, conf::KEY_DA, t_config);
+    sdsl::store_to_cache(da, key_da, t_config, true);
   }
 
   {
@@ -170,9 +173,10 @@ void ConstructDocArray(sdsl::cache_config& t_config) {
       da_raw.emplace_back(i);
     }
 
-    auto filepath = cache_file_name(conf::KEY_DA_RAW, t_config);
+    auto filepath = sdsl::cache_file_name<decltype(da_raw)>(key_da, t_config);
     sdsl::osfstream out(filepath, std::ios::binary | std::ios::trunc | std::ios::out);
     serialize_vector(da_raw, out);
+    sdsl::register_cache_file<decltype(da_raw)>(key_da, t_config);
   }
 }
 
