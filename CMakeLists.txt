@@ -99,7 +99,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(doc_freq_index_brute_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_freq_index_brute_test.cpp)
     cxx_test_with_flags_and_args(tf_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/tf_test.cpp)
     cxx_test_with_flags_and_args(algorithm_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/algorithm_test.cpp)
-    cxx_test_with_flags_and_args(doc_list_construct_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_construct_test.cpp)
+    cxx_test_with_flags_and_args(doc_list_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_test.cpp)
 endif ()
 
 
