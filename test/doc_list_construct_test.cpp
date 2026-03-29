@@ -3,33 +3,31 @@
 //
 
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include "dret/doc_list_index_brute.h"
+
 #include "base_test.h"
-#include "doc_list_index_brute.h"
-
-template <typename TIndex>
-class DLIndexTypedTests : public BaseConfigTests<8> {
- protected:
-  void SetUp() override {
-    data_ = std::make_tuple(String{"MINIMUM\1MINIMAL\1MINIMIZES\1"});
-
-    const auto& data = std::get<0>(data_);
-    Init(data);
-  }
-
-  std::tuple<String> data_;
-};
 
 //~~~~~~~
 
 
 template <typename TIndex>
-class DLIndexConstructTypedTests : public DLIndexTypedTests<TIndex> {};
+class DocListIndexConstructTypedTests : public BaseConfigTests<8> {
+ protected:
+  void SetUp() override {
+    Init(data_);
+  }
 
-using DLIndexes = ::testing::Types<dret::DocListIdxBrute<>>;
+  const std::string data_ = "MINIMUM\1MINIMAL\1MINIMIZES\1";
+};
 
-TYPED_TEST_SUITE(DLIndexConstructTypedTests, DLIndexes);
+using DocListIndexConstructTypes = ::testing::Types<dret::DocListIdxBrute<>>;
 
-TYPED_TEST(DLIndexConstructTypedTests, construct) {
+TYPED_TEST_SUITE(DocListIndexConstructTypedTests, DocListIndexConstructTypes);
+
+TYPED_TEST(DocListIndexConstructTypedTests, construct) {
   auto key_index = "index";
   {
     TypeParam index;
