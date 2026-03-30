@@ -89,6 +89,8 @@ class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
     merge_sets_.load(in);
   }
 
+  using Base::load;
+
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     return count_idx_.serialize(out, child, "count_idx") + compute_cover_.serialize(out, child, "compute_cover")
