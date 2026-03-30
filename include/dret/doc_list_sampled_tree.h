@@ -101,9 +101,9 @@ class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
  protected:
   TCountIdx count_idx_;
   TComputeCover compute_cover_;
-  const TGetDocs get_docs_;
-  const TGetDocSet get_doc_set_;
-  const TMergeSets merge_sets_;
+  TGetDocs get_docs_;
+  TGetDocSet get_doc_set_;
+  TMergeSets merge_sets_;
 };
 
 //~~~~~~~
