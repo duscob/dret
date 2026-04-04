@@ -88,6 +88,26 @@ class DocListIdxGCDA
 //~~~~~~~
 
 
+template <typename TStorage,
+          typename TAlphabet,
+          typename TCountIdx,
+          typename TComputeCover,
+          typename TGetDocs,
+          typename TGetDocSet,
+          typename TMergeSets>
+void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TComputeCover, TGetDocs, TGetDocSet, TMergeSets>& t_index,
+               Config& t_config) {
+  if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
+    auto event = sdsl::memory_monitor::event("Text");
+    ConstructText<TAlphabet::int_width>(t_config);
+  }
+
+  t_index.load(t_config);
+}
+
+//~~~~~~~
+
+
 template <typename TAlphabet, typename TSLP>
 class ComputeCover {
  public:
@@ -114,7 +134,6 @@ class ComputeCover {
  protected:
   TSLP slp_;
 };
-
 
 //~~~~~~~
 
