@@ -102,6 +102,9 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TComputeCover, TGe
     ConstructText<TAlphabet::int_width>(t_config);
   }
 
+  auto count_idx = t_index.count_idx;
+  construct(count_idx, t_config.data_path, t_config);
+
   t_index.load(t_config);
 }
 
