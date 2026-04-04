@@ -115,6 +115,26 @@ class ComputeCover {
   TSLP slp_;
 };
 
+
+//~~~~~~~
+
+
+template <typename TSLP>
+class GetDocs {
+ public:
+  GetDocs(const TSLP& _slp) : slp_(_slp) {}
+
+  GetDocs() = default;
+
+  template <typename Report>
+  void operator()(std::size_t _bp, std::size_t _ep, Report& _report) const {
+    ExpandSLP(slp_, _bp, _ep, _report);
+  }
+
+ private:
+  TSLP slp_;
+};
+
 }  // namespace gcda
 
 //~~~~~~~
