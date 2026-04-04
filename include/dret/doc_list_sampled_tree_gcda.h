@@ -135,6 +135,17 @@ class GetDocs {
   TSLP slp_;
 };
 
+//~~~~~~~
+
+
+template <typename TSLP, bool kExpand, typename TChunks>
+class GetDocSet : public grammar::GCChunks<TSLP, kExpand, TChunks> {
+ public:
+  using Base = grammar::GCChunks<TSLP, kExpand, TChunks>;
+
+  GetDocSet() = default;
+};
+
 }  // namespace gcda
 
 //~~~~~~~
