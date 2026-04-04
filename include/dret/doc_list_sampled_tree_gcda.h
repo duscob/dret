@@ -146,6 +146,19 @@ class GetDocSet : public grammar::GCChunks<TSLP, kExpand, TChunks> {
   GetDocSet() = default;
 };
 
+//~~~~~~~
+
+
+class MergeSetsBinaryTreeFunctor {
+ public:
+  MergeSetsBinaryTreeFunctor() = default;
+
+  template <typename TII, typename TSets, typename TResult>
+  void operator()(TII _first, TII _last, const TSets& _sets, TResult& _result) const {
+    grammar::MergeSetsBinaryTree(_first, _last, _sets, _result);
+  }
+};
+
 }  // namespace gcda
 
 //~~~~~~~
