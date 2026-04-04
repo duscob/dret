@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_sampled_tree_gcda.h"
 
 #include "base_test.h"
 
@@ -23,7 +24,7 @@ class DocListIndexConstructTypedTests : public BaseConfigTests<8> {
   const std::string data_ = "MINIMUM\1MINIMAL\1MINIMIZES\1";
 };
 
-using DocListIndexConstructTypes = ::testing::Types<dret::DocListIdxBrute<>>;
+using DocListIndexConstructTypes = ::testing::Types<dret::DocListIdxBrute<>, dret::gcda::DocListIdxGCDA<>>;
 
 TYPED_TEST_SUITE(DocListIndexConstructTypedTests, DocListIndexConstructTypes);
 
@@ -31,7 +32,7 @@ TYPED_TEST(DocListIndexConstructTypedTests, construct) {
   auto key_index = "index";
   {
     TypeParam index;
-    dret::construct(index, this->config_);
+    construct(index, this->config_);
     sdsl::store_to_cache(index, key_index, this->config_, true);
   }
 
