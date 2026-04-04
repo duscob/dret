@@ -35,7 +35,7 @@ class DocListIdxGCDA
   using typename Base::TDocId;
   using typename Base::TPattern;
 
-  explicit DocListIdxGCDA(const TStorage& t_storage) : Base(t_storage), count_idx_(t_storage) {}
+  explicit DocListIdxGCDA(const TStorage& t_storage) : Base(t_storage) {}
 
   DocListIdxGCDA(uint32_t t_block_size, float t_storing_factor)
       : block_size_(t_block_size), storing_factor_(t_storing_factor) {}
@@ -58,8 +58,6 @@ class DocListIdxGCDA
  protected:
   uint32_t block_size_ = 512;
   float storing_factor_ = 4;
-
-  TCountIdx count_idx_;
 };
 
 //~~~~~~~
