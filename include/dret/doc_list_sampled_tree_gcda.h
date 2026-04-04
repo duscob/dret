@@ -88,6 +88,33 @@ class DocListIdxGCDA
 //~~~~~~~
 
 
+template <typename TAlphabet, typename TSLP>
+class ComputeCover {
+ public:
+  explicit ComputeCover(const TSLP& _slp) : slp_(_slp) {}
+
+  ComputeCover() = default;
+
+  auto Compute(std::size_t _bp, std::size_t _ep) const {
+    std::vector<std::size_t> nodes;
+
+    auto report = [&nodes](const auto& _value) {
+      nodes.emplace_back(_value);
+    };
+
+    auto range = grammar::ComputeCoverFromBottom(slp_, _bp, _ep, report);
+
+    return std::make_pair(std::move(range), std::move(nodes));
+  }
+
+  auto operator()(std::size_t _sp, std::size_t _ep) const {
+    return Compute(_sp, _ep);
+  }
+
+ protected:
+  TSLP slp_;
+};
+
 }  // namespace gcda
 
 //~~~~~~~
