@@ -4,7 +4,12 @@
 
 #pragma once
 
+#include <sdsl/construct_sa.hpp>
+
+#include <grammar/slp_helper.h>
+
 #include "doc_list_sampled_tree.h"
+#include "slp_tools.h"
 
 namespace dret {
 
@@ -20,13 +25,33 @@ const std::string KEY_GCDA_LSLP_BASIC = "gcda_lslp_basic";
 //~~~~~~~
 
 
-template <typename TStorage,       // = GenericStorage,
-          typename TAlphabet,      // = Alphabet<>,
-          typename TCountIdx,      // = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
-          typename TComputeCover,  // = grammar::ComputeCoverBottomFunctor<grammar::LightSLP<>>,
-          typename TGetDocs,
-          typename TGetDocSet,
-          typename TMergeSets>
+namespace gcda {
+
+template <typename TAlphabet = Alphabet<>,
+          typename TSLP = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
+                                            grammar::SampledSLP<>,
+                                            grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>>
+class ComputeCover;
+
+template <typename TSLP = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
+                                            grammar::SampledSLP<>,
+                                            grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>>
+class GetDocs;
+
+template <typename TSLP = grammar::BasicSLP<sdsl::int_vector<>>,
+          bool kExpand = true,
+          typename TChunks = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
+class GetDocSet;
+
+class MergeSetsBinaryTreeFunctor;
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
+          typename TComputeCover = ComputeCover<>,
+          typename TGetDocs = GetDocs<>,
+          typename TGetDocSet = GetDocSet<>,
+          typename TMergeSets = MergeSetsBinaryTreeFunctor>
 class DocListIdxGCDA
     : public DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, TComputeCover, TGetDocs, TGetDocSet, TMergeSets> {
  public:
@@ -63,6 +88,11 @@ class DocListIdxGCDA
 //~~~~~~~
 
 
+}  // namespace gcda
+
+//~~~~~~~
+
+
 void ConstructCombinedSLPOnDA(Config& t_config, uint32_t t_block_size, float t_storing_factor);
 void ConstructLightSLPOnDA(Config& t_config);
 
@@ -77,7 +107,7 @@ template <typename TStorage = GenericStorage,
           typename TGetDocSet,
           typename TMergeSets>
 void constructItems(
-    DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TComputeCover, TGetDocs, TGetDocSet, TMergeSets>& t_index,
+    gcda::DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TComputeCover, TGetDocs, TGetDocSet, TMergeSets>& t_index,
     Config& t_config) {
   if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
     auto event = sdsl::memory_monitor::event("Text");
