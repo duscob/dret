@@ -168,6 +168,61 @@ void construct(ComputeCover<TAlphabet, TSLP>& t_compute_cover, Config& t_config)
   }
 }
 
+//~~~~~~~
+
+
+template <typename TSLP, typename TSampledSLP, typename TLeavesContainer>
+void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp,
+               Config& t_config,
+               const std::string& t_datafile,
+               uint32_t t_block_size,
+               float t_storing_factor) {
+  using namespace conf;
+
+  // Grammar compress data file using RePair
+  if (!std::filesystem::exists(t_datafile + ".R") && REPAIR_EXE) {
+    const auto filename = std::filesystem::path(t_datafile).filename().string();
+    auto event = sdsl::memory_monitor::event("RePair-" + filename);
+    std::string cmd = REPAIR_EXE + (" " + t_datafile);
+    std::system(cmd.c_str());
+    t_config.file_map[filename + ".R"] = t_datafile + ".R";
+    t_config.file_map[filename + ".C"] = t_datafile + ".C";
+  }
+
+  auto event =
+      sdsl::memory_monitor::event(sdsl::cache_file_name<grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>>(
+          t_config.keys[kGCDA][kSLP].get<std::string>(), t_config));
+
+  grammar::SLP<> slp;
+  {
+    grammar::RePairReader<true> re_pair_reader;
+    auto slp_wrapper = grammar::BuildSLPWrapper(slp);
+    re_pair_reader.Read(t_datafile, slp_wrapper);
+  }
+
+  t_cslp = grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>(slp);
+  grammar::Chunks<> cslp_docs;
+
+  grammar::AddSet add_set(cslp_docs);
+  t_cslp.Compute(t_block_size,
+                 add_set,
+                 add_set,
+                 grammar::MustBeSampled<decltype(cslp_docs)>(grammar::AreChildrenTooBig(cslp_docs, t_storing_factor)));
+
+  sdsl::store_to_cache(t_cslp, t_config.keys[kGCDA][kSLP].get<std::string>(), t_config, true);
+
+  sdsl::store_to_cache(cslp_docs, t_config.keys[kGCDA][kDocs].get<std::string>(), t_config, true);
+
+  auto bit_compress = [](sdsl::int_vector<>& _v) {
+    sdsl::util::bit_compress(_v);
+  };
+  grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> cslp_docs_c(cslp_docs, bit_compress, bit_compress);
+  sdsl::store_to_cache(cslp_docs_c, t_config.keys[kGCDA][kDocs].get<std::string>(), t_config, true);
+}
+
+//~~~~~~~
+
+
 template <typename TSLP>
 class GetDocs {
  public:
