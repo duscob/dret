@@ -100,6 +100,7 @@ class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
   }
 
   const TCountIdx& count_idx = count_idx_;
+  const TComputeCover& compute_cover = compute_cover_;
 
  protected:
   TCountIdx count_idx_;

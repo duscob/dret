@@ -105,6 +105,9 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TComputeCover, TGe
   auto count_idx = t_index.count_idx;
   construct(count_idx, t_config.data_path, t_config);
 
+  auto compute_cover = t_index.compute_cover;
+  construct(compute_cover, t_config);
+
   t_index.load(t_config);
 }
 
