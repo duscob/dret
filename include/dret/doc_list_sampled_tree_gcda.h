@@ -140,6 +140,30 @@ class ComputeCover {
 
 //~~~~~~~
 
+template <typename TAlphabet, typename TSLP>
+void construct(ComputeCover<TAlphabet, TSLP>& t_compute_cover, Config& t_config) {
+  using namespace conf;
+
+  if (const auto key = t_config.keys[kText].get<std::string>(); !cache_file_exists(key, t_config)) {
+    auto event = sdsl::memory_monitor::event(key);
+    ConstructText<TAlphabet::int_width>(t_config);
+  }
+
+  if (const auto key = t_config.keys[kSA].get<std::string>(); !cache_file_exists(key, t_config)) {
+    auto event = sdsl::memory_monitor::event(key);
+    sdsl::construct_sa<TAlphabet::int_width>(t_config);
+  }
+
+  if (const auto key = t_config.keys[kDocEnds].get<std::string>(); !cache_file_exists(key, t_config)) {
+    auto event = sdsl::memory_monitor::event(key);
+    ConstructDocEnd<TAlphabet::int_width, sdsl::sd_vector<>>(t_config);
+  }
+
+  if (const auto key = t_config.keys[kDA].get<std::string>(); !cache_file_exists(key, t_config)) {
+    auto event = sdsl::memory_monitor::event(key);
+    ConstructDocArray(t_config);
+  }
+}
 
 template <typename TSLP>
 class GetDocs {
