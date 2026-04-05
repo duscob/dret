@@ -22,6 +22,9 @@ namespace conf {
 using namespace sri::conf;
 constexpr std::string_view kDocEnds = "docEnd";
 constexpr std::string_view kDA = "da";
+constexpr std::string_view kGCDA = "gcda";
+constexpr std::string_view kSLP = "slp";
+constexpr std::string_view kDocs = "docs";
 }  // namespace conf
 
 template <uint8_t t_width>
@@ -31,6 +34,13 @@ auto createDefaultKeys() {
   keys.update({
       {conf::kDocEnds, "doc_end"},
       {conf::kDA, "da"},
+      {
+          conf::kGCDA,
+          {
+              {conf::kSLP, "gcda_slp"},
+              {conf::kDocs, "gcda_docs"},
+          },
+      },
   });
 
   return keys;
