@@ -223,6 +223,63 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
 //~~~~~~~
 
 
+template <typename TSLP, typename TSampledSLP, typename TChunks>
+void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
+               Config& t_config,
+               const std::string& t_datafile,
+               uint32_t t_block_size,
+               float t_storing_factor) {
+  using namespace conf;
+
+  auto key_lslp = t_config.keys[kGCDA][kSLP].get<std::string>();
+  grammar::LightSLP<> lslp;
+
+  if (!sdsl::cache_file_exists<decltype(lslp)>(key_lslp, t_config)) {
+    // Construct Light SLP on datafile
+    auto event = sdsl::memory_monitor::event(sdsl::cache_file_name<grammar::LightSLP<>>(key_lslp, t_config));
+
+    grammar::CombinedSLP<> cslp;
+    if (const auto key = t_config.keys[kGCDA][kSLP].get<std::string>();
+        !sdsl::cache_file_exists<decltype(cslp)>(key, t_config)) {
+      auto event_cslp = sdsl::memory_monitor::event(sdsl::cache_file_name<decltype(cslp)>(key, t_config));
+      construct(cslp, t_config, t_datafile, t_block_size, t_storing_factor);
+    } else {
+      sdsl::load_from_cache(cslp, key, t_config, true);
+    }
+
+    grammar::SLP<> slp;
+    std::vector<std::size_t> compact_seq;
+    {
+      grammar::RePairReader<false> re_pair_reader;
+      auto slp_wrapper = grammar::BuildSLPWrapper(slp);
+
+      auto report_compact_seq = [&compact_seq](const auto& _var) {
+        compact_seq.emplace_back(_var);
+      };
+
+      re_pair_reader.Read(t_datafile, slp_wrapper, report_compact_seq);
+    }
+
+    lslp.Compute(slp, compact_seq, cslp);
+    sdsl::store_to_cache(lslp, key_lslp, t_config, true);
+  } else {
+    sdsl::load_from_cache(lslp, key_lslp, t_config, true);
+  }
+
+  auto event = sdsl::memory_monitor::event(
+      sdsl::cache_file_name<grammar::LightSLP<TSLP, TSampledSLP, TChunks>>(key_lslp, t_config));
+
+  // Construct Light SLP Basic on DA
+  auto bit_compress = [](sdsl::int_vector<>& _v) {
+    sdsl::util::bit_compress(_v);
+  };
+  t_lslp = grammar::LightSLP<TSLP, TSampledSLP, TChunks>(lslp, bit_compress, bit_compress, bit_compress, bit_compress);
+  sdsl::store_to_cache(t_lslp, key_lslp, t_config, true);
+}
+
+//~~~~~~~
+
+
 template <typename TSLP>
 class GetDocs {
  public:
