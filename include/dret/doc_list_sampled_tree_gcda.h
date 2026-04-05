@@ -140,6 +140,10 @@ class ComputeCover {
     return Compute(_sp, _ep);
   }
 
+  const TSLP& slp() const {
+    return slp_;
+  }
+
   const uint32_t& block_size() const {
     return block_size_;
   }
@@ -156,6 +160,21 @@ class ComputeCover {
 };
 
 //~~~~~~~
+
+
+template <typename TSLP, typename TSampledSLP, typename TLeavesContainer>
+void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp,
+               Config& t_config,
+               const std::string& t_datafile,
+               uint32_t t_block_size,
+               float t_storing_factor);
+
+template <typename TSLP, typename TSampledSLP, typename TChunks>
+void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
+               Config& t_config,
+               const std::string& t_datafile,
+               uint32_t t_block_size,
+               float t_storing_factor);
 
 template <typename TAlphabet, typename TSLP>
 void construct(ComputeCover<TAlphabet, TSLP>& t_compute_cover, Config& t_config) {
@@ -179,6 +198,14 @@ void construct(ComputeCover<TAlphabet, TSLP>& t_compute_cover, Config& t_config)
   if (const auto key = t_config.keys[kDA].get<std::string>(); !cache_file_exists(key, t_config)) {
     auto event = sdsl::memory_monitor::event(key);
     ConstructDocArray(t_config);
+  }
+
+  auto slp = t_compute_cover.slp();
+  if (const auto key = t_config.keys[kGCDA][kSLP].get<std::string>(); !sdsl::cache_file_exists<TSLP>(key, t_config)) {
+    auto event = sdsl::memory_monitor::event(key);
+    auto key_da = t_config.keys[conf::kDA].get<std::string>();
+    auto filepath_da = sdsl::cache_file_name<std::vector<int>>(key_da, t_config);
+    construct(slp, t_config, filepath_da, t_compute_cover.block_size(), t_compute_cover.storing_factor());
   }
 }
 
