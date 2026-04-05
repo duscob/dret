@@ -119,6 +119,9 @@ class ComputeCover {
  public:
   explicit ComputeCover(const TSLP& _slp) : slp_(_slp) {}
 
+  ComputeCover(const TSLP& t_slp, uint32_t t_block_size, float t_storing_factor)
+      : slp_(t_slp), block_size_(t_block_size), storing_factor_(t_storing_factor) {}
+
   ComputeCover() = default;
 
   auto Compute(std::size_t _bp, std::size_t _ep) const {
@@ -137,8 +140,19 @@ class ComputeCover {
     return Compute(_sp, _ep);
   }
 
+  const uint32_t& block_size() const {
+    return block_size_;
+  }
+
+  const float& storing_factor() const {
+    return storing_factor_;
+  }
+
  protected:
   TSLP slp_;
+
+  uint32_t block_size_ = 512;
+  float storing_factor_ = 4;
 };
 
 //~~~~~~~
