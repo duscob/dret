@@ -75,7 +75,7 @@ class IndexBaseWithExternalStorage {
   virtual void loadInner(TSource& t_source, const JSON& t_keys) {}
 
   template <typename TItem>
-  auto loadRawItem(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
+  auto loadItemPtr(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
     auto item = get<TItem>(storage_, t_key);
     if (!item) {
       TItem data;
@@ -108,7 +108,7 @@ class IndexBaseWithExternalStorage {
 
   template <typename TItem>
   auto loadItem(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
-    auto item = loadRawItem<TItem>(t_key, t_source, t_add_type_hash);
+    auto item = loadItemPtr<TItem>(t_key, t_source, t_add_type_hash);
     return std::cref(*item);
   }
 
@@ -117,7 +117,7 @@ class IndexBaseWithExternalStorage {
     auto key_rank = t_key + "_rank";
     auto item_rank = get<TBvRank>(storage_, key_rank);
     if (!item_rank) {
-      auto item_bv = loadRawItem<TBv>(t_key, t_source, t_add_type_hash);
+      auto item_bv = loadItemPtr<TBv>(t_key, t_source, t_add_type_hash);
 
       TBvRank rank;
       load(rank, t_source, t_key, t_add_type_hash);
@@ -134,7 +134,7 @@ class IndexBaseWithExternalStorage {
     auto key_select = t_key + "_select";
     auto item_select = get<TBvSelect>(storage_, key_select);
     if (!item_select) {
-      auto item_bv = loadRawItem<TBv>(t_key, t_source, t_add_type_hash);
+      auto item_bv = loadItemPtr<TBv>(t_key, t_source, t_add_type_hash);
 
       TBvSelect select;
       load(select, t_source, t_key, t_add_type_hash);
