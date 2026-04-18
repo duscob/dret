@@ -119,8 +119,13 @@ class ComputeCover {
  public:
   explicit ComputeCover(const TSLP& _slp) : slp_(_slp) {}
 
-  ComputeCover(const TSLP& t_slp, uint32_t t_block_size, float t_storing_factor)
+  explicit ComputeCover(const TSLP* _slp) : slp_(_slp) {}
+
+  ComputeCover(const TSLP* t_slp, uint32_t t_block_size, float t_storing_factor)
       : slp_(t_slp), block_size_(t_block_size), storing_factor_(t_storing_factor) {}
+
+  ComputeCover(uint32_t t_block_size, float t_storing_factor)
+      : block_size_(t_block_size), storing_factor_(t_storing_factor) {}
 
   ComputeCover() = default;
 
@@ -131,7 +136,7 @@ class ComputeCover {
       nodes.emplace_back(_value);
     };
 
-    auto range = grammar::ComputeCoverFromBottom(slp_, _bp, _ep, report);
+    auto range = grammar::ComputeCoverFromBottom(*slp_, _bp, _ep, report);
 
     return std::make_pair(std::move(range), std::move(nodes));
   }
@@ -140,7 +145,7 @@ class ComputeCover {
     return Compute(_sp, _ep);
   }
 
-  const TSLP& slp() const {
+  const TSLP* slp() const {
     return slp_;
   }
 
@@ -153,7 +158,7 @@ class ComputeCover {
   }
 
  protected:
-  TSLP slp_;
+  const TSLP* slp_ = nullptr;
 
   uint32_t block_size_ = 512;
   float storing_factor_ = 4;
@@ -200,7 +205,7 @@ void construct(ComputeCover<TAlphabet, TSLP>& t_compute_cover, Config& t_config)
     ConstructDocArray(t_config);
   }
 
-  auto slp = t_compute_cover.slp();
+  TSLP slp = t_compute_cover.slp() ? *t_compute_cover.slp() : TSLP();
   if (const auto key = t_config.keys[kGCDA][kSLP].get<std::string>(); !sdsl::cache_file_exists<TSLP>(key, t_config)) {
     auto event = sdsl::memory_monitor::event(key);
     auto key_da = t_config.keys[conf::kDA].get<std::string>();
