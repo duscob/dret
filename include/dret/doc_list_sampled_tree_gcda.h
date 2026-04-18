@@ -27,7 +27,8 @@ const std::string KEY_GCDA_LSLP_BASIC = "gcda_lslp_basic";
 
 namespace gcda {
 
-template <typename TAlphabet = Alphabet<>,
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
           typename TSLP = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
                                             grammar::SampledSLP<>,
                                             grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>>
@@ -48,7 +49,7 @@ class MergeSetsBinaryTreeFunctor;
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
-          typename TComputeCover = ComputeCover<>,
+          typename TComputeCover = ComputeCover<TStorage>,
           typename TGetDocs = GetDocs<>,
           typename TGetDocSet = GetDocSet<>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
@@ -114,10 +115,11 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TComputeCover, TGe
 //~~~~~~~
 
 
-template <typename TAlphabet, typename TSLP>
-class ComputeCover {
+template <typename TStorage, typename TAlphabet, typename TSLP>
+class ComputeCover : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
-  explicit ComputeCover(const TSLP& _slp) : slp_(_slp) {}
+  using Base = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
+  using typename Base::size_type;
 
   explicit ComputeCover(const TSLP* _slp) : slp_(_slp) {}
 
@@ -157,7 +159,21 @@ class ComputeCover {
     return storing_factor_;
   }
 
+  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
+    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    return slp_->serialize(out, child, "slp");
+    // return this->template serializeItem<TSLP>(key_, out, child, "slp");
+  }
+
  protected:
+  void loadInner(typename Base::TSource& t_source, const JSON& t_keys) override {
+    key_ = t_keys[conf::kGCDA][conf::kSLP].get<std::string>();
+
+    slp_ = this->template loadItemPtr<TSLP>(key_, t_source, true);
+  }
+
+  std::string key_ = kDefaultKeys.keys[conf::kGCDA][conf::kSLP].get<std::string>();
+
   const TSLP* slp_ = nullptr;
 
   uint32_t block_size_ = 512;
@@ -181,8 +197,8 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
                uint32_t t_block_size,
                float t_storing_factor);
 
-template <typename TAlphabet, typename TSLP>
-void construct(ComputeCover<TAlphabet, TSLP>& t_compute_cover, Config& t_config) {
+template <typename TStorage, typename TAlphabet, typename TSLP>
+void construct(ComputeCover<TStorage, TAlphabet, TSLP>& t_compute_cover, Config& t_config) {
   using namespace conf;
 
   if (const auto key = t_config.keys[kText].get<std::string>(); !cache_file_exists(key, t_config)) {
@@ -212,6 +228,8 @@ void construct(ComputeCover<TAlphabet, TSLP>& t_compute_cover, Config& t_config)
     auto filepath_da = sdsl::cache_file_name<std::vector<int>>(key_da, t_config);
     construct(slp, t_config, filepath_da, t_compute_cover.block_size(), t_compute_cover.storing_factor());
   }
+
+  t_compute_cover.load(t_config);
 }
 
 //~~~~~~~
