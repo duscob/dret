@@ -80,6 +80,23 @@ class DocListIdxGCDA
 
   DocListIdxGCDA() = default;
 
+  void load(Config t_config) override {
+    this->count_idx_.load(t_config);
+    slp_.load(t_config);
+  }
+
+  void load(std::istream& in, const JSON& t_keys) override {
+    this->count_idx_.load(in);
+    slp_.load(in);
+  }
+
+  using Base::load;
+
+  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
+    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    return this->count_idx_.serialize(out, child, "count_idx") + slp_.serialize(out, child, "compute_cover");
+  }
+
   // size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
   //   // TODO Add implementation
   //   return 0;
