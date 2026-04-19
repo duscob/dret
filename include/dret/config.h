@@ -51,8 +51,9 @@ struct Keys {
 const Keys<> kDefaultKeys;
 
 template <uint8_t t_width>
-auto createDefaultKeys() {
-  return Keys<t_width>().keys;
+const auto& createDefaultKeys() {
+  static Keys<t_width> keys;
+  return keys.keys;
 }
 
 struct Config : public sri::Config {
