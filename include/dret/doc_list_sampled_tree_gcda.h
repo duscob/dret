@@ -39,10 +39,6 @@ using FComputeCover =
 
 using FComputeDocs = std::function<void(std::size_t, std::size_t, const std::function<void(std::size_t)>&)>;
 
-template <typename TSLP = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
-                                            grammar::SampledSLP<>,
-                                            grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>>
-class GetDocs;
 
 template <typename TSLP = grammar::BasicSLP<sdsl::int_vector<>>,
           bool kExpand = true,
@@ -100,11 +96,6 @@ class DocListIdxGCDA
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     return this->count_idx_.serialize(out, child, "count_idx") + slp_.serialize(out, child, "compute_cover");
   }
-
-  // size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-  //   // TODO Add implementation
-  //   return 0;
-  // }
 
   const TSLP& slp = slp_;
 
@@ -392,25 +383,6 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
   t_lslp = grammar::LightSLP<TSLP, TSampledSLP, TChunks>(lslp, bit_compress, bit_compress, bit_compress, bit_compress);
   sdsl::store_to_cache(t_lslp, key_lslp, t_config, true);
 }
-
-//~~~~~~~
-
-
-template <typename TSLP>
-class GetDocs {
- public:
-  GetDocs(const TSLP& _slp) : slp_(_slp) {}
-
-  GetDocs() = default;
-
-  template <typename Report>
-  void operator()(std::size_t _bp, std::size_t _ep, Report& _report) const {
-    ExpandSLP(slp_, _bp, _ep, _report);
-  }
-
- private:
-  TSLP slp_;
-};
 
 //~~~~~~~
 
