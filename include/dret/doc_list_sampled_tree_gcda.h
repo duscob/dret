@@ -63,6 +63,9 @@ class DocListIdxGCDA
 
   explicit DocListIdxGCDA(const TStorage& t_storage) : Base(t_storage) {}
 
+  DocListIdxGCDA(const TStorage& t_storage, const TCountIdx& t_count_idx, const TComputeCover& t_compute_cover)
+      : Base(t_storage, t_count_idx, t_compute_cover) {}
+
   DocListIdxGCDA(uint32_t t_block_size, float t_storing_factor)
       : block_size_(t_block_size), storing_factor_(t_storing_factor) {}
 
