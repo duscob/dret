@@ -75,7 +75,7 @@ class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
   void load(Config t_config) override {
     count_idx_.load(t_config);
-    // compute_cover_.load(t_config);
+    compute_cover_.load(t_config);
     // get_docs_.load(t_config);
     // get_doc_set_.load(t_config);
     // merge_sets_.load(t_config);
@@ -83,7 +83,7 @@ class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
   void load(std::istream& in, const JSON& t_keys) override {
     count_idx_.load(in);
-    // compute_cover_.load(in);
+    compute_cover_.load(in);
     // get_docs_.load(in);
     // get_doc_set_.load(in);
     // merge_sets_.load(in);
@@ -93,8 +93,7 @@ class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return count_idx_.serialize(out, child, "count_idx");
-    // + compute_cover_.serialize(out, child, "compute_cover")
+    return count_idx_.serialize(out, child, "count_idx") + compute_cover_.serialize(out, child, "compute_cover");
     //        + get_docs_.serialize(out, child, "get_docs") + get_doc_set_.serialize(out, child, "get_doc_set")
     //        + merge_sets_.serialize(out, child, "merge_sets");
   }
