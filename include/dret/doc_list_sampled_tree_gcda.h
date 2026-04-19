@@ -167,17 +167,18 @@ class ComputeCover : public IndexBaseWithExternalStorage<TStorage, TAlphabet::in
 
  protected:
   void loadInner(typename Base::TSource& t_source, const JSON& t_keys) override {
-    key_ = t_keys[conf::kGCDA][conf::kSLP].get<std::string>();
+    key_ = key_prefix_ + t_keys[conf::kGCDA][conf::kSLP].get<std::string>();
 
     slp_ = this->template loadItemPtr<TSLP>(key_, t_source, true);
   }
-
-  std::string key_ = kDefaultKeys.keys[conf::kGCDA][conf::kSLP].get<std::string>();
 
   const TSLP* slp_ = nullptr;
 
   uint32_t block_size_ = 512;
   float storing_factor_ = 4;
+
+  std::string key_prefix_ = std::format("{}-{}_", block_size_, storing_factor_);
+  std::string key_ = key_prefix_ + kDefaultKeys.keys[conf::kGCDA][conf::kSLP].get<std::string>();
 };
 
 //~~~~~~~
@@ -222,7 +223,9 @@ void construct(ComputeCover<TStorage, TAlphabet, TSLP>& t_compute_cover, Config&
   }
 
   TSLP slp = t_compute_cover.slp() ? *t_compute_cover.slp() : TSLP();
-  if (const auto key = t_config.keys[kGCDA][kSLP].get<std::string>(); !sdsl::cache_file_exists<TSLP>(key, t_config)) {
+  if (const auto key = std::format("{}-{}_", t_compute_cover.block_size(), t_compute_cover.storing_factor())
+                       + t_config.keys[kGCDA][kSLP].get<std::string>();
+      !sdsl::cache_file_exists<TSLP>(key, t_config)) {
     auto event = sdsl::memory_monitor::event(key);
     auto key_da = t_config.keys[conf::kDA].get<std::string>();
     auto filepath_da = sdsl::cache_file_name<std::vector<int>>(key_da, t_config);
@@ -253,9 +256,11 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
     t_config.file_map[filename + ".C"] = t_datafile + ".C";
   }
 
-  auto event =
-      sdsl::memory_monitor::event(sdsl::cache_file_name<grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>>(
-          t_config.keys[kGCDA][kSLP].get<std::string>(), t_config));
+  const auto key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
+
+  auto key_slp = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
+  auto event = sdsl::memory_monitor::event(
+      sdsl::cache_file_name<grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>>(key_slp, t_config));
 
   grammar::SLP<> slp;
   {
@@ -273,15 +278,16 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
                  add_set,
                  grammar::MustBeSampled<decltype(cslp_docs)>(grammar::AreChildrenTooBig(cslp_docs, t_storing_factor)));
 
-  sdsl::store_to_cache(t_cslp, t_config.keys[kGCDA][kSLP].get<std::string>(), t_config, true);
+  sdsl::store_to_cache(t_cslp, key_slp, t_config, true);
 
-  sdsl::store_to_cache(cslp_docs, t_config.keys[kGCDA][kDocs].get<std::string>(), t_config, true);
+  auto key_docs = key_prefix + t_config.keys[kGCDA][kDocs].get<std::string>();
+  sdsl::store_to_cache(cslp_docs, key_docs, t_config, true);
 
   auto bit_compress = [](sdsl::int_vector<>& _v) {
     sdsl::util::bit_compress(_v);
   };
   grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> cslp_docs_c(cslp_docs, bit_compress, bit_compress);
-  sdsl::store_to_cache(cslp_docs_c, t_config.keys[kGCDA][kDocs].get<std::string>(), t_config, true);
+  sdsl::store_to_cache(cslp_docs_c, key_docs, t_config, true);
 }
 
 //~~~~~~~
@@ -295,7 +301,9 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
                float t_storing_factor) {
   using namespace conf;
 
-  auto key_lslp = t_config.keys[kGCDA][kSLP].get<std::string>();
+  std::string key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
+
+  auto key_lslp = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
   grammar::LightSLP<> lslp;
 
   if (!sdsl::cache_file_exists<decltype(lslp)>(key_lslp, t_config)) {
@@ -303,7 +311,7 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
     auto event = sdsl::memory_monitor::event(sdsl::cache_file_name<grammar::LightSLP<>>(key_lslp, t_config));
 
     grammar::CombinedSLP<> cslp;
-    if (const auto key = t_config.keys[kGCDA][kSLP].get<std::string>();
+    if (const auto key = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
         !sdsl::cache_file_exists<decltype(cslp)>(key, t_config)) {
       auto event_cslp = sdsl::memory_monitor::event(sdsl::cache_file_name<decltype(cslp)>(key, t_config));
       construct(cslp, t_config, t_datafile, t_block_size, t_storing_factor);
@@ -334,7 +342,7 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
       sdsl::cache_file_name<grammar::LightSLP<TSLP, TSampledSLP, TChunks>>(key_lslp, t_config));
 
   // Construct Light SLP Basic on DA
-  auto bit_compress = [](sdsl::int_vector<>& _v) {
+  auto bit_compress = [](auto& _v) {
     sdsl::util::bit_compress(_v);
   };
   t_lslp = grammar::LightSLP<TSLP, TSampledSLP, TChunks>(lslp, bit_compress, bit_compress, bit_compress, bit_compress);
