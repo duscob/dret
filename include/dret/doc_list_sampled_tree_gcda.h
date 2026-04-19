@@ -212,41 +212,6 @@ class SLPWrapper : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_
 //~~~~~~~
 
 
-template <typename TStorage, typename TAlphabet, typename TSLP>
-class ComputeCover : public SLPWrapper<TStorage, TAlphabet, TSLP> {
- public:
-  using Base = SLPWrapper<TStorage, TAlphabet, TSLP>;
-
-  explicit ComputeCover(const TSLP* t_slp, uint32_t t_block_size = 512, float t_storing_factor = 4)
-      : Base(t_slp, t_block_size, t_storing_factor) {}
-
-  explicit ComputeCover(const TStorage& t_storage, uint32_t t_block_size = 512, float t_storing_factor = 4)
-      : Base(t_storage, t_block_size, t_storing_factor) {}
-
-  ComputeCover(uint32_t t_block_size, float t_storing_factor) : Base(t_block_size, t_storing_factor) {}
-
-  ComputeCover() = default;
-
-  auto Compute(std::size_t _bp, std::size_t _ep) const {
-    std::vector<std::size_t> nodes;
-
-    auto report = [&nodes](const auto& _value) {
-      nodes.emplace_back(_value);
-    };
-
-    auto range = grammar::ComputeCoverFromBottom(*this->slp_, _bp, _ep, report);
-
-    return std::make_pair(std::move(range), std::move(nodes));
-  }
-
-  auto operator()(std::size_t _sp, std::size_t _ep) const {
-    return Compute(_sp, _ep);
-  }
-};
-
-//~~~~~~~
-
-
 template <typename TSLP, typename TSampledSLP, typename TLeavesContainer>
 void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp,
                Config& t_config,
