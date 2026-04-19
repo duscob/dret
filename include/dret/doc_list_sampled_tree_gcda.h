@@ -172,7 +172,7 @@ class SLPWrapper : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_
       nodes.emplace_back(_value);
     };
 
-    auto range = grammar::ComputeCoverFromBottom(*this->slp_, t_bp, t_ep, report);
+    auto range = grammar::ComputeCoverFromBottom(*slp_, t_bp, t_ep, report);
 
     return std::make_pair(std::move(range), std::move(nodes));
   }
