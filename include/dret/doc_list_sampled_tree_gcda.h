@@ -116,36 +116,21 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TComputeCover, TGe
 
 
 template <typename TStorage, typename TAlphabet, typename TSLP>
-class ComputeCover : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
+class SLPWrapper : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
   using typename Base::size_type;
 
-  explicit ComputeCover(const TSLP* _slp) : slp_(_slp) {}
+  SLPWrapper(const TStorage& t_storage, uint32_t t_block_size = 512, float t_storing_factor = 4)
+      : Base(t_storage), block_size_(t_block_size), storing_factor_(t_storing_factor) {}
 
-  ComputeCover(const TSLP* t_slp, uint32_t t_block_size, float t_storing_factor)
+  SLPWrapper(const TSLP* t_slp, uint32_t t_block_size = 512, float t_storing_factor = 4)
       : slp_(t_slp), block_size_(t_block_size), storing_factor_(t_storing_factor) {}
 
-  ComputeCover(uint32_t t_block_size, float t_storing_factor)
+  SLPWrapper(uint32_t t_block_size, float t_storing_factor)
       : block_size_(t_block_size), storing_factor_(t_storing_factor) {}
 
-  ComputeCover() = default;
-
-  auto Compute(std::size_t _bp, std::size_t _ep) const {
-    std::vector<std::size_t> nodes;
-
-    auto report = [&nodes](const auto& _value) {
-      nodes.emplace_back(_value);
-    };
-
-    auto range = grammar::ComputeCoverFromBottom(*slp_, _bp, _ep, report);
-
-    return std::make_pair(std::move(range), std::move(nodes));
-  }
-
-  auto operator()(std::size_t _sp, std::size_t _ep) const {
-    return Compute(_sp, _ep);
-  }
+  SLPWrapper() = default;
 
   const TSLP* slp() const {
     return slp_;
@@ -167,18 +152,51 @@ class ComputeCover : public IndexBaseWithExternalStorage<TStorage, TAlphabet::in
 
  protected:
   void loadInner(typename Base::TSource& t_source, const JSON& t_keys) override {
-    key_ = key_prefix_ + t_keys[conf::kGCDA][conf::kSLP].get<std::string>();
+    auto key_prefix = std::format("{}-{}_", block_size_, storing_factor_);
+    auto key = key_prefix + t_keys[conf::kGCDA][conf::kSLP].get<std::string>();
 
-    slp_ = this->template loadItemPtr<TSLP>(key_, t_source, true);
+    slp_ = this->template loadItemPtr<TSLP>(key, t_source, true);
   }
 
   const TSLP* slp_ = nullptr;
 
   uint32_t block_size_ = 512;
   float storing_factor_ = 4;
+};
 
-  std::string key_prefix_ = std::format("{}-{}_", block_size_, storing_factor_);
-  std::string key_ = key_prefix_ + kDefaultKeys.keys[conf::kGCDA][conf::kSLP].get<std::string>();
+//~~~~~~~
+
+
+template <typename TStorage, typename TAlphabet, typename TSLP>
+class ComputeCover : public SLPWrapper<TStorage, TAlphabet, TSLP> {
+ public:
+  using Base = SLPWrapper<TStorage, TAlphabet, TSLP>;
+
+  explicit ComputeCover(const TSLP* t_slp, uint32_t t_block_size = 512, float t_storing_factor = 4)
+      : Base(t_slp, t_block_size, t_storing_factor) {}
+
+  explicit ComputeCover(const TStorage& t_storage, uint32_t t_block_size = 512, float t_storing_factor = 4)
+      : Base(t_storage, t_block_size, t_storing_factor) {}
+
+  ComputeCover(uint32_t t_block_size, float t_storing_factor) : Base(t_block_size, t_storing_factor) {}
+
+  ComputeCover() = default;
+
+  auto Compute(std::size_t _bp, std::size_t _ep) const {
+    std::vector<std::size_t> nodes;
+
+    auto report = [&nodes](const auto& _value) {
+      nodes.emplace_back(_value);
+    };
+
+    auto range = grammar::ComputeCoverFromBottom(*this->slp_, _bp, _ep, report);
+
+    return std::make_pair(std::move(range), std::move(nodes));
+  }
+
+  auto operator()(std::size_t _sp, std::size_t _ep) const {
+    return Compute(_sp, _ep);
+  }
 };
 
 //~~~~~~~
