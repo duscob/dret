@@ -220,7 +220,7 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
                float t_storing_factor);
 
 template <typename TStorage, typename TAlphabet, typename TSLP>
-void construct(SLPWrapper<TStorage, TAlphabet, TSLP>& t_compute_cover, Config& t_config) {
+void construct(SLPWrapper<TStorage, TAlphabet, TSLP>& t_slp, Config& t_config) {
   using namespace conf;
 
   if (const auto key = t_config.keys[kText].get<std::string>(); !cache_file_exists(key, t_config)) {
@@ -243,14 +243,14 @@ void construct(SLPWrapper<TStorage, TAlphabet, TSLP>& t_compute_cover, Config& t
     ConstructDocArray(t_config);
   }
 
-  if (const auto key = std::format("{}-{}_", t_compute_cover.block_size(), t_compute_cover.storing_factor())
+  if (const auto key = std::format("{}-{}_", t_slp.block_size(), t_slp.storing_factor())
                        + t_config.keys[kGCDA][kSLP].get<std::string>();
       !sdsl::cache_file_exists<TSLP>(key, t_config)) {
     auto event = sdsl::memory_monitor::event(key);
     auto key_da = t_config.keys[conf::kDA].get<std::string>();
     auto filepath_da = sdsl::cache_file_name<std::vector<int>>(key_da, t_config);
-    TSLP slp = t_compute_cover.slp() ? *t_compute_cover.slp() : TSLP();
-    construct(slp, t_config, filepath_da, t_compute_cover.block_size(), t_compute_cover.storing_factor());
+    TSLP slp = t_slp.slp() ? *t_slp.slp() : TSLP();
+    construct(slp, t_config, filepath_da, t_slp.block_size(), t_slp.storing_factor());
   }
 
   t_compute_cover.load(t_config);
