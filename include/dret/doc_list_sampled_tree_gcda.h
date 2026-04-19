@@ -177,6 +177,11 @@ class SLPWrapper : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_
     return std::make_pair(std::move(range), std::move(nodes));
   }
 
+  template <typename Report>
+  void ComputeDocs(std::size_t t_bp, std::size_t t_ep, Report& t_report) const {
+    ExpandSLP(*slp_, t_bp, t_ep, t_report);
+  }
+
   const TSLP* slp() const {
     return slp_;
   }
