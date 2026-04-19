@@ -135,6 +135,18 @@ class SLPWrapper : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_
 
   SLPWrapper() = default;
 
+  auto ComputeCover(std::size_t t_bp, std::size_t t_ep) const {
+    std::vector<std::size_t> nodes;
+
+    auto report = [&nodes](const auto& _value) {
+      nodes.emplace_back(_value);
+    };
+
+    auto range = grammar::ComputeCoverFromBottom(*this->slp_, t_bp, t_ep, report);
+
+    return std::make_pair(std::move(range), std::move(nodes));
+  }
+
   const TSLP* slp() const {
     return slp_;
   }
@@ -252,6 +264,14 @@ void construct(SLPWrapper<TStorage, TAlphabet, TSLP>& t_slp, Config& t_config) {
     TSLP slp = t_slp.slp() ? *t_slp.slp() : TSLP();
     construct(slp, t_config, filepath_da, t_slp.block_size(), t_slp.storing_factor());
   }
+
+  // if (const auto key = std::format("{}-{}_", t_slp.block_size(), t_slp.storing_factor())
+  //                      + t_config.keys[kGCDA][kDocs].get<std::string>();
+  //     !sdsl::cache_file_exists<TSLP>(key, t_config)) {
+  //   auto event = sdsl::memory_monitor::event(key);
+  //   TSLP slp = t_slp.slp() ? *t_slp.slp() : TSLP();
+  //   constructLeaves(slp, t_config, t_slp.block_size(), t_slp.storing_factor());
+  // }
 
   t_slp.load(t_config);
 }
