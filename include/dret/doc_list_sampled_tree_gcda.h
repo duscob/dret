@@ -32,7 +32,11 @@ template <typename TStorage = GenericStorage,
           typename TSLP = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
                                             grammar::SampledSLP<>,
                                             grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>>
-class ComputeCover;
+class SLPWrapper;
+
+using GetCoverFunction =
+    std::function<std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>>(std::size_t, std::size_t)>;
+
 
 template <typename TSLP = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
                                             grammar::SampledSLP<>,
@@ -49,22 +53,27 @@ class MergeSetsBinaryTreeFunctor;
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
-          typename TComputeCover = ComputeCover<TStorage>,
+          typename TSLP = SLPWrapper<TStorage, TAlphabet>,
           typename TGetDocs = GetDocs<>,
           typename TGetDocSet = GetDocSet<>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
 class DocListIdxGCDA
-    : public DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, TComputeCover, TGetDocs, TGetDocSet, TMergeSets> {
+    : public DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, GetCoverFunction, TGetDocs, TGetDocSet, TMergeSets> {
  public:
-  using Base = DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, TComputeCover, TGetDocs, TGetDocSet, TMergeSets>;
+  using Base = DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, GetCoverFunction, TGetDocs, TGetDocSet, TMergeSets>;
   using typename Base::size_type;
   using typename Base::TDocId;
   using typename Base::TPattern;
 
   explicit DocListIdxGCDA(const TStorage& t_storage) : Base(t_storage) {}
 
-  DocListIdxGCDA(const TStorage& t_storage, const TCountIdx& t_count_idx, const TComputeCover& t_compute_cover)
-      : Base(t_storage, t_count_idx, t_compute_cover) {}
+  DocListIdxGCDA(const TStorage& t_storage, const TCountIdx& t_count_idx, const TSLP& t_slp)
+      : Base(t_storage,
+             t_count_idx,
+             [this](std::size_t t_bp, std::size_t t_ep) {
+               return this->slp_.ComputeCover(t_bp, t_ep);
+             }),
+        slp_(t_slp) {}
 
   DocListIdxGCDA(uint32_t t_block_size, float t_storing_factor)
       : block_size_(t_block_size), storing_factor_(t_storing_factor) {}
@@ -76,6 +85,8 @@ class DocListIdxGCDA
   //   return 0;
   // }
 
+  const TSLP& slp = slp_;
+
   const uint32_t& block_size() const {
     return block_size_;
   }
@@ -85,6 +96,8 @@ class DocListIdxGCDA
   }
 
  protected:
+  TSLP slp_;
+
   uint32_t block_size_ = 512;
   float storing_factor_ = 4;
 };
@@ -95,11 +108,11 @@ class DocListIdxGCDA
 template <typename TStorage,
           typename TAlphabet,
           typename TCountIdx,
-          typename TComputeCover,
+          typename TSLP,
           typename TGetDocs,
           typename TGetDocSet,
           typename TMergeSets>
-void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TComputeCover, TGetDocs, TGetDocSet, TMergeSets>& t_index,
+void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TGetDocs, TGetDocSet, TMergeSets>& t_index,
                Config& t_config) {
   if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
     auto event = sdsl::memory_monitor::event("Text");
@@ -109,8 +122,8 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TComputeCover, TGe
   auto count_idx = t_index.count_idx;
   construct(count_idx, t_config.data_path, t_config);
 
-  auto compute_cover = t_index.compute_cover;
-  construct(compute_cover, t_config);
+  auto slp = t_index.slp;
+  construct(slp, t_config);
 
   t_index.load(t_config);
 }
