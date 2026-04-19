@@ -253,7 +253,7 @@ void construct(SLPWrapper<TStorage, TAlphabet, TSLP>& t_slp, Config& t_config) {
     construct(slp, t_config, filepath_da, t_slp.block_size(), t_slp.storing_factor());
   }
 
-  t_compute_cover.load(t_config);
+  t_slp.load(t_config);
 }
 
 //~~~~~~~
