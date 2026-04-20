@@ -66,10 +66,12 @@ class IndexBaseWithExternalStorage {
   auto loadItemPtr(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
     auto item = get<TItem>(storage_, t_key);
     if (!item) {
-      TItem data;
-      load(data, t_source, t_key, t_add_type_hash);
-
-      item = set(storage_, t_key, std::move(data));
+      // Store a default-constructed item first, then load into it in place.
+      // Loading then moving/copying into storage would break SDSL rank/select support
+      // pointers (e.g. rank_support_sd::m_v) that are set during deserialization.
+      auto* mutable_item = const_cast<TItem*>(set(storage_, t_key, TItem{}));
+      load(*mutable_item, t_source, t_key, t_add_type_hash);
+      item = mutable_item;
     }
     return item;
   }
