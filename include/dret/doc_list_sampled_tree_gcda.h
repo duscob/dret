@@ -60,8 +60,6 @@ class DocListIdxGCDA
  public:
   using Base = DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, FComputeCover, FComputeDocs, TSLPSets, TMergeSets>;
   using typename Base::size_type;
-  using typename Base::TDocId;
-  using typename Base::TPattern;
 
   explicit DocListIdxGCDA(const TStorage& t_storage) : Base(t_storage) {}
 
