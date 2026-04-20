@@ -39,6 +39,19 @@ class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
   DLSampledTreeScheme(const TStorage& t_storage, const TCountIdx& t_count_idx, const TComputeCover& t_compute_cover)
       : Base(t_storage), count_idx_(t_count_idx), compute_cover_(t_compute_cover) {}
 
+  DLSampledTreeScheme(const TStorage& t_storage,
+                      const TCountIdx& t_count_idx,
+                      const TComputeCover& t_compute_cover,
+                      const TGetDocs& t_get_docs,
+                      const TGetDocSet& t_get_doc_set,
+                      const TMergeSets& t_merge_sets)
+      : Base(t_storage),
+        count_idx_(t_count_idx),
+        compute_cover_(t_compute_cover),
+        get_docs_(t_get_docs),
+        get_doc_set_(t_get_doc_set),
+        merge_sets_(t_merge_sets) {}
+
   DLSampledTreeScheme() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
