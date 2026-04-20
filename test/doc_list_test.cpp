@@ -72,7 +72,8 @@ class DocListIndexSearchTypedTests : public BaseConfigTests<8> {
   };
 };
 
-using DocListIndexSearchTypes = ::testing::Types<dret::DocListIdxBrute<ExternalGenericStorage>>;
+using DocListIndexSearchTypes =
+    ::testing::Types<dret::DocListIdxBrute<ExternalGenericStorage>, dret::gcda::DocListIdxGCDA<ExternalGenericStorage>>;
 
 TYPED_TEST_SUITE(DocListIndexSearchTypedTests, DocListIndexSearchTypes);
 
@@ -110,7 +111,7 @@ class DocListResultVector : public DocListResult, public std::vector<std::size_t
 
 TYPED_TEST(DocListIndexSearchTypedTests, search) {
   TypeParam index(std::ref(this->storage_));
-  dret::construct(index, this->config_);
+  construct(index, this->config_);
 
   for (const auto& [pattern, docs] : this->search_data_) {
     DocListResultVector result;
