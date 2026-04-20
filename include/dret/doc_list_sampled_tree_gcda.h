@@ -80,21 +80,10 @@ class DocListIdxGCDA
 
   DocListIdxGCDA() = default;
 
-  void load(Config t_config) override {
-    this->count_idx_.load(t_config);
-    slp_.load(t_config);
-  }
-
-  void load(std::istream& in, const JSON& t_keys) override {
-    this->count_idx_.load(in);
-    slp_.load(in);
-  }
-
-  using Base::load;
-
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return this->count_idx_.serialize(out, child, "count_idx") + slp_.serialize(out, child, "compute_cover");
+    return this->count_idx_.serialize(out, child, "count_idx") + slp_.serialize(out, child, "slp")
+           + slp_sets_->serialize(out, child, "slp_docs");
   }
 
   const TCountIdx& count_idx = this->count_idx_;
@@ -113,6 +102,22 @@ class DocListIdxGCDA
   }
 
  protected:
+  void loadInner(typename Base::TSource& t_source, const JSON& t_keys) override {
+    using namespace conf;
+
+    std::visit(
+        [this](auto&& tt_source) {
+          this->count_idx_.load(tt_source.get());
+          slp_.load(tt_source.get());
+        },
+        t_source);
+
+    auto key_prefix = std::format("{}-{}_", block_size_, storing_factor_);
+    auto key_docs = key_prefix + t_keys[kGCDA][kDocs].get<std::string>();
+
+    slp_sets_ = this->template loadItemPtr<TSLPSets>(key_docs, t_source, true);
+  }
+
   TSLP slp_;
 
   const TSLPSets* slp_sets_ = nullptr;
