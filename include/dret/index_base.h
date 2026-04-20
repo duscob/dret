@@ -16,18 +16,6 @@
 
 namespace dret {
 
-template <typename TItem>
-const TItem* get(const GenericStorage& t_storage, const std::string& t_key) {
-  auto it = t_storage.find(t_key);
-  return (it != t_storage.end()) ? std::any_cast<TItem>(&it->second) : nullptr;
-}
-
-template <typename TItem>
-const TItem* set(GenericStorage& t_storage, const std::string& t_key, TItem&& t_item) {
-  auto [it, inserted] = t_storage.emplace(t_key, t_item);
-  return std::any_cast<TItem>(&it->second);
-}
-
 //~~~~~~~
 
 

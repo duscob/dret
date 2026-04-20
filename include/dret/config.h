@@ -11,6 +11,8 @@
 namespace dret {
 
 using sri::GenericStorage;
+using sri::get;
+using sri::set;
 
 using sri::JSON;
 
