@@ -13,18 +13,6 @@
 
 namespace dret {
 
-namespace conf {
-const std::string KEY_GCDA_CSLP = "gcda_cslp";                // Combined SLP on Document Array
-const std::string KEY_GCDA_CSLP_DOCS = "gcda_cslp_docs";      // Chunks for documents
-const std::string KEY_GCDA_CSLP_DOCS_C = "gcda_cslp_docs_c";  //
-
-const std::string KEY_GCDA_LSLP = "gcda_lslp";
-const std::string KEY_GCDA_LSLP_BASIC = "gcda_lslp_basic";
-}  // namespace conf
-
-//~~~~~~~
-
-
 namespace gcda {
 
 template <typename TStorage = GenericStorage,
@@ -39,11 +27,6 @@ using FComputeCover =
 
 using FComputeDocs = std::function<void(std::size_t, std::size_t, const std::function<void(std::size_t)>&)>;
 
-
-template <typename TSLP = grammar::BasicSLP<sdsl::int_vector<>>,
-          bool kExpand = true,
-          typename TChunks = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
-class GetDocSet;
 
 using FComputeDocSet = std::function<std::vector<uint32_t>(std::size_t)>;
 
@@ -84,24 +67,6 @@ class DocListIdxGCDA : public DLSampledTreeScheme<TStorage,
             },
             TMergeSets()),
         slp_(t_storage) {}
-
-  DocListIdxGCDA(const TStorage& t_storage, const TCountIdx& t_count_idx, const TSLP& t_slp)
-      : Base(
-            t_storage,
-            t_count_idx,
-            [this](std::size_t t_bp, std::size_t t_ep) {
-              return this->slp_.ComputeCover(t_bp, t_ep);
-            },
-            [this](std::size_t t_bp, std::size_t t_ep, const std::function<void(std::size_t)>& t_report) {
-              this->slp_.ComputeDocs(t_bp, t_ep, t_report);
-            },
-            [this](std::size_t t_i) {
-              return (*this->slp_sets_)[t_i];
-            }),
-        slp_(t_slp) {}
-
-  DocListIdxGCDA(uint32_t t_block_size, float t_storing_factor)
-      : block_size_(t_block_size), storing_factor_(t_storing_factor) {}
 
   DocListIdxGCDA() = default;
 
@@ -249,7 +214,6 @@ class SLPWrapper : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     return slp_->serialize(out, child, "slp");
-    // return this->template serializeItem<TSLP>(key_, out, child, "slp");
   }
 
  protected:
@@ -316,14 +280,6 @@ void construct(SLPWrapper<TStorage, TAlphabet, TSLP>& t_slp, Config& t_config) {
     TSLP slp = t_slp.slp() ? *t_slp.slp() : TSLP();
     construct(slp, t_config, filepath_da, t_slp.block_size(), t_slp.storing_factor());
   }
-
-  // if (const auto key = std::format("{}-{}_", t_slp.block_size(), t_slp.storing_factor())
-  //                      + t_config.keys[kGCDA][kDocs].get<std::string>();
-  //     !sdsl::cache_file_exists<TSLP>(key, t_config)) {
-  //   auto event = sdsl::memory_monitor::event(key);
-  //   TSLP slp = t_slp.slp() ? *t_slp.slp() : TSLP();
-  //   constructLeaves(slp, t_config, t_slp.block_size(), t_slp.storing_factor());
-  // }
 
   t_slp.load(t_config);
 }
@@ -494,27 +450,12 @@ void construct(grammar::GCChunks<TSLP, kExpand, grammar::Chunks<sdsl::int_vector
 //~~~~~~~
 
 
-template <typename TSLP, bool kExpand, typename TChunks>
-class GetDocSet : public grammar::GCChunks<TSLP, kExpand, TChunks> {
- public:
-  using Base = grammar::GCChunks<TSLP, kExpand, TChunks>;
-
-  GetDocSet() = default;
-};
-
-//~~~~~~~
-
-
 class MergeSetsBinaryTreeFunctor {
  public:
   MergeSetsBinaryTreeFunctor() = default;
 
   template <typename TII, typename TSets, typename TResult>
   void operator()(TII _first, TII _last, const TSets& _sets, TResult& _result) const {
-    // Refactor function
-    // grammar::MergeSetsBinaryTree(_first, _last, _sets, _result);
-    // using _sets(i) instead _sets[i].
-
     auto default_set_union = [](auto _first1, auto _last1, auto _first2, auto _last2, auto _result) -> auto {
       return std::set_union(_first1, _last1, _first2, _last2, _result);
     };
@@ -524,10 +465,6 @@ class MergeSetsBinaryTreeFunctor {
 
   template <typename _II, typename _Sets, typename _Result, typename _SetUnion>
   void operator()(_II _first, _II _last, const _Sets& _sets, _Result& _result, const _SetUnion& _set_union) const {
-    // Refactor function
-    // grammar::MergeSetsBinaryTree(_first, _last, _sets, _result, _set_union);
-    // using _sets(i) instead _sets[i].
-
     _Result tmp_merge;
 
     auto merge_tmp = [&tmp_merge, &_set_union](const auto& set1, const auto& set2) {
@@ -538,7 +475,6 @@ class MergeSetsBinaryTreeFunctor {
 
     auto length = std::distance(_first, _last);
     if (length == 1) {
-      // merge_tmp(_result, _sets[*_first]);
       merge_tmp(_result, _sets(*_first));
 
       _result.swap(tmp_merge);
@@ -563,13 +499,11 @@ class MergeSetsBinaryTreeFunctor {
       if (_first != _last) {
         auto next = _first + 1;
         if (next == _last) {
-          // merge_tmp(part_results.back().second, _sets[*_first]);
           merge_tmp(part_results.back().second, _sets(*_first));
 
           part_results.back().second.swap(tmp_merge);
           ++_first;
         } else {
-          // merge_tmp(_sets[*_first], _sets[*next]);
           merge_tmp(_sets(*_first), _sets(*next));
 
           part_results.emplace_back(1, std::move(tmp_merge));
@@ -583,139 +517,6 @@ class MergeSetsBinaryTreeFunctor {
 };
 
 }  // namespace gcda
-
-//~~~~~~~
-
-
-void ConstructCombinedSLPOnDA(Config& t_config, uint32_t t_block_size, float t_storing_factor);
-void ConstructLightSLPOnDA(Config& t_config);
-
-//~~~~~~~
-
-
-template <typename TStorage = GenericStorage,
-          typename TAlphabet,
-          typename TCountIdx,
-          typename TComputeCover,
-          typename TGetDocSet,
-          typename TMergeSets>
-void constructItems(
-    gcda::DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TComputeCover, TGetDocSet, TMergeSets>& t_index,
-    Config& t_config) {
-  if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<TAlphabet::int_width>(t_config);
-  }
-
-  if (const auto key = t_config.keys[conf::kSA].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    sdsl::construct_sa<8>(t_config);
-  }
-
-  if (const auto key = t_config.keys[conf::kDocEnds].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocEnd(t_config);
-  }
-
-  if (const auto key = t_config.keys[conf::kDA].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocArray(t_config);
-  }
-
-  if (std::string file_da = cache_file_name(conf::KEY_DA_RAW, t_config);
-      !std::filesystem::exists(file_da + ".R") && REPAIR_EXE) {
-    auto event = sdsl::memory_monitor::event("DA-Repair");
-    std::string cmd = REPAIR_EXE + (" " + file_da);
-    std::system(cmd.c_str());
-  }
-
-  // Construct Combined SLP of Document Array (Raw)
-  if (!sdsl::cache_file_exists(conf::KEY_GCDA_CSLP, t_config)
-      || !sdsl::cache_file_exists(conf::KEY_GCDA_CSLP_DOCS, t_config)) {
-    auto event = sdsl::memory_monitor::event("DA-CombinedSLP");
-    ConstructCombinedSLPOnDA(t_config, t_index.block_size(), t_index.storing_factor());
-  }
-
-  // Construct Light SLP of Document Array (Raw)
-  if (!sdsl::cache_file_exists(conf::KEY_GCDA_LSLP, t_config)
-      || !sdsl::cache_file_exists(conf::KEY_GCDA_LSLP_BASIC, t_config)) {
-    auto event = sdsl::memory_monitor::event("DA-LightSLP");
-    ConstructLightSLPOnDA(t_config);
-  }
-}
-
-//~~~~~~~
-
-
-inline void ConstructCombinedSLPOnDA(Config& t_config, uint32_t t_block_size, float t_storing_factor) {
-  auto datafile = cache_file_name(conf::KEY_DA_RAW, t_config);
-
-  grammar::SLP<> slp;
-  {
-    grammar::RePairReader<true> re_pair_reader;
-    auto slp_wrapper = grammar::BuildSLPWrapper(slp);
-    re_pair_reader.Read(datafile, slp_wrapper);
-  }
-
-  auto cslp = grammar::CombinedSLP<>(slp);
-  grammar::Chunks<> cslp_docs;
-
-  grammar::AddSet add_set(cslp_docs);
-  cslp.Compute(t_block_size,
-               add_set,
-               add_set,
-               grammar::MustBeSampled<decltype(cslp_docs)>(grammar::AreChildrenTooBig(cslp_docs, t_storing_factor)));
-
-  sdsl::store_to_cache(cslp, conf::KEY_GCDA_CSLP, t_config);
-
-  auto bit_compress = [](sdsl::int_vector<>& _v) {
-    sdsl::util::bit_compress(_v);
-  };
-
-  sdsl::store_to_cache(cslp_docs, conf::KEY_GCDA_CSLP_DOCS, t_config);
-  grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> cslp_docs_c(cslp_docs, bit_compress, bit_compress);
-  sdsl::store_to_cache(cslp_docs_c, conf::KEY_GCDA_CSLP_DOCS_C, t_config);
-}
-
-void ConstructLightSLPOnDA(Config& t_config) {
-  grammar::LightSLP<> lslp;
-
-  {
-    // Construct Light SLP on DA
-    auto datafile = cache_file_name(conf::KEY_DA_RAW, t_config);
-
-    grammar::SLP<> slp;
-    std::vector<std::size_t> compact_seq;
-    {
-      grammar::RePairReader<false> re_pair_reader;
-      auto slp_wrapper = grammar::BuildSLPWrapper(slp);
-
-      auto report_compact_seq = [&compact_seq](const auto& _var) {
-        compact_seq.emplace_back(_var);
-      };
-
-      re_pair_reader.Read(datafile, slp_wrapper, report_compact_seq);
-    }
-
-    grammar::CombinedSLP<> cslp;
-    sdsl::load_from_cache(cslp, conf::KEY_GCDA_CSLP, t_config);
-
-    lslp.Compute(slp, compact_seq, cslp);
-  }
-
-  sdsl::store_to_cache(lslp, conf::KEY_GCDA_LSLP, t_config);
-
-  // Construct Light SLP Basic on DA
-  auto bit_compress = [](sdsl::int_vector<>& _v) {
-    sdsl::util::bit_compress(_v);
-  };
-  grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
-                    grammar::SampledSLP<>,
-                    grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
-      lslp_basic(lslp, bit_compress, bit_compress, bit_compress, bit_compress);
-
-  sdsl::store_to_cache(lslp_basic, conf::KEY_GCDA_LSLP_BASIC, t_config);
-}
 
 //~~~~~~~
 
