@@ -51,12 +51,14 @@ template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
           typename TSLP = SLPWrapper<TStorage, TAlphabet>,
-          typename TGetDocSet = GetDocSet<>,
+          typename TSLPSets = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>,
+                                                true,
+                                                grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
 class DocListIdxGCDA
-    : public DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, FComputeCover, FComputeDocs, TGetDocSet, TMergeSets> {
+    : public DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, FComputeCover, FComputeDocs, TSLPSets, TMergeSets> {
  public:
-  using Base = DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, FComputeCover, FComputeDocs, TGetDocSet, TMergeSets>;
+  using Base = DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, FComputeCover, FComputeDocs, TSLPSets, TMergeSets>;
   using typename Base::size_type;
   using typename Base::TDocId;
   using typename Base::TPattern;
@@ -100,6 +102,10 @@ class DocListIdxGCDA
   const TCountIdx& count_idx = this->count_idx_;
   const TSLP& slp = slp_;
 
+  const TSLPSets* slp_sets() {
+    return slp_sets_;
+  }
+
   const uint32_t& block_size() const {
     return block_size_;
   }
@@ -111,6 +117,8 @@ class DocListIdxGCDA
  protected:
   TSLP slp_;
 
+  const TSLPSets* slp_sets_ = nullptr;
+
   uint32_t block_size_ = 512;
   float storing_factor_ = 4;
 };
@@ -118,14 +126,27 @@ class DocListIdxGCDA
 //~~~~~~~
 
 
+template <bool kExpand, typename TChunks>
+void construct(grammar::GCChunks<grammar::SLP<>, kExpand, TChunks>& t_slp_sets,
+               Config& t_config,
+               uint32_t t_block_size,
+               float t_storing_factor);
+
+template <typename TSLP, bool kExpand>
+void construct(grammar::GCChunks<TSLP, kExpand, grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>& t_slp_sets,
+               Config& t_config,
+               uint32_t t_block_size,
+               float t_storing_factor);
+
 template <typename TStorage,
           typename TAlphabet,
           typename TCountIdx,
           typename TSLP,
-          typename TGetDocSet,
+          typename TSLPSets,
           typename TMergeSets>
-void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TGetDocSet, TMergeSets>& t_index,
-               Config& t_config) {
+void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TMergeSets>& t_index, Config& t_config) {
+  using namespace conf;
+
   if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
     auto event = sdsl::memory_monitor::event("Text");
     ConstructText<TAlphabet::int_width>(t_config);
@@ -136,6 +157,14 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TGetDocSet, 
 
   auto slp = t_index.slp;
   construct(slp, t_config);
+
+  if (const auto key = std::format("{}-{}_", t_index.block_size(), t_index.storing_factor())
+                       + t_config.keys[kGCDA][kDocs].get<std::string>();
+      !sdsl::cache_file_exists<TSLPSets>(key, t_config)) {
+    auto event = sdsl::memory_monitor::event(key);
+    TSLPSets slp_sets = t_index.slp_sets() ? *t_index.slp_sets() : TSLPSets();
+    construct(slp_sets, t_config, t_index.block_size(), t_index.storing_factor());
+  }
 
   t_index.load(t_config);
 }
@@ -383,6 +412,55 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
   };
   t_lslp = grammar::LightSLP<TSLP, TSampledSLP, TChunks>(lslp, bit_compress, bit_compress, bit_compress, bit_compress);
   sdsl::store_to_cache(t_lslp, key_lslp, t_config, true);
+}
+
+//~~~~~~~
+
+
+template <bool kExpand, typename TChunks>
+void construct(grammar::GCChunks<grammar::SLP<>, kExpand, TChunks>& t_slp_sets,
+               Config& t_config,
+               uint32_t t_block_size,
+               float t_storing_factor) {
+  using namespace conf;
+  const auto key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
+  auto key_docs = key_prefix + t_config.keys[kGCDA][kDocs].get<std::string>();
+
+  grammar::Chunks<> slp_sets;
+  sdsl::load_from_cache(slp_sets, key_docs, t_config, true);
+
+  const auto& objs = slp_sets.GetObjects();
+  grammar::RePairEncoder<false> encoder_nslp;
+  t_slp_sets.Compute(objs.begin(), objs.end(), slp_sets, encoder_nslp);
+  sdsl::store_to_cache(t_slp_sets, key_docs, t_config, true);
+}
+
+//~~~~~~~
+
+
+template <typename TSLP, bool kExpand>
+void construct(grammar::GCChunks<TSLP, kExpand, grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>& t_slp_sets,
+               Config& t_config,
+               uint32_t t_block_size,
+               float t_storing_factor) {
+  using namespace conf;
+  const auto key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
+  auto key_docs = key_prefix + t_config.keys[kGCDA][kDocs].get<std::string>();
+
+  grammar::GCChunks<grammar::SLP<>> slp_sets;
+  if (!sdsl::cache_file_exists<decltype(slp_sets)>(key_docs, t_config)) {
+    construct(slp_sets, t_config, t_block_size, t_storing_factor);
+  } else {
+    sdsl::load_from_cache(slp_sets, key_docs, t_config, true);
+  }
+
+  auto bit_compress = [](sdsl::int_vector<>& _v) {
+    sdsl::util::bit_compress(_v);
+  };
+
+  t_slp_sets =
+      std::remove_reference_t<decltype(t_slp_sets)>(slp_sets, bit_compress, bit_compress, bit_compress, bit_compress);
+  sdsl::store_to_cache(t_slp_sets, key_docs, t_config, true);
 }
 
 //~~~~~~~
