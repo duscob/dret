@@ -45,6 +45,8 @@ template <typename TSLP = grammar::BasicSLP<sdsl::int_vector<>>,
           typename TChunks = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
 class GetDocSet;
 
+using FComputeDocSet = std::function<std::vector<uint32_t>(std::size_t)>;
+
 class MergeSetsBinaryTreeFunctor;
 
 template <typename TStorage = GenericStorage,
@@ -55,13 +57,33 @@ template <typename TStorage = GenericStorage,
                                                 true,
                                                 grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
-class DocListIdxGCDA
-    : public DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, FComputeCover, FComputeDocs, TSLPSets, TMergeSets> {
+class DocListIdxGCDA : public DLSampledTreeScheme<TStorage,
+                                                  TAlphabet,
+                                                  TCountIdx,
+                                                  FComputeCover,
+                                                  FComputeDocs,
+                                                  FComputeDocSet,
+                                                  TMergeSets> {
  public:
-  using Base = DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, FComputeCover, FComputeDocs, TSLPSets, TMergeSets>;
+  using Base =
+      DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, FComputeCover, FComputeDocs, FComputeDocSet, TMergeSets>;
   using typename Base::size_type;
 
-  explicit DocListIdxGCDA(const TStorage& t_storage) : Base(t_storage) {}
+  explicit DocListIdxGCDA(const TStorage& t_storage)
+      : Base(
+            t_storage,
+            TCountIdx(t_storage),
+            [this](std::size_t t_bp, std::size_t t_ep) {
+              return this->slp_.ComputeCover(t_bp, t_ep);
+            },
+            [this](std::size_t t_bp, std::size_t t_ep, const std::function<void(std::size_t)>& t_report) {
+              this->slp_.ComputeDocs(t_bp, t_ep, t_report);
+            },
+            [this](std::size_t t_i) {
+              return (*this->slp_sets_)[t_i];
+            },
+            TMergeSets()),
+        slp_(t_storage) {}
 
   DocListIdxGCDA(const TStorage& t_storage, const TCountIdx& t_count_idx, const TSLP& t_slp)
       : Base(
@@ -72,6 +94,9 @@ class DocListIdxGCDA
             },
             [this](std::size_t t_bp, std::size_t t_ep, const std::function<void(std::size_t)>& t_report) {
               this->slp_.ComputeDocs(t_bp, t_ep, t_report);
+            },
+            [this](std::size_t t_i) {
+              return (*this->slp_sets_)[t_i];
             }),
         slp_(t_slp) {}
 
