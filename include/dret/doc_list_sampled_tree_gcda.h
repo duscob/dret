@@ -97,6 +97,7 @@ class DocListIdxGCDA
     return this->count_idx_.serialize(out, child, "count_idx") + slp_.serialize(out, child, "compute_cover");
   }
 
+  const TCountIdx& count_idx = this->count_idx_;
   const TSLP& slp = slp_;
 
   const uint32_t& block_size() const {
