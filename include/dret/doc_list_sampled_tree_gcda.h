@@ -6,22 +6,19 @@
 
 #include <sdsl/construct_sa.hpp>
 
+#include <grammar/re_pair.h>
+#include <grammar/sampled_slp.h>
+#include <grammar/slp.h>
 #include <grammar/slp_helper.h>
 
+#include "construct_base.h"
 #include "doc_list_sampled_tree.h"
+#include "index_base.h"
 #include "slp_tools.h"
 
 namespace dret {
 
 namespace gcda {
-
-using FComputeCover =
-    std::function<std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>>(std::size_t, std::size_t)>;
-
-using FComputeDocs = std::function<void(std::size_t, std::size_t, const std::function<void(std::size_t)>&)>;
-
-
-using FComputeDocSet = std::function<std::vector<uint32_t>(std::size_t)>;
 
 class MergeSetsBinaryTreeFunctor;
 
@@ -35,37 +32,16 @@ template <typename TStorage = GenericStorage,
                                                 true,
                                                 grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
-class DocListIdxGCDA : public DLSampledTreeScheme<TStorage,
-                                                  TAlphabet,
-                                                  TCountIdx,
-                                                  FComputeCover,
-                                                  FComputeDocs,
-                                                  FComputeDocSet,
-                                                  TMergeSets> {
+class DocListIdxGCDA
+    : public DLSampledTreeScheme<TCountIdx, TMergeSets, typename TAlphabet::string_type>,
+      public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
-  using Base =
-      DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, FComputeCover, FComputeDocs, FComputeDocSet, TMergeSets>;
-  using typename Base::size_type;
+  using SchemeBase = DLSampledTreeScheme<TCountIdx, TMergeSets, typename TAlphabet::string_type>;
+  using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
+  using typename SchemeBase::size_type;
 
   explicit DocListIdxGCDA(const TStorage& t_storage)
-      : Base(
-            t_storage,
-            TCountIdx(t_storage),
-            [this](std::size_t t_bp, std::size_t t_ep) {
-              std::vector<std::size_t> nodes;
-              auto report = [&nodes](const auto& _value) {
-                nodes.emplace_back(_value);
-              };
-              auto range = grammar::ComputeCoverFromBottom(*this->slp_, t_bp, t_ep, report);
-              return std::make_pair(std::move(range), std::move(nodes));
-            },
-            [this](std::size_t t_bp, std::size_t t_ep, const std::function<void(std::size_t)>& t_report) {
-              ExpandSLP(*this->slp_, t_bp, t_ep, t_report);
-            },
-            [this](std::size_t t_i) {
-              return (*this->slp_sets_)[t_i];
-            },
-            TMergeSets()) {}
+      : SchemeBase(TCountIdx(t_storage), TMergeSets()), StorageBase(t_storage) {}
 
   DocListIdxGCDA() = default;
 
@@ -86,7 +62,25 @@ class DocListIdxGCDA : public DLSampledTreeScheme<TStorage,
   }
 
  protected:
-  void loadInner(typename Base::TSource& t_source, const JSON& t_keys) override {
+  std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>>
+  computeCover(std::size_t t_sp, std::size_t t_ep) const override {
+    std::vector<std::size_t> nodes;
+    auto report = [&nodes](const auto& _value) { nodes.emplace_back(_value); };
+    auto range = grammar::ComputeCoverFromBottom(*slp_, t_sp, t_ep, report);
+    return {std::move(range), std::move(nodes)};
+  }
+
+  void getDocs(std::size_t t_sp,
+               std::size_t t_ep,
+               const std::function<void(std::size_t)>& t_report) const override {
+    ExpandSLP(*slp_, t_sp, t_ep, t_report);
+  }
+
+  std::vector<uint32_t> getDocSet(std::size_t t_i) const override {
+    return (*slp_sets_)[t_i];
+  }
+
+  void loadInner(typename StorageBase::TSource& t_source, const JSON& t_keys) override {
     using namespace conf;
 
     std::visit(

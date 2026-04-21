@@ -4,55 +4,34 @@
 
 #pragma once
 
-#include <filesystem>
+#include <algorithm>
+#include <functional>
+#include <vector>
 
-#include "sdsl/io.hpp"
-
-#include <grammar/re_pair.h>
-#include <grammar/sampled_slp.h>
-#include <grammar/slp.h>
-#include <grammar/slp_helper.h>
-
-#include "construct_base.h"
 #include "doc_list_index.h"
-#include "index_base.h"
 
 namespace dret {
 
 
-template <typename TStorage,
-          typename TAlphabet,
-          typename TCountIdx,
-          typename TComputeCover,
-          typename TGetDocs,
-          typename TGetDocSet,
-          typename TMergeSets>
-class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
+template <typename TCountIdx,
+          typename TMergeSets,
+          typename TSequence = Alphabet<>::string_type>
+class DLSampledTreeScheme : public DocListIndex<TSequence> {
  public:
-  using Base = DocListIndexExtStorage<TStorage, TAlphabet>;
-  using typename Base::size_type;
+  using Base = DocListIndex<TSequence>;
   using typename Base::TDocId;
   using typename Base::TPattern;
+  using size_type = std::size_t;
 
-  DLSampledTreeScheme(const TStorage& t_storage,
-                      const TCountIdx& t_count_idx,
-                      const TComputeCover& t_compute_cover,
-                      const TGetDocs& t_get_docs,
-                      const TGetDocSet& t_get_doc_set,
-                      const TMergeSets& t_merge_sets)
-      : Base(t_storage),
-        count_idx_(t_count_idx),
-        compute_cover_(t_compute_cover),
-        get_docs_(t_get_docs),
-        get_doc_set_(t_get_doc_set),
-        merge_sets_(t_merge_sets) {}
+  DLSampledTreeScheme(const TCountIdx& t_count_idx, const TMergeSets& t_merge_sets)
+      : count_idx_(t_count_idx), merge_sets_(t_merge_sets) {}
 
   DLSampledTreeScheme() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
     auto [sp, ep] = count_idx_.Count(t_pattern);
 
-    auto cover = compute_cover_(sp, ep);
+    auto cover = computeCover(sp, ep);
 
     const auto& range = cover.first;
     const auto& nodes = cover.second;
@@ -60,23 +39,23 @@ class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
     std::vector<uint32_t> docs;
     docs.reserve(range.first - sp + ep - range.second);
 
-    // TODO Use generic object to copy
     auto add_doc = [&docs](const auto& tt_d) {
       docs.emplace_back(tt_d);
     };
 
     if (nodes.empty()) {
-      get_docs_(sp, ep, add_doc);
+      getDocs(sp, ep, add_doc);
     } else {
-      get_docs_(sp, range.first, add_doc);
-      get_docs_(range.second, ep, add_doc);
+      getDocs(sp, range.first, add_doc);
+      getDocs(range.second, ep, add_doc);
     }
 
     sort(docs.begin(), docs.end());
     docs.erase(unique(docs.begin(), docs.end()), docs.end());
 
     if (!nodes.empty()) {
-      merge_sets_(nodes.begin(), nodes.end(), get_doc_set_, docs);
+      auto get_doc_set = [this](std::size_t t_i) { return this->getDocSet(t_i); };
+      merge_sets_(nodes.begin(), nodes.end(), get_doc_set, docs);
     }
 
     for (const auto& doc : docs) {
@@ -85,36 +64,18 @@ class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
   }
 
  protected:
+  virtual std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>>
+      computeCover(std::size_t t_sp, std::size_t t_ep) const = 0;
+
+  virtual void getDocs(std::size_t t_sp,
+                       std::size_t t_ep,
+                       const std::function<void(std::size_t)>& t_report) const = 0;
+
+  virtual std::vector<uint32_t> getDocSet(std::size_t t_i) const = 0;
+
   TCountIdx count_idx_;
-  TComputeCover compute_cover_;
-  TGetDocs get_docs_;
-  TGetDocSet get_doc_set_;
   TMergeSets merge_sets_;
 };
-
-//~~~~~~~
-
-
-template <typename TStorage,
-          typename TAlphabet,
-          typename TCountIdx,
-          typename TComputeCover,
-          typename TGetDocs,
-          typename TGetDocSet,
-          typename TMergeSets>
-void construct(
-    DLSampledTreeScheme<TStorage, TAlphabet, TCountIdx, TComputeCover, TGetDocs, TGetDocSet, TMergeSets>& t_index,
-    Config& t_config) {
-  if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<TAlphabet::int_width>(t_config);
-  }
-
-  TCountIdx count_index(t_index.storage());
-  construct(count_index, t_config.data_path, t_config);
-
-  t_index.load(t_config);
-}
 
 //~~~~~~~
 
