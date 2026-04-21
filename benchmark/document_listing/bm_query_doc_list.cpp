@@ -26,6 +26,11 @@ DEFINE_int32(pattern_delim, '\n', "Pattern delimiter.");
 DEFINE_int32(min_s, 4, "Minimum sampling parameter s.");
 DEFINE_int32(max_s, 128, "Maximum sampling parameter s.");
 
+DEFINE_int32(min_block_size, 512, "Minimum block size for DocListGCDA (power of 2).");
+DEFINE_int32(max_block_size, 512, "Maximum block size for DocListGCDA (power of 2).");
+DEFINE_int32(min_storing_factor, 4, "Minimum storing factor for DocListGCDA (power of 2).");
+DEFINE_int32(max_storing_factor, 4, "Maximum storing factor for DocListGCDA (power of 2).");
+
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
 DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");
 DEFINE_double(min_time, 0, "Minimum time (seconds) for the locate query micro benchmark.");
@@ -242,6 +247,14 @@ int main(int argc, char* argv[]) {
       {"Brute-RIndex", Factory<>::Config{Factory<>::IndexEnum::BRUTE_R_INDEX}, false},
       {"Brute-SRIndex", Factory<>::Config{Factory<>::IndexEnum::BRUTE_SR_INDEX}, true},
   };
+
+  for (int64_t bs = FLAGS_min_block_size; bs <= FLAGS_max_block_size; bs *= 2) {
+    for (int64_t sf = FLAGS_min_storing_factor; sf <= FLAGS_max_storing_factor; sf *= 2) {
+      auto name = "DocListGCDA-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config cfg{Factory<>::IndexEnum::GCDA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({name, cfg, false});
+    }
+  }
 
   QueryBenchmarkConfig query_bm_config{FLAGS_report_stats, FLAGS_reps, FLAGS_min_time, FLAGS_print_result};
 

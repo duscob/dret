@@ -20,6 +20,7 @@
 #include "dret/config.h"
 #include "dret/doc_list_index.h"
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_sampled_tree_gcda.h"
 
 
 using ExternalGenericStorage = std::reference_wrapper<sri::GenericStorage>;
@@ -30,14 +31,23 @@ class Factory {
   enum class IndexEnum {
     BRUTE_R_INDEX,
     BRUTE_SR_INDEX,
+    GCDA,
   };
 
   struct Config {
     IndexEnum index_t;
-    std::size_t sampling_size;
+    std::size_t sampling_size = 0;
+    uint32_t block_size = 512;
+    float storing_factor = 4;
 
     bool operator<(const Config& t_c) const {
-      return index_t < t_c.index_t || (index_t == t_c.index_t && sampling_size < t_c.sampling_size);
+      if (index_t != t_c.index_t)
+        return index_t < t_c.index_t;
+      if (sampling_size != t_c.sampling_size)
+        return sampling_size < t_c.sampling_size;
+      if (block_size != t_c.block_size)
+        return block_size < t_c.block_size;
+      return storing_factor < t_c.storing_factor;
     }
   };
 
@@ -100,6 +110,15 @@ class Factory {
             std::ref(storage_), sri::SrIndexValidArea<ExternalGenericStorage>(storage_, t_config.sampling_size));
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::GCDA: {
+        auto idx = std::make_shared<dret::gcda::DocListIdxGCDA<ExternalGenericStorage>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
       }
     }
 
