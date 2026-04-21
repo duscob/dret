@@ -39,8 +39,22 @@ class DocListIdxGCDA : public DLSampledTreeScheme<TMergeSets, typename TAlphabet
   using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
   using typename SchemeBase::size_type;
 
-  explicit DocListIdxGCDA(const TStorage& t_storage)
-      : SchemeBase(TMergeSets()), StorageBase(t_storage), count_idx_(t_storage) {}
+  explicit DocListIdxGCDA(const TStorage& t_storage, uint32_t t_block_size = 512, float t_storing_factor = 4)
+      : SchemeBase(TMergeSets()),
+        StorageBase(t_storage),
+        count_idx_(t_storage),
+        block_size_(t_block_size),
+        storing_factor_(t_storing_factor) {}
+
+  DocListIdxGCDA(const TStorage& t_storage,
+                 const TCountIdx& t_count_idx,
+                 uint32_t t_block_size = 512,
+                 float t_storing_factor = 4)
+      : SchemeBase(TMergeSets()),
+        StorageBase(t_storage),
+        count_idx_(t_count_idx),
+        block_size_(t_block_size),
+        storing_factor_(t_storing_factor) {}
 
   DocListIdxGCDA() = default;
 
