@@ -34,11 +34,6 @@ class DLSampledTreeScheme : public DocListIndexExtStorage<TStorage, TAlphabet> {
   using typename Base::TDocId;
   using typename Base::TPattern;
 
-  DLSampledTreeScheme(const TStorage& t_storage) : Base(t_storage), count_idx_(t_storage), compute_cover_(t_storage) {}
-
-  DLSampledTreeScheme(const TStorage& t_storage, const TCountIdx& t_count_idx, const TComputeCover& t_compute_cover)
-      : Base(t_storage), count_idx_(t_count_idx), compute_cover_(t_compute_cover) {}
-
   DLSampledTreeScheme(const TStorage& t_storage,
                       const TCountIdx& t_count_idx,
                       const TComputeCover& t_compute_cover,
