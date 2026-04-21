@@ -33,25 +33,25 @@ template <typename TStorage = GenericStorage,
                                                 grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
 class DocListIdxGCDA
-    : public DLSampledTreeScheme<TCountIdx, TMergeSets, typename TAlphabet::string_type>,
+    : public DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>,
       public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
-  using SchemeBase = DLSampledTreeScheme<TCountIdx, TMergeSets, typename TAlphabet::string_type>;
+  using SchemeBase = DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>;
   using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
   using typename SchemeBase::size_type;
 
   explicit DocListIdxGCDA(const TStorage& t_storage)
-      : SchemeBase(TCountIdx(t_storage), TMergeSets()), StorageBase(t_storage) {}
+      : SchemeBase(TMergeSets()), StorageBase(t_storage), count_idx_(t_storage) {}
 
   DocListIdxGCDA() = default;
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return this->count_idx_.serialize(out, child, "count_idx") + slp_->serialize(out, child, "slp")
+    return count_idx_.serialize(out, child, "count_idx") + slp_->serialize(out, child, "slp")
            + slp_sets_->serialize(out, child, "slp_docs");
   }
 
-  const TCountIdx& count_idx = this->count_idx_;
+  const TCountIdx& count_idx = count_idx_;
 
   const uint32_t& block_size() const {
     return block_size_;
@@ -62,6 +62,10 @@ class DocListIdxGCDA
   }
 
  protected:
+  std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const override {
+    return count_idx_.Count(t_pattern);
+  }
+
   std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>>
   computeCover(std::size_t t_sp, std::size_t t_ep) const override {
     std::vector<std::size_t> nodes;
@@ -85,7 +89,7 @@ class DocListIdxGCDA
 
     std::visit(
         [this](auto&& tt_source) {
-          this->count_idx_.load(tt_source.get());
+          count_idx_.load(tt_source.get());
         },
         t_source);
 
@@ -95,6 +99,7 @@ class DocListIdxGCDA
         this->template loadItemPtr<TSLPSets>(key_prefix + t_keys[kGCDA][kDocs].get<std::string>(), t_source, true);
   }
 
+  TCountIdx count_idx_;
   const TSLP* slp_ = nullptr;
   const TSLPSets* slp_sets_ = nullptr;
 

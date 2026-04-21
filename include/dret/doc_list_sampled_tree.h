@@ -13,9 +13,7 @@
 namespace dret {
 
 
-template <typename TCountIdx,
-          typename TMergeSets,
-          typename TSequence = Alphabet<>::string_type>
+template <typename TMergeSets, typename TSequence = Alphabet<>::string_type>
 class DLSampledTreeScheme : public DocListIndex<TSequence> {
  public:
   using Base = DocListIndex<TSequence>;
@@ -23,13 +21,12 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
   using typename Base::TPattern;
   using size_type = std::size_t;
 
-  DLSampledTreeScheme(const TCountIdx& t_count_idx, const TMergeSets& t_merge_sets)
-      : count_idx_(t_count_idx), merge_sets_(t_merge_sets) {}
+  explicit DLSampledTreeScheme(const TMergeSets& t_merge_sets) : merge_sets_(t_merge_sets) {}
 
   DLSampledTreeScheme() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
-    auto [sp, ep] = count_idx_.Count(t_pattern);
+    auto [sp, ep] = count(t_pattern);
 
     auto cover = computeCover(sp, ep);
 
@@ -64,6 +61,8 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
   }
 
  protected:
+  virtual std::pair<std::size_t, std::size_t> count(const TPattern& t_pattern) const = 0;
+
   virtual std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>>
       computeCover(std::size_t t_sp, std::size_t t_ep) const = 0;
 
@@ -73,7 +72,6 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
 
   virtual std::vector<uint32_t> getDocSet(std::size_t t_i) const = 0;
 
-  TCountIdx count_idx_;
   TMergeSets merge_sets_;
 };
 
