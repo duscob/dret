@@ -51,7 +51,9 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
     docs.erase(unique(docs.begin(), docs.end()), docs.end());
 
     if (!nodes.empty()) {
-      auto get_doc_set = [this](std::size_t t_i) { return this->getDocSet(t_i); };
+      auto get_doc_set = [this](std::size_t t_i) {
+        return this->getDocSet(t_i);
+      };
       merge_sets_(nodes.begin(), nodes.end(), get_doc_set, docs);
     }
 
@@ -63,12 +65,11 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
  protected:
   virtual std::pair<std::size_t, std::size_t> count(const TPattern& t_pattern) const = 0;
 
-  virtual std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>>
-      computeCover(std::size_t t_sp, std::size_t t_ep) const = 0;
+  virtual std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
+      std::size_t t_sp,
+      std::size_t t_ep) const = 0;
 
-  virtual void getDocs(std::size_t t_sp,
-                       std::size_t t_ep,
-                       const std::function<void(std::size_t)>& t_report) const = 0;
+  virtual void getDocs(std::size_t t_sp, std::size_t t_ep, const std::function<void(std::size_t)>& t_report) const = 0;
 
   virtual std::vector<uint32_t> getDocSet(std::size_t t_i) const = 0;
 

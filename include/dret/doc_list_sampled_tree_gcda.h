@@ -32,9 +32,8 @@ template <typename TStorage = GenericStorage,
                                                 true,
                                                 grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
-class DocListIdxGCDA
-    : public DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>,
-      public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
+class DocListIdxGCDA : public DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>,
+                       public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
   using SchemeBase = DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>;
   using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
@@ -66,17 +65,18 @@ class DocListIdxGCDA
     return count_idx_.Count(t_pattern);
   }
 
-  std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>>
-  computeCover(std::size_t t_sp, std::size_t t_ep) const override {
+  std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
+      std::size_t t_sp,
+      std::size_t t_ep) const override {
     std::vector<std::size_t> nodes;
-    auto report = [&nodes](const auto& _value) { nodes.emplace_back(_value); };
+    auto report = [&nodes](const auto& _value) {
+      nodes.emplace_back(_value);
+    };
     auto range = grammar::ComputeCoverFromBottom(*slp_, t_sp, t_ep, report);
     return {std::move(range), std::move(nodes)};
   }
 
-  void getDocs(std::size_t t_sp,
-               std::size_t t_ep,
-               const std::function<void(std::size_t)>& t_report) const override {
+  void getDocs(std::size_t t_sp, std::size_t t_ep, const std::function<void(std::size_t)>& t_report) const override {
     ExpandSLP(*slp_, t_sp, t_ep, t_report);
   }
 
