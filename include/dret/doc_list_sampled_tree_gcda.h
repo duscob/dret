@@ -50,7 +50,9 @@ class DocListIdxGCDA : public DLSampledTreeScheme<TMergeSets, typename TAlphabet
            + slp_sets_->serialize(out, child, "slp_docs");
   }
 
-  const TCountIdx& count_idx = count_idx_;
+  const TCountIdx& count_idx() const {
+    return count_idx_;
+  }
 
   const uint32_t& block_size() const {
     return block_size_;
@@ -76,12 +78,15 @@ class DocListIdxGCDA : public DLSampledTreeScheme<TMergeSets, typename TAlphabet
     return {std::move(range), std::move(nodes)};
   }
 
-  void getDocs(std::size_t t_sp, std::size_t t_ep, const std::function<void(std::size_t)>& t_report) const override {
+  void getDocs(std::size_t t_sp,
+               std::size_t t_ep,
+               const std::function<void(typename SchemeBase::TDocId)>& t_report) const override {
     ExpandSLP(*slp_, t_sp, t_ep, t_report);
   }
 
-  std::vector<uint32_t> getDocSet(std::size_t t_i) const override {
-    return (*slp_sets_)[t_i];
+  std::vector<typename SchemeBase::TDocId> getDocSet(std::size_t t_i) const override {
+    auto v = (*slp_sets_)[t_i];
+    return {v.begin(), v.end()};
   }
 
   void loadInner(typename StorageBase::TSource& t_source, const JSON& t_keys) override {
@@ -178,7 +183,7 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TM
     construct(slp, t_config, filepath_da, t_index.block_size(), t_index.storing_factor());
   }
 
-  auto count_idx = t_index.count_idx;
+  auto count_idx = t_index.count_idx();
   construct(count_idx, t_config.data_path, t_config);
 
   if (const auto key = key_prefix + t_config.keys[kGCDA][kDocs].get<std::string>();

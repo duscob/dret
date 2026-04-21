@@ -33,7 +33,7 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
     const auto& range = cover.first;
     const auto& nodes = cover.second;
 
-    std::vector<uint32_t> docs;
+    std::vector<TDocId> docs;
     docs.reserve(range.first - sp + ep - range.second);
 
     auto add_doc = [&docs](const auto& tt_d) {
@@ -69,14 +69,11 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
       std::size_t t_sp,
       std::size_t t_ep) const = 0;
 
-  virtual void getDocs(std::size_t t_sp, std::size_t t_ep, const std::function<void(std::size_t)>& t_report) const = 0;
+  virtual void getDocs(std::size_t t_sp, std::size_t t_ep, const std::function<void(TDocId)>& t_report) const = 0;
 
-  virtual std::vector<uint32_t> getDocSet(std::size_t t_i) const = 0;
+  virtual std::vector<TDocId> getDocSet(std::size_t t_i) const = 0;
 
   TMergeSets merge_sets_;
 };
-
-//~~~~~~~
-
 
 }  // namespace dret
