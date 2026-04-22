@@ -27,6 +27,7 @@ constexpr std::string_view kDA = "da";
 constexpr std::string_view kGCDA = "gcda";
 constexpr std::string_view kSLP = "slp";
 constexpr std::string_view kDocs = "docs";
+constexpr std::string_view kDGCDA = "dgcda";
 }  // namespace conf
 
 template <uint8_t t_width = DRET_DEFAULT_ALPHABET_WIDTH>
@@ -42,6 +43,13 @@ struct Keys {
             {
                 {conf::kSLP, "gcda_slp"},
                 {conf::kDocs, "gcda_docs"},
+            },
+        },
+        {
+            conf::kDGCDA,
+            {
+                {conf::kSLP, "dgcda_slp"},
+                {conf::kDocs, "dgcda_docs"},
             },
         },
     });
