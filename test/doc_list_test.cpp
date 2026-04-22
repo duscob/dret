@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 
 #include "base_test.h"
@@ -24,7 +25,8 @@ class DocListIndexConstructTypedTests : public BaseConfigTests<8> {
   const std::string data_ = "MINIMUM\1MINIMAL\1MINIMIZES\1";
 };
 
-using DocListIndexConstructTypes = ::testing::Types<dret::DocListIdxBrute<>, dret::gcda::DocListIdxGCDA<>>;
+using DocListIndexConstructTypes =
+    ::testing::Types<dret::DocListIdxBrute<>, dret::gcda::DocListIdxGCDA<>, dret::dgcda::DocListIdxDGCDA<>>;
 
 TYPED_TEST_SUITE(DocListIndexConstructTypedTests, DocListIndexConstructTypes);
 
@@ -73,7 +75,9 @@ class DocListIndexSearchTypedTests : public BaseConfigTests<8> {
 };
 
 using DocListIndexSearchTypes =
-    ::testing::Types<dret::DocListIdxBrute<ExternalGenericStorage>, dret::gcda::DocListIdxGCDA<ExternalGenericStorage>>;
+    ::testing::Types<dret::DocListIdxBrute<ExternalGenericStorage>,
+                     dret::gcda::DocListIdxGCDA<ExternalGenericStorage>,
+                     dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage>>;
 
 TYPED_TEST_SUITE(DocListIndexSearchTypedTests, DocListIndexSearchTypes);
 
