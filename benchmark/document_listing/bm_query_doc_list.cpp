@@ -253,6 +253,10 @@ int main(int argc, char* argv[]) {
       auto name = "DocListGCDA-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
       Factory<>::Config cfg{Factory<>::IndexEnum::GCDA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
       idx_configs.push_back({name, cfg, false});
+
+      auto dgcda_name = "DocListDGCDA-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_cfg{Factory<>::IndexEnum::DGCDA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_name, dgcda_cfg, false});
     }
   }
 

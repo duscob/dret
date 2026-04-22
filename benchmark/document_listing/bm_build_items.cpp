@@ -15,6 +15,7 @@
 
 #include "dret/construct_base.h"
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 #include "dret/index_base.h"
 
@@ -148,6 +149,10 @@ int main(int argc, char** argv) {
   if (!block_sizes.empty() && !storing_factors.empty()) {
     benchmark::RegisterBenchmark(
         "DocListGCDA", BM_ConstructDocListIdxGCDA<dret::gcda::DocListIdxGCDA<>>, config)
+        ->ArgsProduct({block_sizes, storing_factors});
+
+    benchmark::RegisterBenchmark(
+        "DocListDGCDA", BM_ConstructDocListIdxGCDA<dret::dgcda::DocListIdxDGCDA<>>, config)
         ->ArgsProduct({block_sizes, storing_factors});
   }
 

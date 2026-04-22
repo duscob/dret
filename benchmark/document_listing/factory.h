@@ -20,6 +20,7 @@
 #include "dret/config.h"
 #include "dret/doc_list_index.h"
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 
 
@@ -32,6 +33,7 @@ class Factory {
     BRUTE_R_INDEX,
     BRUTE_SR_INDEX,
     GCDA,
+    DGCDA,
   };
 
   struct Config {
@@ -115,6 +117,14 @@ class Factory {
 
       case IndexEnum::GCDA: {
         auto idx = std::make_shared<dret::gcda::DocListIdxGCDA<ExternalGenericStorage>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA: {
+        auto idx = std::make_shared<dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
