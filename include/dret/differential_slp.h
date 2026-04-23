@@ -13,6 +13,7 @@
 #include <grammar/re_pair.h>
 #include <grammar/slp.h>
 #include <grammar/slp_helper.h>
+#include <grammar/utility.h>
 
 #include "config.h"
 
@@ -22,6 +23,70 @@ template <typename TSLP = grammar::SLP<>, typename TIntContainer = sdsl::int_vec
 class DifferentialSLP : public TSLP {
  public:
   using size_type = std::size_t;
+
+  DifferentialSLP() = default;
+
+  template <typename TOtherSLP,
+            typename TOtherIntContainer,
+            typename TOtherBV,
+            typename ActionSLPRules = grammar::NoAction,
+            typename ActionSLPLengths = grammar::NoAction,
+            typename ActionIntContainers = grammar::NoAction>
+  DifferentialSLP(const DifferentialSLP<TOtherSLP, TOtherIntContainer, TOtherBV>& other,
+                  ActionSLPRules&& action_slp_rules = grammar::NoAction(),
+                  ActionSLPLengths&& action_slp_lengths = grammar::NoAction(),
+                  ActionIntContainers&& action_int_containers = grammar::NoAction())
+      : TSLP(static_cast<const TOtherSLP&>(other),
+             std::forward<ActionSLPRules>(action_slp_rules),
+             std::forward<ActionSLPLengths>(action_slp_lengths)),
+        seq_size_{other.SeqSize()},
+        diff_base_seq_{other.DiffBaseSeq()},
+        diff_base_sums_{other.DiffBaseSums()} {
+    grammar::Construct(roots_, other.GetRoots());
+    action_int_containers(roots_);
+    grammar::Construct(span_sums_, other.GetSpanSums());
+    action_int_containers(span_sums_);
+    grammar::Construct(samples_, other.GetSamples());
+    action_int_containers(samples_);
+    grammar::Construct(sample_roots_pos_, other.GetSampleRootsPos());
+    action_int_containers(sample_roots_pos_);
+
+    grammar::Construct(samples_pos_, other.GetSamplesPos());
+    samples_pos_rank_ = typename TBV::rank_1_type(&samples_pos_);
+    samples_pos_select_ = typename TBV::select_1_type(&samples_pos_);
+  }
+
+  const auto& GetRoots() const {
+    return roots_;
+  }
+
+  const auto& GetSpanSums() const {
+    return span_sums_;
+  }
+
+  const auto& GetSamples() const {
+    return samples_;
+  }
+
+  const auto& GetSampleRootsPos() const {
+    return sample_roots_pos_;
+  }
+
+  const auto& GetSamplesPos() const {
+    return samples_pos_;
+  }
+
+  auto SeqSize() const {
+    return seq_size_;
+  }
+
+  auto DiffBaseSeq() const {
+    return diff_base_seq_;
+  }
+
+  auto DiffBaseSums() const {
+    return diff_base_sums_;
+  }
 
   auto MakeWrapper() const {
     return grammar::MakeDifferentialSLPWrapper(seq_size_,

@@ -28,6 +28,25 @@ class DifferentialLightSLP : public DifferentialSLP<TSLP, TIntContainer, TBV>, p
  public:
   using size_type = std::size_t;
 
+  DifferentialLightSLP() = default;
+
+  template <typename TOtherSLP,
+            typename TOtherSampledSLP,
+            typename TOtherIntContainer,
+            typename TOtherBV,
+            typename ActionSLPRules = grammar::NoAction,
+            typename ActionSLPLengths = grammar::NoAction,
+            typename ActionIntContainers = grammar::NoAction>
+  DifferentialLightSLP(const DifferentialLightSLP<TOtherSLP, TOtherSampledSLP, TOtherIntContainer, TOtherBV>& other,
+                       ActionSLPRules&& action_slp_rules = grammar::NoAction(),
+                       ActionSLPLengths&& action_slp_lengths = grammar::NoAction(),
+                       ActionIntContainers&& action_int_containers = grammar::NoAction())
+      : DiffBase(static_cast<const DifferentialSLP<TOtherSLP, TOtherIntContainer, TOtherBV>&>(other),
+                 std::forward<ActionSLPRules>(action_slp_rules),
+                 std::forward<ActionSLPLengths>(action_slp_lengths),
+                 std::forward<ActionIntContainers>(action_int_containers)),
+        TSampledSLP(static_cast<const TOtherSampledSLP&>(other)) {}
+
   void Compute(const sdsl::int_vector<>& da,
                uint32_t block_size,
                float storing_factor,
