@@ -60,6 +60,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index_brute.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree_gcda.h
+        ${PROJECT_SOURCE_DIR}/include/dret/differential_slp.h
         ${PROJECT_SOURCE_DIR}/include/dret/differential_light_slp.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree_dgcda.h
 )
