@@ -257,6 +257,16 @@ int main(int argc, char* argv[]) {
       auto dgcda_name = "DocListDGCDA-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
       Factory<>::Config dgcda_cfg{Factory<>::IndexEnum::DGCDA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
       idx_configs.push_back({dgcda_name, dgcda_cfg, false});
+
+      auto dgcda_otf_name = "DocListDGCDA-OTF-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_otf_cfg{
+          Factory<>::IndexEnum::DGCDA_OTF, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_otf_name, dgcda_otf_cfg, false});
+
+      auto dgcda_crl_name = "DocListDGCDA-CRL-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_crl_cfg{
+          Factory<>::IndexEnum::DGCDA_CRL, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_crl_name, dgcda_crl_cfg, false});
     }
   }
 

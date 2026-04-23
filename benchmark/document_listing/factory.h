@@ -17,7 +17,9 @@
 
 #include "../tool/definitions.h"
 
+#include "dret/basic_slp_span_length.h"
 #include "dret/config.h"
+#include "dret/differential_light_slp.h"
 #include "dret/doc_list_index.h"
 #include "dret/doc_list_index_brute.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
@@ -34,7 +36,25 @@ class Factory {
     BRUTE_SR_INDEX,
     GCDA,
     DGCDA,
+    DGCDA_OTF,  // BasicSLPOnTheFlySpanLength — no stored lengths
+    DGCDA_CRL,  // BasicSLPCachedRootSpanLengths — lengths cached for roots only
   };
+
+  // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
+  // (the span-length strategy). Everything downstream — SampledSLP, Chunks,
+  // GCChunks, count index — is unchanged. Cache files are type-hashed by sdsl,
+  // so the variants do not collide on disk.
+  using DGCDASLP_OTF = dret::DifferentialLightSLP<
+      dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>>;
+  using DGCDASLP_CRL = dret::DifferentialLightSLP<
+      dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>;
+
+  template <typename TSLP>
+  using DGCDAVariant = dret::dgcda::DocListIdxDGCDA<
+      ExternalGenericStorage,
+      dret::Alphabet<>,
+      sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
+      TSLP>;
 
   struct Config {
     IndexEnum index_t;
@@ -125,6 +145,22 @@ class Factory {
 
       case IndexEnum::DGCDA: {
         auto idx = std::make_shared<dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA_OTF: {
+        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_OTF>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA_CRL: {
+        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_CRL>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
