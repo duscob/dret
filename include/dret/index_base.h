@@ -64,12 +64,18 @@ class IndexBaseWithExternalStorage {
 
   template <typename TItem>
   auto loadItemPtr(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
-    auto item = get<TItem>(storage_, t_key);
+    // When add_type_hash is true, the on-disk filename is disambiguated by type; the
+    // in-memory storage key must match, otherwise two variants sharing t_key collide —
+    // get<TItem> returns null on type mismatch, set/emplace refuses to replace the
+    // existing entry, and the subsequent load dereferences a null pointer.
+    const auto storage_key =
+        t_add_type_hash ? (t_key + "_" + sdsl::util::class_to_hash(TItem{})) : t_key;
+    auto item = get<TItem>(storage_, storage_key);
     if (!item) {
       // Store a default-constructed item first, then load into it in place.
       // Loading then moving/copying into storage would break SDSL rank/select support
       // pointers (e.g. rank_support_sd::m_v) that are set during deserialization.
-      auto* mutable_item = const_cast<TItem*>(set(storage_, t_key, TItem{}));
+      auto* mutable_item = const_cast<TItem*>(set(storage_, storage_key, TItem{}));
       load(*mutable_item, t_source, t_key, t_add_type_hash);
       item = mutable_item;
     }
