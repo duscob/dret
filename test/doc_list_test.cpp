@@ -146,3 +146,39 @@ TYPED_TEST(DocListIndexSearchTypedTests, search) {
     EXPECT_THAT(result, testing::ElementsAreArray(docs)) << pattern;
   }
 }
+
+//~~~~~~~
+
+
+template <typename TDSLP>
+class DifferentialSLPExpandTypedTests : public ::testing::Test {};
+
+using DifferentialSLPExpandTypes =
+    ::testing::Types<dret::DifferentialSLP<>,
+                     dret::DifferentialSLP<dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<sdsl::int_vector<>>>>,
+                     dret::DifferentialSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<sdsl::int_vector<>>>>>;
+
+TYPED_TEST_SUITE(DifferentialSLPExpandTypedTests, DifferentialSLPExpandTypes);
+
+TYPED_TEST(DifferentialSLPExpandTypedTests, expand_roundtrips_da) {
+  const std::vector<std::uint64_t> da_vec = {
+      0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 3, 3, 3, 3, 3, 3, 1, 2, 0, 1, 2, 0, 1, 2,
+  };
+  sdsl::int_vector<> da(da_vec.size(), 0, 64);
+  for (std::size_t i = 0; i < da_vec.size(); ++i)
+    da[i] = da_vec[i];
+  sdsl::util::bit_compress(da);
+
+  TypeParam dslp;
+  dslp.Compute(da, /*block_size=*/4);
+
+  std::vector<std::size_t> expanded;
+  auto report = [&expanded](auto value) {
+    expanded.emplace_back(static_cast<std::size_t>(value));
+  };
+  dret::ExpandSLP(dslp, 0, da.size(), report);
+
+  ASSERT_EQ(expanded.size(), da_vec.size());
+  for (std::size_t i = 0; i < da_vec.size(); ++i)
+    EXPECT_EQ(expanded[i], da_vec[i]) << "position " << i;
+}
