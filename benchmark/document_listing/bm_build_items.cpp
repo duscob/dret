@@ -13,7 +13,9 @@
 #include <sdsl/construct.hpp>
 #include <sdsl/io.hpp>
 
+#include "dret/basic_slp_span_length.h"
 #include "dret/construct_base.h"
+#include "dret/differential_light_slp.h"
 #include "dret/doc_list_index_brute.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
@@ -153,6 +155,24 @@ int main(int argc, char** argv) {
 
     benchmark::RegisterBenchmark(
         "DocListDGCDA", BM_ConstructDocListIdxGCDA<dret::dgcda::DocListIdxDGCDA<>>, config)
+        ->ArgsProduct({block_sizes, storing_factors});
+
+    using DGCDA_OTF = dret::dgcda::DocListIdxDGCDA<
+        dret::GenericStorage,
+        dret::Alphabet<>,
+        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        dret::DifferentialLightSLP<dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>>>;
+    benchmark::RegisterBenchmark(
+        "DocListDGCDA-OTF", BM_ConstructDocListIdxGCDA<DGCDA_OTF>, config)
+        ->ArgsProduct({block_sizes, storing_factors});
+
+    using DGCDA_CRL = dret::dgcda::DocListIdxDGCDA<
+        dret::GenericStorage,
+        dret::Alphabet<>,
+        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>;
+    benchmark::RegisterBenchmark(
+        "DocListDGCDA-CRL", BM_ConstructDocListIdxGCDA<DGCDA_CRL>, config)
         ->ArgsProduct({block_sizes, storing_factors});
   }
 
