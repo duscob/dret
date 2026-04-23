@@ -15,6 +15,7 @@
 #include <grammar/slp_helper.h>
 #include <grammar/utility.h>
 
+#include "basic_slp_span_length.h"
 #include "config.h"
 
 namespace dret {
@@ -153,6 +154,10 @@ void DifferentialSLP<TSLP, TIntContainer, TBV>::Compute(const sdsl::int_vector<>
     };
     encoder.Encode(diff_da.begin(), diff_da.end(), wrapper, report_c_seq);
   }
+
+  // Populate any cached SpanLength data that adapter TSLPs need (no-op by default).
+  // Must run before ComputeSamplesOnCompactSequence, which reads SpanLength on roots.
+  PopulateRootSpanLengths(static_cast<TSLP&>(*this), compact_seq);
 
   // 3. Compute span sums for non-terminals; ComputeSpanSums returns {min, max} of raw cover sums
   const auto& tslp = static_cast<const TSLP&>(*this);
