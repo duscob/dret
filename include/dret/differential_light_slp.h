@@ -132,6 +132,26 @@ void DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSamples, TSampl
 //~~~~~~~
 
 
+// Per-field size breakdown for benchmark reporting. Delegates the DiffBase part to
+// DifferentialSLP's collectSizes and adds the sampled-SLP component.
+template <typename TSLP,
+          typename TSampledSLP,
+          typename TRoots,
+          typename TSpanSums,
+          typename TSamples,
+          typename TSampleRootsPos,
+          typename TBV>
+void collectSizes(SizeReport& out,
+                  const DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& slp,
+                  const std::string& prefix = "") {
+  using DiffBase = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
+  collectSizes(out, static_cast<const DiffBase&>(slp), prefix);
+  append(out, prefix + "sampled_slp", sdsl::size_in_bytes(static_cast<const TSampledSLP&>(slp)));
+}
+
+//~~~~~~~
+
+
 // Dedicated overload — template deduction does not cross derived→base boundaries,
 // so explicitly upcast and forward to the DifferentialSLP overload.
 template <typename TSLP,

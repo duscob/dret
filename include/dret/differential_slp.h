@@ -18,6 +18,7 @@
 
 #include "basic_slp_span_length.h"
 #include "config.h"
+#include "size_report.h"
 
 namespace dret {
 
@@ -260,6 +261,27 @@ void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::l
   sdsl::load(seq_size_, in);
   sdsl::load(diff_base_seq_, in);
   sdsl::load(diff_base_sums_, in);
+}
+
+//~~~~~~~
+
+
+// Per-field size breakdown for benchmark reporting.
+template <typename TSLP,
+          typename TRoots,
+          typename TSpanSums,
+          typename TSamples,
+          typename TSampleRootsPos,
+          typename TBV>
+void collectSizes(SizeReport& out,
+                  const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& slp,
+                  const std::string& prefix = "") {
+  append(out, prefix + "base_slp", sdsl::size_in_bytes(static_cast<const TSLP&>(slp)));
+  append(out, prefix + "roots", sdsl::size_in_bytes(slp.GetRoots()));
+  append(out, prefix + "span_sums", sdsl::size_in_bytes(slp.GetSpanSums()));
+  append(out, prefix + "samples", sdsl::size_in_bytes(slp.GetSamples()));
+  append(out, prefix + "sample_roots_pos", sdsl::size_in_bytes(slp.GetSampleRootsPos()));
+  append(out, prefix + "samples_pos", sdsl::size_in_bytes(slp.GetSamplesPos()));
 }
 
 //~~~~~~~

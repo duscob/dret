@@ -64,6 +64,14 @@ class DocListIdxGCDA : public DLSampledTreeScheme<TMergeSets, typename TAlphabet
            + slp_sets_->serialize(out, child, "slp_docs");
   }
 
+  SizeReport GetSizeReport() const override {
+    SizeReport r;
+    if (slp_) collectSizes(r, *slp_, "slp_");
+    if (slp_sets_) append(r, "slp_sets", sdsl::size_in_bytes(*slp_sets_));
+    append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
+    return r;
+  }
+
   const TCountIdx& count_idx() const {
     return count_idx_;
   }

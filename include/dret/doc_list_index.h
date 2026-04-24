@@ -9,6 +9,7 @@
 
 #include "config.h"
 #include "index_base.h"
+#include "size_report.h"
 
 namespace dret {
 
@@ -21,6 +22,10 @@ class DocListIndex {
   virtual ~DocListIndex() = default;
 
   virtual void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const = 0;
+
+  // Per-field size breakdown for benchmark reporting. Default empty; concrete
+  // indices override to report their internal structure sizes.
+  virtual SizeReport GetSizeReport() const { return {}; }
 };
 
 //~~~~~~~
