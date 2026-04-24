@@ -6,6 +6,10 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <sdsl/dac_vector.hpp>
+#include <sdsl/enc_vector.hpp>
+#include <sdsl/vlc_vector.hpp>
+
 #include "dret/basic_slp_span_length.h"
 #include "dret/differential_slp.h"
 #include "dret/doc_list_index_brute.h"
@@ -156,7 +160,19 @@ class DifferentialSLPExpandTypedTests : public ::testing::Test {};
 using DifferentialSLPExpandTypes =
     ::testing::Types<dret::DifferentialSLP<>,
                      dret::DifferentialSLP<dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<sdsl::int_vector<>>>>,
-                     dret::DifferentialSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<sdsl::int_vector<>>>>>;
+                     dret::DifferentialSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<sdsl::int_vector<>>>>,
+                     dret::DifferentialSLP<grammar::SLP<>,
+                                           sdsl::enc_vector<>,
+                                           sdsl::enc_vector<>,
+                                           sdsl::enc_vector<>>,
+                     dret::DifferentialSLP<grammar::SLP<>,
+                                           sdsl::dac_vector<>,
+                                           sdsl::dac_vector<>,
+                                           sdsl::dac_vector<>>,
+                     dret::DifferentialSLP<grammar::SLP<>,
+                                           sdsl::vlc_vector<>,
+                                           sdsl::vlc_vector<>,
+                                           sdsl::vlc_vector<>>>;
 
 TYPED_TEST_SUITE(DifferentialSLPExpandTypedTests, DifferentialSLPExpandTypes);
 
