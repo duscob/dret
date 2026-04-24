@@ -5,6 +5,7 @@
 #pragma once
 
 #include <sdsl/bit_vectors.hpp>
+#include <sdsl/enc_vector.hpp>
 #include <sdsl/int_vector.hpp>
 #include <sdsl/io.hpp>
 #include <sdsl/util.hpp>
@@ -20,7 +21,12 @@
 
 namespace dret {
 
-template <typename TSLP = grammar::SLP<>, typename TIntContainer = sdsl::int_vector<>, typename TBV = sdsl::sd_vector<>>
+template <typename TSLP = grammar::SLP<>,
+          typename TRoots = sdsl::int_vector<>,
+          typename TSpanSums = sdsl::int_vector<>,
+          typename TSamples = sdsl::int_vector<>,
+          typename TSampleRootsPos = sdsl::enc_vector<>,
+          typename TBV = sdsl::sd_vector<>>
 class DifferentialSLP : public TSLP {
  public:
   using size_type = std::size_t;
@@ -28,15 +34,20 @@ class DifferentialSLP : public TSLP {
   DifferentialSLP() = default;
 
   template <typename TOtherSLP,
-            typename TOtherIntContainer,
+            typename TOtherRoots,
+            typename TOtherSpanSums,
+            typename TOtherSamples,
+            typename TOtherSampleRootsPos,
             typename TOtherBV,
             typename ActionSLPRules = grammar::NoAction,
             typename ActionSLPLengths = grammar::NoAction,
             typename ActionIntContainers = grammar::NoAction>
-  DifferentialSLP(const DifferentialSLP<TOtherSLP, TOtherIntContainer, TOtherBV>& other,
-                  ActionSLPRules&& action_slp_rules = grammar::NoAction(),
-                  ActionSLPLengths&& action_slp_lengths = grammar::NoAction(),
-                  ActionIntContainers&& action_int_containers = grammar::NoAction())
+  DifferentialSLP(
+      const DifferentialSLP<TOtherSLP, TOtherRoots, TOtherSpanSums, TOtherSamples, TOtherSampleRootsPos, TOtherBV>&
+          other,
+      ActionSLPRules&& action_slp_rules = grammar::NoAction(),
+      ActionSLPLengths&& action_slp_lengths = grammar::NoAction(),
+      ActionIntContainers&& action_int_containers = grammar::NoAction())
       : TSLP(static_cast<const TOtherSLP&>(other),
              std::forward<ActionSLPRules>(action_slp_rules),
              std::forward<ActionSLPLengths>(action_slp_lengths)),
@@ -110,10 +121,10 @@ class DifferentialSLP : public TSLP {
   void load(std::istream& in);
 
  private:
-  TIntContainer roots_;
-  TIntContainer span_sums_;
-  TIntContainer samples_;
-  TIntContainer sample_roots_pos_;
+  TRoots roots_;
+  TSpanSums span_sums_;
+  TSamples samples_;
+  TSampleRootsPos sample_roots_pos_;
   TBV samples_pos_;
   typename TBV::rank_1_type samples_pos_rank_;
   typename TBV::select_1_type samples_pos_select_;
@@ -125,8 +136,9 @@ class DifferentialSLP : public TSLP {
 //~~~~~~~
 
 
-template <typename TSLP, typename TIntContainer, typename TBV>
-void DifferentialSLP<TSLP, TIntContainer, TBV>::Compute(const sdsl::int_vector<>& da, uint32_t block_size) {
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
+void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::Compute(const sdsl::int_vector<>& da,
+                                                                                       uint32_t block_size) {
   const auto n = da.size();
   seq_size_ = n;
 
@@ -188,12 +200,16 @@ void DifferentialSLP<TSLP, TIntContainer, TBV>::Compute(const sdsl::int_vector<>
   };
   grammar::ComputeSamplesOnCompactSequence(compact_seq, tslp, get_span_sum, block_size, report_sample);
 
-  // 5. Fill bit-compressed TIntContainer fields
-  auto fill_iv = [](TIntContainer& iv, const auto& vec) {
-    iv = TIntContainer(vec.size(), 0, 64);
+  // 5. Fill per-field int-vector containers. Built via a temporary sdsl::int_vector<>
+  //    so compressed TSLP-side containers (enc_vector / dac_vector / vlc_vector) can be
+  //    constructed from a range; for sdsl::int_vector<> the final ctor is an identity copy.
+  auto fill_iv = [](auto& iv, const auto& vec) {
+    using IV = std::decay_t<decltype(iv)>;
+    sdsl::int_vector<> tmp(vec.size(), 0, 64);
     for (std::size_t i = 0; i < vec.size(); ++i)
-      iv[i] = static_cast<uint64_t>(vec[i]);
-    sdsl::util::bit_compress(iv);
+      tmp[i] = static_cast<uint64_t>(vec[i]);
+    sdsl::util::bit_compress(tmp);
+    iv = IV(tmp);
   };
 
   fill_iv(roots_, compact_seq);
@@ -209,10 +225,11 @@ void DifferentialSLP<TSLP, TIntContainer, TBV>::Compute(const sdsl::int_vector<>
 //~~~~~~~
 
 
-template <typename TSLP, typename TIntContainer, typename TBV>
-std::size_t DifferentialSLP<TSLP, TIntContainer, TBV>::serialize(std::ostream& out,
-                                                                 sdsl::structure_tree_node* v,
-                                                                 const std::string& name) const {
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
+std::size_t DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::serialize(
+    std::ostream& out,
+    sdsl::structure_tree_node* v,
+    const std::string& name) const {
   std::size_t written = 0;
   written += TSLP::serialize(out);
   written += sdsl::serialize(roots_, out);
@@ -230,8 +247,8 @@ std::size_t DifferentialSLP<TSLP, TIntContainer, TBV>::serialize(std::ostream& o
 //~~~~~~~
 
 
-template <typename TSLP, typename TIntContainer, typename TBV>
-void DifferentialSLP<TSLP, TIntContainer, TBV>::load(std::istream& in) {
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
+void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::load(std::istream& in) {
   TSLP::load(in);
   sdsl::load(roots_, in);
   sdsl::load(span_sums_, in);
@@ -250,8 +267,17 @@ void DifferentialSLP<TSLP, TIntContainer, TBV>::load(std::istream& in) {
 
 // ExpandSLP overload: more specific than the template in slp_tools.h, selected by overload resolution.
 // Converts from exclusive-ep (ExpandSLP convention) to inclusive-ep (grammar::ExpandDifferentialSLP convention).
-template <typename TSLP, typename TIntContainer, typename TBV, typename Report>
-void ExpandSLP(const DifferentialSLP<TSLP, TIntContainer, TBV>& slp, std::size_t bp, std::size_t ep, Report& report) {
+template <typename TSLP,
+          typename TRoots,
+          typename TSpanSums,
+          typename TSamples,
+          typename TSampleRootsPos,
+          typename TBV,
+          typename Report>
+void ExpandSLP(const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& slp,
+               std::size_t bp,
+               std::size_t ep,
+               Report& report) {
   if (bp >= ep)
     return;
   auto wrapper = slp.MakeWrapper();
@@ -261,8 +287,8 @@ void ExpandSLP(const DifferentialSLP<TSLP, TIntContainer, TBV>& slp, std::size_t
 //~~~~~~~
 
 
-template <typename TSLP, typename TIntContainer, typename TBV>
-void construct(DifferentialSLP<TSLP, TIntContainer, TBV>& t_dslp,
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
+void construct(DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& t_dslp,
                Config& t_config,
                uint32_t block_size,
                const std::string& cache_key) {

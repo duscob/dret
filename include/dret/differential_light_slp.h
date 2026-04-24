@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <sdsl/enc_vector.hpp>
 #include <sdsl/int_vector.hpp>
 #include <sdsl/io.hpp>
 #include <sdsl/util.hpp>
@@ -20,10 +21,14 @@ namespace dret {
 
 template <typename TSLP = grammar::SLP<>,
           typename TSampledSLP = grammar::SampledSLP<>,
-          typename TIntContainer = sdsl::int_vector<>,
+          typename TRoots = sdsl::int_vector<>,
+          typename TSpanSums = sdsl::int_vector<>,
+          typename TSamples = sdsl::int_vector<>,
+          typename TSampleRootsPos = sdsl::enc_vector<>,
           typename TBV = sdsl::sd_vector<>>
-class DifferentialLightSLP : public DifferentialSLP<TSLP, TIntContainer, TBV>, public TSampledSLP {
-  using DiffBase = DifferentialSLP<TSLP, TIntContainer, TBV>;
+class DifferentialLightSLP : public DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>,
+                             public TSampledSLP {
+  using DiffBase = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
 
  public:
   using size_type = std::size_t;
@@ -32,16 +37,30 @@ class DifferentialLightSLP : public DifferentialSLP<TSLP, TIntContainer, TBV>, p
 
   template <typename TOtherSLP,
             typename TOtherSampledSLP,
-            typename TOtherIntContainer,
+            typename TOtherRoots,
+            typename TOtherSpanSums,
+            typename TOtherSamples,
+            typename TOtherSampleRootsPos,
             typename TOtherBV,
             typename ActionSLPRules = grammar::NoAction,
             typename ActionSLPLengths = grammar::NoAction,
             typename ActionIntContainers = grammar::NoAction>
-  DifferentialLightSLP(const DifferentialLightSLP<TOtherSLP, TOtherSampledSLP, TOtherIntContainer, TOtherBV>& other,
+  DifferentialLightSLP(const DifferentialLightSLP<TOtherSLP,
+                                                  TOtherSampledSLP,
+                                                  TOtherRoots,
+                                                  TOtherSpanSums,
+                                                  TOtherSamples,
+                                                  TOtherSampleRootsPos,
+                                                  TOtherBV>& other,
                        ActionSLPRules&& action_slp_rules = grammar::NoAction(),
                        ActionSLPLengths&& action_slp_lengths = grammar::NoAction(),
                        ActionIntContainers&& action_int_containers = grammar::NoAction())
-      : DiffBase(static_cast<const DifferentialSLP<TOtherSLP, TOtherIntContainer, TOtherBV>&>(other),
+      : DiffBase(static_cast<const DifferentialSLP<TOtherSLP,
+                                                   TOtherRoots,
+                                                   TOtherSpanSums,
+                                                   TOtherSamples,
+                                                   TOtherSampleRootsPos,
+                                                   TOtherBV>&>(other),
                  std::forward<ActionSLPRules>(action_slp_rules),
                  std::forward<ActionSLPLengths>(action_slp_lengths),
                  std::forward<ActionIntContainers>(action_int_containers)),
@@ -74,11 +93,18 @@ class DifferentialLightSLP : public DifferentialSLP<TSLP, TIntContainer, TBV>, p
 //~~~~~~~
 
 
-template <typename TSLP, typename TSampledSLP, typename TIntContainer, typename TBV>
-void DifferentialLightSLP<TSLP, TSampledSLP, TIntContainer, TBV>::buildSampledSLP(const sdsl::int_vector<>& da,
-                                                                                  uint32_t block_size,
-                                                                                  float storing_factor,
-                                                                                  grammar::Chunks<>& cslp_docs_out) {
+template <typename TSLP,
+          typename TSampledSLP,
+          typename TRoots,
+          typename TSpanSums,
+          typename TSamples,
+          typename TSampleRootsPos,
+          typename TBV>
+void DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::buildSampledSLP(
+    const sdsl::int_vector<>& da,
+    uint32_t block_size,
+    float storing_factor,
+    grammar::Chunks<>& cslp_docs_out) {
   const auto n = da.size();
 
   std::vector<int> da_vec(n);
@@ -108,19 +134,35 @@ void DifferentialLightSLP<TSLP, TSampledSLP, TIntContainer, TBV>::buildSampledSL
 
 // Dedicated overload — template deduction does not cross derived→base boundaries,
 // so explicitly upcast and forward to the DifferentialSLP overload.
-template <typename TSLP, typename TSampledSLP, typename TIntContainer, typename TBV, typename Report>
-void ExpandSLP(const DifferentialLightSLP<TSLP, TSampledSLP, TIntContainer, TBV>& slp,
+template <typename TSLP,
+          typename TSampledSLP,
+          typename TRoots,
+          typename TSpanSums,
+          typename TSamples,
+          typename TSampleRootsPos,
+          typename TBV,
+          typename Report>
+void ExpandSLP(const DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& slp,
                std::size_t bp,
                std::size_t ep,
                Report& report) {
-  ExpandSLP(static_cast<const DifferentialSLP<TSLP, TIntContainer, TBV>&>(slp), bp, ep, report);
+  ExpandSLP(static_cast<const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>&>(slp),
+            bp,
+            ep,
+            report);
 }
 
 //~~~~~~~
 
 
-template <typename TSLP, typename TSampledSLP, typename TIntContainer, typename TBV>
-void construct(DifferentialLightSLP<TSLP, TSampledSLP, TIntContainer, TBV>& t_dslp,
+template <typename TSLP,
+          typename TSampledSLP,
+          typename TRoots,
+          typename TSpanSums,
+          typename TSamples,
+          typename TSampleRootsPos,
+          typename TBV>
+void construct(DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& t_dslp,
                Config& t_config,
                uint32_t block_size,
                float storing_factor) {
