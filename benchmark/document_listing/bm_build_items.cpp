@@ -16,6 +16,8 @@
 #include <sdsl/io.hpp>
 #include <sdsl/vlc_vector.hpp>
 
+#include "../bm_size_counters.h"
+
 #include "dret/basic_slp_span_length.h"
 #include "dret/construct_base.h"
 #include "dret/differential_light_slp.h"
@@ -23,6 +25,7 @@
 #include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 #include "dret/index_base.h"
+#include "dret/size_report.h"
 
 
 DEFINE_string(data, "", "Data file. (MANDATORY)");
@@ -113,6 +116,14 @@ void BM_ConstructDocListIdxGCDA(benchmark::State& t_state, dret::Config t_config
     sdsl::int_vector_buffer<> buf(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
     t_state.counters["n"] = buf.size();
   }
+
+  // Per-field size breakdown: populates benchmark counters and writes a JSON sidecar.
+  // Built index must be loaded (not just cache-populated) so GetSizeReport can dispatch.
+  index.load(t_config);
+  const auto sizes = index.GetSizeReport();
+  appendCounters(t_state, sizes);
+  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
+  dret::writeSizesJson("sizes-" + idx_name + suffix + ".json", sizes);
 }
 
 //~~~~~~~

@@ -14,6 +14,9 @@
 
 #include "../bm_query.h"
 #include "../bm_query_set.h"
+#include "../bm_size_counters.h"
+
+#include "dret/size_report.h"
 
 #include "factory.h"
 
@@ -143,6 +146,12 @@ auto BM_QueryDocList = [](benchmark::State& t_state,  //
   t_state.counters["Patterns"] = t_patterns.size();
   t_state.counters["Time_x_Pattern"] = benchmark::Counter(
       t_patterns.size(), benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kInvert);
+
+  if (idx) {
+    const auto sizes = idx->GetSizeReport();
+    appendCounters(t_state, sizes);
+    t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
+  }
 };
 
 auto BM_PrintQueryDocList = [](benchmark::State& t_state,
@@ -297,7 +306,7 @@ int main(int argc, char* argv[]) {
       return results;
     };
 
-    return std::make_pair(query, idx.size);
+    return std::make_tuple(query, idx.size, idx.idx->GetSizeReport());
   };
 
   RegisterAllQueryBenchmarks(factory_result_vector_int,
