@@ -8,8 +8,11 @@
 #include <utility>
 
 #include <sdsl/config.hpp>
+#include <sdsl/dac_vector.hpp>
+#include <sdsl/enc_vector.hpp>
 #include <sdsl/hyb_vector.hpp>
 #include <sdsl/io.hpp>
+#include <sdsl/vlc_vector.hpp>
 
 #include "sr-index/r_index.h"
 #include "sr-index/sr_idx_generic.h"
@@ -38,6 +41,9 @@ class Factory {
     DGCDA,
     DGCDA_OTF,  // BasicSLPOnTheFlySpanLength — no stored lengths
     DGCDA_CRL,  // BasicSLPCachedRootSpanLengths — lengths cached for roots only
+    DGCDA_EV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::enc_vector<>
+    DGCDA_DV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::dac_vector<>
+    DGCDA_VV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::vlc_vector<>
   };
 
   // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
@@ -48,6 +54,24 @@ class Factory {
       dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>>;
   using DGCDASLP_CRL = dret::DifferentialLightSLP<
       dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>;
+
+  // Vary the three non-monotonic int-vector fields (roots_, span_sums_, samples_).
+  // sample_roots_pos_ keeps its class default sdsl::enc_vector<> (strictly monotonic).
+  using DGCDASLP_EV = dret::DifferentialLightSLP<grammar::SLP<>,
+                                                  grammar::SampledSLP<>,
+                                                  sdsl::enc_vector<>,
+                                                  sdsl::enc_vector<>,
+                                                  sdsl::enc_vector<>>;
+  using DGCDASLP_DV = dret::DifferentialLightSLP<grammar::SLP<>,
+                                                  grammar::SampledSLP<>,
+                                                  sdsl::dac_vector<>,
+                                                  sdsl::dac_vector<>,
+                                                  sdsl::dac_vector<>>;
+  using DGCDASLP_VV = dret::DifferentialLightSLP<grammar::SLP<>,
+                                                  grammar::SampledSLP<>,
+                                                  sdsl::vlc_vector<>,
+                                                  sdsl::vlc_vector<>,
+                                                  sdsl::vlc_vector<>>;
 
   template <typename TSLP>
   using DGCDAVariant = dret::dgcda::DocListIdxDGCDA<
@@ -161,6 +185,30 @@ class Factory {
 
       case IndexEnum::DGCDA_CRL: {
         auto idx = std::make_shared<DGCDAVariant<DGCDASLP_CRL>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA_EV: {
+        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_EV>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA_DV: {
+        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_DV>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA_VV: {
+        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_VV>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};

@@ -267,6 +267,21 @@ int main(int argc, char* argv[]) {
       Factory<>::Config dgcda_crl_cfg{
           Factory<>::IndexEnum::DGCDA_CRL, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
       idx_configs.push_back({dgcda_crl_name, dgcda_crl_cfg, false});
+
+      auto dgcda_ev_name = "DocListDGCDA-EV-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_ev_cfg{
+          Factory<>::IndexEnum::DGCDA_EV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_ev_name, dgcda_ev_cfg, false});
+
+      auto dgcda_dv_name = "DocListDGCDA-DV-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_dv_cfg{
+          Factory<>::IndexEnum::DGCDA_DV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_dv_name, dgcda_dv_cfg, false});
+
+      auto dgcda_vv_name = "DocListDGCDA-VV-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_vv_cfg{
+          Factory<>::IndexEnum::DGCDA_VV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_vv_name, dgcda_vv_cfg, false});
     }
   }
 

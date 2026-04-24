@@ -11,7 +11,10 @@
 
 #include <sdsl/config.hpp>
 #include <sdsl/construct.hpp>
+#include <sdsl/dac_vector.hpp>
+#include <sdsl/enc_vector.hpp>
 #include <sdsl/io.hpp>
+#include <sdsl/vlc_vector.hpp>
 
 #include "dret/basic_slp_span_length.h"
 #include "dret/construct_base.h"
@@ -173,6 +176,47 @@ int main(int argc, char** argv) {
         dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>;
     benchmark::RegisterBenchmark(
         "DocListDGCDA-CRL", BM_ConstructDocListIdxGCDA<DGCDA_CRL>, config)
+        ->ArgsProduct({block_sizes, storing_factors});
+
+    // Compressed int-vector variants: vary TRoots/TSpanSums/TSamples in lockstep;
+    // TSampleRootsPos stays at the class default sdsl::enc_vector<>.
+    using DGCDA_EV = dret::dgcda::DocListIdxDGCDA<
+        dret::GenericStorage,
+        dret::Alphabet<>,
+        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        dret::DifferentialLightSLP<grammar::SLP<>,
+                                    grammar::SampledSLP<>,
+                                    sdsl::enc_vector<>,
+                                    sdsl::enc_vector<>,
+                                    sdsl::enc_vector<>>>;
+    benchmark::RegisterBenchmark(
+        "DocListDGCDA-EV", BM_ConstructDocListIdxGCDA<DGCDA_EV>, config)
+        ->ArgsProduct({block_sizes, storing_factors});
+
+    using DGCDA_DV = dret::dgcda::DocListIdxDGCDA<
+        dret::GenericStorage,
+        dret::Alphabet<>,
+        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        dret::DifferentialLightSLP<grammar::SLP<>,
+                                    grammar::SampledSLP<>,
+                                    sdsl::dac_vector<>,
+                                    sdsl::dac_vector<>,
+                                    sdsl::dac_vector<>>>;
+    benchmark::RegisterBenchmark(
+        "DocListDGCDA-DV", BM_ConstructDocListIdxGCDA<DGCDA_DV>, config)
+        ->ArgsProduct({block_sizes, storing_factors});
+
+    using DGCDA_VV = dret::dgcda::DocListIdxDGCDA<
+        dret::GenericStorage,
+        dret::Alphabet<>,
+        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        dret::DifferentialLightSLP<grammar::SLP<>,
+                                    grammar::SampledSLP<>,
+                                    sdsl::vlc_vector<>,
+                                    sdsl::vlc_vector<>,
+                                    sdsl::vlc_vector<>>>;
+    benchmark::RegisterBenchmark(
+        "DocListDGCDA-VV", BM_ConstructDocListIdxGCDA<DGCDA_VV>, config)
         ->ArgsProduct({block_sizes, storing_factors});
   }
 
