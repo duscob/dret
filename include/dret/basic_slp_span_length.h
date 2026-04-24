@@ -123,10 +123,14 @@ class BasicSLPCachedRootSpanLengths : public TBasicSLP {
     cached_mask_ = TBV(mask);
     cached_rank_ = typename TBV::rank_1_type(&cached_mask_);
 
-    cached_lengths_ = TIntContainer(lengths.size(), 0, 64);
+    // Build via a temporary sdsl::int_vector<> so compressed TIntContainer types
+    // (enc_vector / dac_vector / vlc_vector) can be constructed from a range.
+    // For sdsl::int_vector<> the final assignment is an identity copy.
+    sdsl::int_vector<> tmp(lengths.size(), 0, 64);
     for (std::size_t i = 0; i < lengths.size(); ++i)
-      cached_lengths_[i] = lengths[i];
-    sdsl::util::bit_compress(cached_lengths_);
+      tmp[i] = lengths[i];
+    sdsl::util::bit_compress(tmp);
+    cached_lengths_ = TIntContainer(tmp);
   }
 
   std::size_t SpanLength(VariableType var) const {
