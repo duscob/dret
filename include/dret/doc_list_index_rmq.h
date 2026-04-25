@@ -30,6 +30,7 @@
 #include "construct_base.h"
 #include "doc_index_rmq_common.h"
 #include "doc_list_index.h"
+#include "doc_list_rmq_scheme.h"
 #include "index_base.h"
 #include "size_report.h"
 
@@ -154,25 +155,17 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   void findDocs(std::size_t t_sp, std::size_t t_ep, const TReport& t_report) const {
     if (t_sp > t_ep || !rmq_ || !da_) return;
 
-    sdsl::bit_vector marked(n_doc_, 0);
-
-    auto set_first = [](std::size_t sp, std::size_t ep, auto& stack, OccurrenceSide) {
-      stack.emplace(sp, ep);
-    };
-    auto get_doc = [this](std::size_t i, OccurrenceSide, std::size_t, std::size_t) {
+    MarkedReported mr(n_doc_);
+    auto get_doc = [this](std::size_t i) {
       return static_cast<std::size_t>((*da_)[i]);
     };
-    auto is_reported = [&marked](std::size_t, std::size_t doc, OccurrenceSide) {
-      return doc >= marked.size() || marked[doc];
-    };
-    auto report = [&marked, &t_report](
-                      std::size_t, std::size_t doc, OccurrenceSide, std::size_t, std::size_t) {
-      marked[doc] = 1;
-      t_report(doc);
+    auto report = [&mr, &t_report](std::size_t /*k*/, std::size_t d) {
+      mr.mark(d);
+      t_report(d);
     };
 
-    GetExtremeOccurrencesRMQ<OccurrenceSide::LEFTMOST>(
-        t_sp, t_ep, set_first, *rmq_, get_doc, is_reported, report);
+    // ListDocsRMQScheme uses half-open [bp, ep); convert closed [t_sp, t_ep].
+    ListDocsRMQScheme(t_sp, t_ep + 1, *rmq_, get_doc, mr, report);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
