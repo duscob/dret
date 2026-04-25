@@ -49,6 +49,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_brute.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_index_rmq_common.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_rmq.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index_rmq.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_gcda.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_sada.h
         ${PROJECT_SOURCE_DIR}/include/dret/tf.h
