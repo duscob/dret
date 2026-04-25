@@ -50,6 +50,11 @@ class Factory {
     CILCP,      // RMinQ on doc-aware compressed backward-ILCP runs
   };
 
+  enum class GetDocEnum {
+    DA,
+    SLP,
+  };
+
   // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
   // (the span-length strategy). Everything downstream — SampledSLP, Chunks,
   // GCChunks, count index — is unchanged. Cache files are type-hashed by sdsl,
@@ -85,6 +90,7 @@ class Factory {
       TSLP>;
 
   using TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>;
+  using GetDocSLP = dret::rmq::GetDocSLP<ExternalGenericStorage>;
 
   using SadaIdx = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
                                            dret::Alphabet<>,
@@ -95,15 +101,43 @@ class Factory {
                                            TCountIdx,
                                            dret::rmq::IlcpCore<ExternalGenericStorage>>;
   using CilcpIdx = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
-                                            dret::Alphabet<>,
-                                            TCountIdx,
-                                            dret::rmq::CilcpCore<ExternalGenericStorage>>;
+                                            dret::Alphabet<>, TCountIdx, dret::rmq::CilcpCore<ExternalGenericStorage>>;
+
+  // The GetDocSLP TSLP default intentionally matches gcda::DocListIdxGCDA<>::TSLP;
+  // cache sharing depends on that exact type match because SDSL adds a type hash.
+  using SadaIdxSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                              dret::Alphabet<>,
+                                              TCountIdx,
+                                              dret::rmq::SadaCore<ExternalGenericStorage,
+                                                                  dret::Alphabet<>::int_width,
+                                                                  sdsl::rmq_succinct_sct<true>,
+                                                                  sdsl::sd_vector<>,
+                                                                  GetDocSLP>>;
+  using IlcpIdxSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                              dret::Alphabet<>,
+                                              TCountIdx,
+                                              dret::rmq::IlcpCore<ExternalGenericStorage,
+                                                                  dret::Alphabet<>::int_width,
+                                                                  sdsl::bit_vector,
+                                                                  sdsl::rmq_succinct_sct<true>,
+                                                                  sdsl::sd_vector<>,
+                                                                  GetDocSLP>>;
+  using CilcpIdxSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                               dret::Alphabet<>,
+                                               TCountIdx,
+                                               dret::rmq::CilcpCore<ExternalGenericStorage,
+                                                                    dret::Alphabet<>::int_width,
+                                                                    sdsl::bit_vector,
+                                                                    sdsl::rmq_succinct_sct<true>,
+                                                                    sdsl::sd_vector<>,
+                                                                    GetDocSLP>>;
 
   struct Config {
     IndexEnum index_t;
     std::size_t sampling_size = 0;
     uint32_t block_size = 512;
     float storing_factor = 4;
+    GetDocEnum get_doc = GetDocEnum::DA;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -112,7 +146,9 @@ class Factory {
         return sampling_size < t_c.sampling_size;
       if (block_size != t_c.block_size)
         return block_size < t_c.block_size;
-      return storing_factor < t_c.storing_factor;
+      if (storing_factor != t_c.storing_factor)
+        return storing_factor < t_c.storing_factor;
+      return get_doc < t_c.get_doc;
     }
   };
 
@@ -235,6 +271,14 @@ class Factory {
       }
 
       case IndexEnum::SADA: {
+        if (t_config.get_doc == GetDocEnum::SLP) {
+          typename SadaIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<SadaIdxSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
+
         auto idx = std::make_shared<SadaIdx>(std::ref(storage_));
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
@@ -242,6 +286,14 @@ class Factory {
       }
 
       case IndexEnum::ILCP: {
+        if (t_config.get_doc == GetDocEnum::SLP) {
+          typename IlcpIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<IlcpIdxSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
+
         auto idx = std::make_shared<IlcpIdx>(std::ref(storage_));
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
@@ -249,6 +301,14 @@ class Factory {
       }
 
       case IndexEnum::CILCP: {
+        if (t_config.get_doc == GetDocEnum::SLP) {
+          typename CilcpIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<CilcpIdxSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
+
         auto idx = std::make_shared<CilcpIdx>(std::ref(storage_));
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
