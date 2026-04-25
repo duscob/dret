@@ -76,7 +76,10 @@ void construct(DocListIdxDGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, T
     ConstructDocEnd<TAlphabet::int_width, sdsl::sd_vector<>>(t_config);
   }
 
-  if (const auto key = t_config.keys[kDA].get<std::string>(); !cache_file_exists(key, t_config)) {
+  // ConstructDocArray writes DA only with type-hash; the no-hash check would never
+  // see it, causing DA to be rebuilt on every construct() call. Match the storage.
+  if (const auto key = t_config.keys[kDA].get<std::string>();
+      !sdsl::cache_file_exists<sdsl::int_vector<>>(key, t_config)) {
     auto event = sdsl::memory_monitor::event(key);
     ConstructDocArray(t_config);
   }
