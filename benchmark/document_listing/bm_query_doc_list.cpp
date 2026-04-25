@@ -35,7 +35,7 @@ DEFINE_int32(min_block_size, 512, "Minimum block size for DocListGCDA (power of 
 DEFINE_int32(max_block_size, 512, "Maximum block size for DocListGCDA (power of 2).");
 DEFINE_int32(min_storing_factor, 4, "Minimum storing factor for DocListGCDA (power of 2).");
 DEFINE_int32(max_storing_factor, 4, "Maximum storing factor for DocListGCDA (power of 2).");
-DEFINE_string(rmq_get_doc_variants, "da", "RMQ GetDoc variants to run: comma-separated da,slp.");
+DEFINE_string(rmq_get_doc_variants, "da", "RMQ GetDoc variants to run: comma-separated da,slp,dslp.");
 
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
 DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");
@@ -54,6 +54,8 @@ std::vector<Factory<>::GetDocEnum> ParseGetDocVariants(const std::string& value)
       variants.push_back(Factory<>::GetDocEnum::DA);
     } else if (item == "slp") {
       variants.push_back(Factory<>::GetDocEnum::SLP);
+    } else if (item == "dslp") {
+      variants.push_back(Factory<>::GetDocEnum::DSLP);
     } else if (!item.empty()) {
       throw std::invalid_argument("Unknown --rmq_get_doc_variants item: " + item);
     }
@@ -69,6 +71,8 @@ const char* GetDocName(Factory<>::GetDocEnum variant) {
       return "DA";
     case Factory<>::GetDocEnum::SLP:
       return "SLP";
+    case Factory<>::GetDocEnum::DSLP:
+      return "DSLP";
   }
   return "UNKNOWN";
 }
@@ -341,7 +345,7 @@ int main(int argc, char* argv[]) {
       idx_configs.push_back({dgcda_vv_name, dgcda_vv_cfg, false});
 
       for (const auto get_doc : rmq_get_doc_variants) {
-        if (get_doc != Factory<>::GetDocEnum::SLP)
+        if (get_doc != Factory<>::GetDocEnum::SLP && get_doc != Factory<>::GetDocEnum::DSLP)
           continue;
 
         const auto suffix = std::string("-") + GetDocName(get_doc) + "-bs" + std::to_string(bs) + "-sf"

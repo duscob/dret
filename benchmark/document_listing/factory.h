@@ -53,6 +53,7 @@ class Factory {
   enum class GetDocEnum {
     DA,
     SLP,
+    DSLP,
   };
 
   // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
@@ -91,6 +92,7 @@ class Factory {
 
   using TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>;
   using GetDocSLP = dret::rmq::GetDocSLP<ExternalGenericStorage>;
+  using GetDocDSLP = dret::rmq::GetDocDSLP<ExternalGenericStorage>;
 
   using SadaIdx = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
                                            dret::Alphabet<>,
@@ -131,6 +133,34 @@ class Factory {
                                                                     sdsl::rmq_succinct_sct<true>,
                                                                     sdsl::sd_vector<>,
                                                                     GetDocSLP>>;
+
+  // The GetDocDSLP default intentionally matches dgcda::DocListIdxDGCDA<>::TSLP.
+  using SadaIdxDSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                               dret::Alphabet<>,
+                                               TCountIdx,
+                                               dret::rmq::SadaCore<ExternalGenericStorage,
+                                                                   dret::Alphabet<>::int_width,
+                                                                   sdsl::rmq_succinct_sct<true>,
+                                                                   sdsl::sd_vector<>,
+                                                                   GetDocDSLP>>;
+  using IlcpIdxDSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                               dret::Alphabet<>,
+                                               TCountIdx,
+                                               dret::rmq::IlcpCore<ExternalGenericStorage,
+                                                                   dret::Alphabet<>::int_width,
+                                                                   sdsl::bit_vector,
+                                                                   sdsl::rmq_succinct_sct<true>,
+                                                                   sdsl::sd_vector<>,
+                                                                   GetDocDSLP>>;
+  using CilcpIdxDSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                                dret::Alphabet<>,
+                                                TCountIdx,
+                                                dret::rmq::CilcpCore<ExternalGenericStorage,
+                                                                     dret::Alphabet<>::int_width,
+                                                                     sdsl::bit_vector,
+                                                                     sdsl::rmq_succinct_sct<true>,
+                                                                     sdsl::sd_vector<>,
+                                                                     GetDocDSLP>>;
 
   struct Config {
     IndexEnum index_t;
@@ -278,6 +308,13 @@ class Factory {
           index = {idx, sdsl::size_in_bytes(*idx)};
           break;
         }
+        if (t_config.get_doc == GetDocEnum::DSLP) {
+          typename SadaIdxDSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<SadaIdxDSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
 
         auto idx = std::make_shared<SadaIdx>(std::ref(storage_));
         idx->load(config_);
@@ -293,6 +330,13 @@ class Factory {
           index = {idx, sdsl::size_in_bytes(*idx)};
           break;
         }
+        if (t_config.get_doc == GetDocEnum::DSLP) {
+          typename IlcpIdxDSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<IlcpIdxDSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
 
         auto idx = std::make_shared<IlcpIdx>(std::ref(storage_));
         idx->load(config_);
@@ -304,6 +348,13 @@ class Factory {
         if (t_config.get_doc == GetDocEnum::SLP) {
           typename CilcpIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
           auto idx = std::make_shared<CilcpIdxSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
+        if (t_config.get_doc == GetDocEnum::DSLP) {
+          typename CilcpIdxDSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<CilcpIdxDSLP>(std::ref(storage_), core);
           idx->load(config_);
           index = {idx, sdsl::size_in_bytes(*idx)};
           break;
