@@ -237,53 +237,54 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   void findDocs(std::size_t t_sp, std::size_t t_ep, const TReport& t_report) const {
     if (t_sp > t_ep || !rmq_ || !da_ || !run_heads_ || !rank_ || !select_) return;
 
-    sdsl::bit_vector marked(n_doc_, 0);
-    const auto& rank = *rank_;
+    // IlcpState holds the original SA-space [sp, ep] so that get_doc and the
+    // fan-out report can recover per-run SA boundaries after PreprocessILCP
+    // converts the working range to run-space.
+    struct IlcpState {
+      const typename TBvRunHeads::rank_1_type& rank_ref;
+      std::size_t sp_orig = 0;
+      std::size_t ep_orig = 0;
+
+      const auto& rank() const { return rank_ref; }
+      void setInitialRange(std::size_t sp, std::size_t ep) { sp_orig = sp; ep_orig = ep; }
+    } state{*rank_};
+
+    std::size_t run_sp = t_sp, run_ep = t_ep;
+    PreprocessILCP<IlcpState>{state}(run_sp, run_ep);
+
+    MarkedReported mr(n_doc_);
     const auto& select = *select_;
 
-    std::size_t run_sp = rank(t_sp + 1) - 1;
-    std::size_t run_ep = rank(t_ep + 1) - 1;
+    auto get_doc = [this, &select, &state](std::size_t i) {
+      const std::size_t head = static_cast<std::size_t>(select(i + 1));
+      return static_cast<std::size_t>((*da_)[std::max(state.sp_orig, head)]);
+    };
 
-    auto set_first = [run_sp, run_ep](std::size_t, std::size_t, auto& stack, OccurrenceSide) {
-      stack.emplace(run_sp, run_ep);
-    };
-    auto get_doc =
-        [this, &select](std::size_t i, OccurrenceSide, std::size_t sp_orig, std::size_t) {
-          std::size_t head = static_cast<std::size_t>(select(i + 1));
-          std::size_t pos = std::max(sp_orig, head);
-          return static_cast<std::size_t>((*da_)[pos]);
-        };
-    auto is_reported = [&marked](std::size_t, std::size_t doc, OccurrenceSide) {
-      return doc >= marked.size() || marked[doc];
-    };
-    auto report = [this, &marked, &t_report, &select](std::size_t i,
-                                                       std::size_t doc,
-                                                       OccurrenceSide,
-                                                       std::size_t sp_orig,
-                                                       std::size_t ep_orig) {
-      marked[doc] = 1;
+    auto report = [this, &mr, &t_report, &select, &state](std::size_t i, std::size_t doc) {
+      mr.mark(doc);
       t_report(doc);
 
-      // Fan out the rest of the run in [head+1, tail] ∩ [sp, ep]. For the last
-      // run, select(i+2) is undefined; fall back to da.size() as the next-head.
-      std::size_t head = static_cast<std::size_t>(select(i + 1));
-      std::size_t run_start = std::max(sp_orig, head);
-      std::size_t next_head = (i + 1 < n_runs_) ? static_cast<std::size_t>(select(i + 2)) : da_->size();
-      std::size_t run_end = std::min(ep_orig, next_head - 1);
+      // Fan out remaining positions in this run within [sp_orig, ep_orig]. For
+      // the last run select(i+2) is undefined; da_->size() is the safe sentinel.
+      const std::size_t head = static_cast<std::size_t>(select(i + 1));
+      const std::size_t run_start = std::max(state.sp_orig, head);
+      const std::size_t next_head =
+          (i + 1 < n_runs_) ? static_cast<std::size_t>(select(i + 2)) : da_->size();
+      const std::size_t run_end = std::min(state.ep_orig, next_head - 1);
       for (std::size_t p = run_start + 1; p <= run_end; ++p) {
-        auto d = static_cast<std::size_t>((*da_)[p]);
+        const auto d = static_cast<std::size_t>((*da_)[p]);
         if constexpr (kVariant == IlcpVariant::CILCP) {
           if (d == doc) break;  // CILCP: stop when we loop back to the run's anchor doc
         }
-        if (d < marked.size() && !marked[d]) {
-          marked[d] = 1;
+        if (!mr(0, d)) {
+          mr.mark(d);
           t_report(d);
         }
       }
     };
 
-    GetExtremeOccurrencesRMQ<OccurrenceSide::LEFTMOST>(
-        t_sp, t_ep, set_first, *rmq_, get_doc, is_reported, report);
+    // ListDocsRMQScheme uses half-open [bp, ep); convert closed [run_sp, run_ep].
+    ListDocsRMQScheme(run_sp, run_ep + 1, *rmq_, get_doc, mr, report);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
