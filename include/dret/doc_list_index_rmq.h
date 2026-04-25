@@ -47,11 +47,11 @@ namespace internal {
 // Number of documents = number of '\1' delimiters in the cached text (which is the
 // post-`ConstructText` form: documents separated by `\1`, followed by a final `\0`).
 inline std::size_t ReadNDoc(const Config& t_config) {
-  sdsl::int_vector_buffer<8> text_buf(
-      sdsl::cache_file_name(t_config.keys[conf::kText].get<std::string>(), t_config));
+  sdsl::int_vector_buffer<8> text_buf(sdsl::cache_file_name(t_config.keys[conf::kText].get<std::string>(), t_config));
   std::size_t n = 0;
   for (std::size_t i = 0; i < text_buf.size(); ++i) {
-    if (text_buf[i] == 1) ++n;
+    if (text_buf[i] == 1)
+      ++n;
   }
   return n;
 }
@@ -71,8 +71,7 @@ sdsl::int_vector<> ComputeIlcpBackward(Config& t_config, std::size_t t_n_doc) {
   constexpr uint8_t kInternalDocDelim = 1;
 
   {
-    sdsl::int_vector_buffer<t_width> text_buf(
-        sdsl::cache_file_name(t_config.keys[kText].get<std::string>(), t_config));
+    sdsl::int_vector_buffer<t_width> text_buf(sdsl::cache_file_name(t_config.keys[kText].get<std::string>(), t_config));
 
     sdsl::cache_config doc_config(false, t_config.dir, t_config.id + "-doc");
 
@@ -83,7 +82,8 @@ sdsl::int_vector<> ComputeIlcpBackward(Config& t_config, std::size_t t_n_doc) {
         std::vector<typename sdsl::int_vector_buffer<t_width>::value_type> buf;
         for (; pos < text_buf.size(); ++pos) {
           auto ch = text_buf[pos];
-          if (ch == kInternalDocDelim) break;
+          if (ch == kInternalDocDelim)
+            break;
           buf.push_back(ch);
         }
         ++pos;  // skip delimiter
@@ -171,7 +171,8 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   template <typename TReport>
   void findDocs(std::size_t t_sp, std::size_t t_ep, const TReport& t_report) const {
-    if (t_sp > t_ep || !rmq_) return;
+    if (t_sp > t_ep || !rmq_)
+      return;
 
     MarkedReported mr(n_doc_);
     auto report = [&mr, &t_report](std::size_t /*k*/, std::size_t d) {
@@ -196,9 +197,11 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   SizeReport GetSizeReport() const {
     SizeReport r;
-    if (rmq_) append(r, "rmq", sdsl::size_in_bytes(*rmq_));
+    if (rmq_)
+      append(r, "rmq", sdsl::size_in_bytes(*rmq_));
     auto get_doc_report = get_doc_.GetSizeReport();
-    for (const auto& [k, v] : get_doc_report) append(r, k, v);
+    for (const auto& [k, v] : get_doc_report)
+      append(r, k, v);
     return r;
   }
 
@@ -269,7 +272,8 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   template <typename TReport>
   void findDocs(std::size_t t_sp, std::size_t t_ep, const TReport& t_report) const {
-    if (t_sp > t_ep || !rmq_ || !run_heads_ || !rank_ || !select_) return;
+    if (t_sp > t_ep || !rmq_ || !run_heads_ || !rank_ || !select_)
+      return;
 
     // IlcpState holds the original SA-space [sp, ep] so that get_doc and the
     // fan-out report can recover per-run SA boundaries after PreprocessILCP
@@ -279,8 +283,14 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       std::size_t sp_orig = 0;
       std::size_t ep_orig = 0;
 
-      const auto& rank() const { return rank_ref; }
-      void setInitialRange(std::size_t sp, std::size_t ep) { sp_orig = sp; ep_orig = ep; }
+      const auto& rank() const {
+        return rank_ref;
+      }
+
+      void setInitialRange(std::size_t sp, std::size_t ep) {
+        sp_orig = sp;
+        ep_orig = ep;
+      }
     } state{*rank_};
 
     std::size_t run_sp = t_sp, run_ep = t_ep;
@@ -307,7 +317,8 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       for (std::size_t p = run_start + 1; p <= run_end; ++p) {
         const auto d = get_doc_(p);
         if constexpr (kVariant == IlcpVariant::CILCP) {
-          if (d == doc) break;  // CILCP: stop when we loop back to the run's anchor doc
+          if (d == doc)
+            break;  // CILCP: stop when we loop back to the run's anchor doc
         }
         if (!mr(0, d)) {
           mr.mark(d);
@@ -323,8 +334,7 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     size_type written = 0;
-    written += rmq_ ? sdsl::serialize(*rmq_, out, child, "rmq")
-                    : sdsl::serialize_empty_object<TRMQ>(out, child, "rmq");
+    written += rmq_ ? sdsl::serialize(*rmq_, out, child, "rmq") : sdsl::serialize_empty_object<TRMQ>(out, child, "rmq");
     written += run_heads_ ? sdsl::serialize(*run_heads_, out, child, "run_heads")
                           : sdsl::serialize_empty_object<TBvRunHeads>(out, child, "run_heads");
     written += rank_ ? sdsl::serialize(*rank_, out, child, "run_heads_rank")
@@ -342,10 +352,13 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   SizeReport GetSizeReport() const {
     SizeReport r;
-    if (rmq_) append(r, "rmq", sdsl::size_in_bytes(*rmq_));
-    if (run_heads_) append(r, "run_heads", sdsl::size_in_bytes(*run_heads_));
+    if (rmq_)
+      append(r, "rmq", sdsl::size_in_bytes(*rmq_));
+    if (run_heads_)
+      append(r, "run_heads", sdsl::size_in_bytes(*run_heads_));
     auto get_doc_report = get_doc_.GetSizeReport();
-    for (const auto& [k, v] : get_doc_report) append(r, k, v);
+    for (const auto& [k, v] : get_doc_report)
+      append(r, k, v);
     return r;
   }
 
@@ -440,7 +453,8 @@ class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
     auto [sp, ep] = count_idx_.Count(t_pattern);
-    if (sp >= ep) return;          // sri::Count uses half-open [sp, ep)
+    if (sp >= ep)
+      return;                              // sri::Count uses half-open [sp, ep)
     core_.findDocs(sp, ep - 1, t_report);  // convert to closed [sp, ep] for RMQ
   }
 
@@ -465,7 +479,8 @@ class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
     SizeReport r;
     append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
     auto core_report = core_.GetSizeReport();
-    for (const auto& [k, v] : core_report) append(r, k, v);
+    for (const auto& [k, v] : core_report)
+      append(r, k, v);
     return r;
   }
 
