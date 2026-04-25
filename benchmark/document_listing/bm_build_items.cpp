@@ -165,7 +165,7 @@ void BM_ConstructDocListIdxGCDA(benchmark::State& t_state, dret::Config t_config
 //~~~~~~~
 
 template <typename TIndex, typename TCore>
-void BM_ConstructDocListIdxRMQSLP(benchmark::State& t_state, dret::Config t_config) {
+void BM_ConstructDocListIdxRMQCompressed(benchmark::State& t_state, dret::Config t_config) {
   uint32_t block_size = static_cast<uint32_t>(t_state.range(0));
   float storing_factor = static_cast<float>(t_state.range(1));
 
@@ -295,11 +295,11 @@ int main(int argc, char** argv) {
                                                  sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
                                                  CILCPCoreSLP>;
     if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::SLP)) {
-      benchmark::RegisterBenchmark("DocListSADA-SLP", BM_ConstructDocListIdxRMQSLP<SADAIdxSLP, SADACoreSLP>, config)
+      benchmark::RegisterBenchmark("DocListSADA-SLP", BM_ConstructDocListIdxRMQCompressed<SADAIdxSLP, SADACoreSLP>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-      benchmark::RegisterBenchmark("DocListILCP-SLP", BM_ConstructDocListIdxRMQSLP<ILCPIdxSLP, ILCPCoreSLP>, config)
+      benchmark::RegisterBenchmark("DocListILCP-SLP", BM_ConstructDocListIdxRMQCompressed<ILCPIdxSLP, ILCPCoreSLP>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-      benchmark::RegisterBenchmark("DocListCILCP-SLP", BM_ConstructDocListIdxRMQSLP<CILCPIdxSLP, CILCPCoreSLP>, config)
+      benchmark::RegisterBenchmark("DocListCILCP-SLP", BM_ConstructDocListIdxRMQCompressed<CILCPIdxSLP, CILCPCoreSLP>, config)
           ->ArgsProduct({block_sizes, storing_factors});
     }
 
@@ -334,11 +334,11 @@ int main(int argc, char** argv) {
                                                   sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
                                                   CILCPCoreDSLP>;
     if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::DSLP)) {
-      benchmark::RegisterBenchmark("DocListSADA-DSLP", BM_ConstructDocListIdxRMQSLP<SADAIdxDSLP, SADACoreDSLP>, config)
+      benchmark::RegisterBenchmark("DocListSADA-DSLP", BM_ConstructDocListIdxRMQCompressed<SADAIdxDSLP, SADACoreDSLP>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-      benchmark::RegisterBenchmark("DocListILCP-DSLP", BM_ConstructDocListIdxRMQSLP<ILCPIdxDSLP, ILCPCoreDSLP>, config)
+      benchmark::RegisterBenchmark("DocListILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<ILCPIdxDSLP, ILCPCoreDSLP>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-      benchmark::RegisterBenchmark("DocListCILCP-DSLP", BM_ConstructDocListIdxRMQSLP<CILCPIdxDSLP, CILCPCoreDSLP>, config)
+      benchmark::RegisterBenchmark("DocListCILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<CILCPIdxDSLP, CILCPCoreDSLP>, config)
           ->ArgsProduct({block_sizes, storing_factors});
     }
 
