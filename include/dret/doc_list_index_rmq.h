@@ -151,6 +151,10 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using typename Base::size_type;
 
   explicit SadaCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
+
+  SadaCore(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor)
+      : Base(t_storage), get_doc_(t_storage, t_block_size, t_storing_factor) {}
+
   SadaCore() = default;
 
   void load(Config t_config) override {
@@ -198,6 +202,10 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     return r;
   }
 
+  TGetDoc& get_doc_policy() {
+    return get_doc_;
+  }
+
  protected:
   using typename Base::TSource;
 
@@ -241,6 +249,10 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using typename Base::size_type;
 
   explicit IlcpLikeCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
+
+  IlcpLikeCore(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor)
+      : Base(t_storage), get_doc_(t_storage, t_block_size, t_storing_factor) {}
+
   IlcpLikeCore() = default;
 
   void load(Config t_config) override {
@@ -290,8 +302,7 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       // the last run select(i+2) is undefined; get_doc_.size() is the safe sentinel.
       const std::size_t head = static_cast<std::size_t>(select(i + 1));
       const std::size_t run_start = std::max(state.sp_orig, head);
-      const std::size_t next_head =
-          (i + 1 < n_runs_) ? static_cast<std::size_t>(select(i + 2)) : get_doc_.size();
+      const std::size_t next_head = (i + 1 < n_runs_) ? static_cast<std::size_t>(select(i + 2)) : run_heads_->size();
       const std::size_t run_end = std::min(state.ep_orig, next_head - 1);
       for (std::size_t p = run_start + 1; p <= run_end; ++p) {
         const auto d = get_doc_(p);
@@ -336,6 +347,10 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     auto get_doc_report = get_doc_.GetSizeReport();
     for (const auto& [k, v] : get_doc_report) append(r, k, v);
     return r;
+  }
+
+  TGetDoc& get_doc_policy() {
+    return get_doc_;
   }
 
  protected:
@@ -405,6 +420,7 @@ template <typename TStorage = GenericStorage,
 class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
  public:
   using Base = DocListIndexExtStorage<TStorage, TAlphabet>;
+  using Core = TCore;
   using typename Base::size_type;
   using typename Base::TDocId;
   using typename Base::TPattern;
@@ -413,6 +429,12 @@ class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
   DocListIdxRMQ(const TStorage& t_storage, const TCountIdx& t_count_idx)
       : Base(t_storage), count_idx_(t_count_idx), core_(t_storage) {}
+
+  DocListIdxRMQ(const TStorage& t_storage, const TCore& t_core)
+      : Base(t_storage), count_idx_(t_storage), core_(t_core) {}
+
+  DocListIdxRMQ(const TStorage& t_storage, const TCountIdx& t_count_idx, const TCore& t_core)
+      : Base(t_storage), count_idx_(t_count_idx), core_(t_core) {}
 
   DocListIdxRMQ() = default;
 
@@ -449,6 +471,10 @@ class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
   const TCountIdx& count_idx() const {
     return count_idx_;
+  }
+
+  const TCore& core() const {
+    return core_;
   }
 
  protected:
@@ -527,111 +553,121 @@ void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, C
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kSADA][kRmq].get<std::string>();
-  if (sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)) return;
+  if (!sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)) {
+    auto event = sdsl::memory_monitor::event(key_rmq);
 
-  auto event = sdsl::memory_monitor::event(key_rmq);
+    sdsl::int_vector<> da;
+    sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-  sdsl::int_vector<> da;
-  sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
+    std::size_t n_doc = internal::ReadNDoc(t_config);
 
-  std::size_t n_doc = internal::ReadNDoc(t_config);
+    sdsl::int_vector<> prev_doc(da.size(), 0, sdsl::bits::hi(da.size()) + 1);
+    std::vector<std::size_t> last_occ(n_doc + 2, 0);
+    for (std::size_t i = 0; i < da.size(); ++i) {
+      std::size_t doc = da[i];
+      if (doc >= last_occ.size())
+        last_occ.resize(doc + 1, 0);
+      prev_doc[i] = last_occ[doc];
+      last_occ[doc] = i;
+    }
 
-  sdsl::int_vector<> prev_doc(da.size(), 0, sdsl::bits::hi(da.size()) + 1);
-  std::vector<std::size_t> last_occ(n_doc + 2, 0);
-  for (std::size_t i = 0; i < da.size(); ++i) {
-    std::size_t doc = da[i];
-    if (doc >= last_occ.size()) last_occ.resize(doc + 1, 0);
-    prev_doc[i] = last_occ[doc];
-    last_occ[doc] = i;
+    TRMQ rmq(&prev_doc);
+    sdsl::store_to_cache(rmq, key_rmq, t_config, true);
   }
 
-  TRMQ rmq(&prev_doc);
-  sdsl::store_to_cache(rmq, key_rmq, t_config, true);
+  construct(t_core.get_doc_policy(), t_config);
 }
 
 // ILCP construction: plain RLE on backward-ILCP.
-template <typename TStorage, uint8_t t_width, typename TBvRunHeads, typename TRMQ, typename TBvDocEnds, typename TGetDoc>
-void construct(
-    IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
-    Config& t_config) {
+template <typename TStorage,
+          uint8_t t_width,
+          typename TBvRunHeads,
+          typename TRMQ,
+          typename TBvDocEnds,
+          typename TGetDoc>
+void construct(IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
+               Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kILCP][kRmq].get<std::string>();
   auto key_run_heads = t_config.keys[kILCP][kRunHeads].get<std::string>();
-  if (sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
-      && sdsl::cache_file_exists<TBvRunHeads>(key_run_heads, t_config)) {
-    return;
-  }
+  if (!sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
+      || !sdsl::cache_file_exists<TBvRunHeads>(key_run_heads, t_config)) {
+    auto event = sdsl::memory_monitor::event(key_rmq);
 
-  auto event = sdsl::memory_monitor::event(key_rmq);
+    std::size_t n_doc = internal::ReadNDoc(t_config);
+    auto ilcp = internal::ComputeIlcpBackward<t_width>(t_config, n_doc);
 
-  std::size_t n_doc = internal::ReadNDoc(t_config);
-  auto ilcp = internal::ComputeIlcpBackward<t_width>(t_config, n_doc);
-
-  sdsl::bit_vector run_heads(ilcp.size(), 0);
-  std::vector<std::size_t> run_values;
-  run_values.emplace_back(ilcp[0]);
-  run_heads[0] = 1;
-  for (std::size_t i = 1; i < ilcp.size(); ++i) {
-    if (ilcp[i - 1] != ilcp[i]) {
-      run_values.emplace_back(ilcp[i]);
-      run_heads[i] = 1;
+    sdsl::bit_vector run_heads(ilcp.size(), 0);
+    std::vector<std::size_t> run_values;
+    run_values.emplace_back(ilcp[0]);
+    run_heads[0] = 1;
+    for (std::size_t i = 1; i < ilcp.size(); ++i) {
+      if (ilcp[i - 1] != ilcp[i]) {
+        run_values.emplace_back(ilcp[i]);
+        run_heads[i] = 1;
+      }
     }
+
+    internal::StoreRunHeadsAndRMQ<TBvRunHeads, TRMQ>(
+        t_config, key_run_heads, key_rmq, std::move(run_heads), run_values);
   }
 
-  internal::StoreRunHeadsAndRMQ<TBvRunHeads, TRMQ>(
-      t_config, key_run_heads, key_rmq, std::move(run_heads), run_values);
+  construct(t_core.get_doc_policy(), t_config);
 }
 
 // CILCP construction: DA-aware RLE rule on backward-ILCP.
-template <typename TStorage, uint8_t t_width, typename TBvRunHeads, typename TRMQ, typename TBvDocEnds, typename TGetDoc>
-void construct(
-    IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
-    Config& t_config) {
+template <typename TStorage,
+          uint8_t t_width,
+          typename TBvRunHeads,
+          typename TRMQ,
+          typename TBvDocEnds,
+          typename TGetDoc>
+void construct(IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
+               Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kCILCP][kRmq].get<std::string>();
   auto key_run_heads = t_config.keys[kCILCP][kRunHeads].get<std::string>();
-  if (sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
-      && sdsl::cache_file_exists<TBvRunHeads>(key_run_heads, t_config)) {
-    return;
-  }
+  if (!sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
+      || !sdsl::cache_file_exists<TBvRunHeads>(key_run_heads, t_config)) {
+    auto event = sdsl::memory_monitor::event(key_rmq);
 
-  auto event = sdsl::memory_monitor::event(key_rmq);
+    std::size_t n_doc = internal::ReadNDoc(t_config);
+    auto ilcp = internal::ComputeIlcpBackward<t_width>(t_config, n_doc);
 
-  std::size_t n_doc = internal::ReadNDoc(t_config);
-  auto ilcp = internal::ComputeIlcpBackward<t_width>(t_config, n_doc);
+    sdsl::int_vector<> da;
+    sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-  sdsl::int_vector<> da;
-  sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
-
-  sdsl::bit_vector run_heads(ilcp.size(), 0);
-  std::vector<std::size_t> run_values;
-  run_values.emplace_back(ilcp[0]);
-  run_heads[0] = 1;
-  for (std::size_t i = 1; i < ilcp.size(); ++i) {
-    std::size_t l = ilcp[i - 1];
-    std::size_t d = da[i - 1];
-    if (l == ilcp[i]) {
-      while (++i < ilcp.size() && l == ilcp[i]) {
+    sdsl::bit_vector run_heads(ilcp.size(), 0);
+    std::vector<std::size_t> run_values;
+    run_values.emplace_back(ilcp[0]);
+    run_heads[0] = 1;
+    for (std::size_t i = 1; i < ilcp.size(); ++i) {
+      std::size_t l = ilcp[i - 1];
+      std::size_t d = da[i - 1];
+      if (l == ilcp[i]) {
+        while (++i < ilcp.size() && l == ilcp[i]) {}
+      } else if (d == da[i]) {
+        do {
+          l = std::min<std::size_t>(l, ilcp[i]);
+        } while (++i < ilcp.size() && d == da[i]);
       }
-    } else if (d == da[i]) {
-      do {
-        l = std::min<std::size_t>(l, ilcp[i]);
-      } while (++i < ilcp.size() && d == da[i]);
+
+      if (i < ilcp.size()) {
+        run_values[run_values.size() - 1] = l;
+        run_values.emplace_back(ilcp[i]);
+        run_heads[i] = 1;
+      }
     }
 
-    if (i < ilcp.size()) {
-      run_values[run_values.size() - 1] = l;
-      run_values.emplace_back(ilcp[i]);
-      run_heads[i] = 1;
-    }
+    internal::StoreRunHeadsAndRMQ<TBvRunHeads, TRMQ>(
+        t_config, key_run_heads, key_rmq, std::move(run_heads), run_values);
   }
 
-  internal::StoreRunHeadsAndRMQ<TBvRunHeads, TRMQ>(
-      t_config, key_run_heads, key_rmq, std::move(run_heads), run_values);
+  construct(t_core.get_doc_policy(), t_config);
 }
 
 // Wiring: construct the whole DocListIdxRMQ (count_idx + core).
@@ -640,7 +676,7 @@ void construct(DocListIdxRMQ<TStorage, TAlphabet, TCountIdx, TCore>& t_index, Co
   auto count_idx = t_index.count_idx();
   construct(count_idx, t_config.data_path, t_config);
 
-  TCore core(t_index.storage());
+  TCore core(t_index.core());
   construct(core, t_config);
 
   t_index.load(t_config);
