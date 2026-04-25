@@ -32,6 +32,7 @@
 #include "doc_list_index.h"
 #include "doc_list_rmq_scheme.h"
 #include "index_base.h"
+#include "rmq_get_doc_policies.h"
 #include "size_report.h"
 
 namespace dret {
@@ -142,45 +143,58 @@ sdsl::int_vector<> ComputeIlcpBackward(Config& t_config, std::size_t t_n_doc) {
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
-          typename TBvDocEnds = sdsl::sd_vector<>>
+          typename TBvDocEnds = sdsl::sd_vector<>,
+          typename TGetDoc = GetDocDA<TStorage, t_width>>
 class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
   using typename Base::size_type;
 
-  explicit SadaCore(const TStorage& t_storage) : Base(t_storage) {}
+  explicit SadaCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
   SadaCore() = default;
+
+  void load(Config t_config) override {
+    Base::load(t_config);
+    get_doc_.load(t_config);
+  }
+
+  void load(std::istream& in, const JSON& t_keys) override {
+    Base::load(in, t_keys);
+    get_doc_.load(in, t_keys);
+  }
+
+  using Base::load;
 
   template <typename TReport>
   void findDocs(std::size_t t_sp, std::size_t t_ep, const TReport& t_report) const {
-    if (t_sp > t_ep || !rmq_ || !da_) return;
+    if (t_sp > t_ep || !rmq_) return;
 
     MarkedReported mr(n_doc_);
-    auto get_doc = [this](std::size_t i) {
-      return static_cast<std::size_t>((*da_)[i]);
-    };
     auto report = [&mr, &t_report](std::size_t /*k*/, std::size_t d) {
       mr.mark(d);
       t_report(d);
     };
 
     // ListDocsRMQScheme uses half-open [bp, ep); convert closed [t_sp, t_ep].
-    ListDocsRMQScheme(t_sp, t_ep + 1, *rmq_, get_doc, mr, report);
+    ListDocsRMQScheme(t_sp, t_ep + 1, *rmq_, get_doc_, mr, report);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     size_type written = 0;
     written += rmq_ ? sdsl::serialize(*rmq_, out, child, "rmq") : sdsl::serialize_empty_object<TRMQ>(out, child, "rmq");
-    written += da_ ? sdsl::serialize(*da_, out, child, "da")
-                   : sdsl::serialize_empty_object<sdsl::int_vector<>>(out, child, "da");
+    // Write n_doc so the istream deserialization path can read it in sequence.
+    sdsl::int_vector<64> n_doc_vec(1, n_doc_);
+    written += sdsl::serialize(n_doc_vec, out, child, "n_doc");
+    written += get_doc_.serialize(out, child, "get_doc");
     return written;
   }
 
   SizeReport GetSizeReport() const {
     SizeReport r;
     if (rmq_) append(r, "rmq", sdsl::size_in_bytes(*rmq_));
-    if (da_) append(r, "da", sdsl::size_in_bytes(*da_));
+    auto get_doc_report = get_doc_.GetSizeReport();
+    for (const auto& [k, v] : get_doc_report) append(r, k, v);
     return r;
   }
 
@@ -190,26 +204,21 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   void loadInner(TSource& t_source, const JSON& t_keys) override {
     using namespace dret::conf;
     key_rmq_ = t_keys[kSADA][kRmq].get<std::string>();
-    key_da_ = t_keys[kDA].get<std::string>();
-
     rmq_ = this->template loadItemPtr<TRMQ>(key_rmq_, t_source, true);
-    da_ = this->template loadItemPtr<sdsl::int_vector<>>(key_da_, t_source, true);
 
-    // n_doc bound: max(DA) + 1 — over-counts by one when the terminator suffix is
-    // present, but `is_reported` filters out-of-range docs anyway.
-    n_doc_ = 0;
-    for (std::size_t i = 0; i < da_->size(); ++i) {
-      auto v = static_cast<std::size_t>((*da_)[i]);
-      if (v + 1 > n_doc_) n_doc_ = v + 1;
-    }
+    // Config path: loads from the kRmqNDoc cache entry (key-based lookup).
+    // Istream path: reads the next int_vector<64> sequentially from the stream,
+    // matching the n_doc_vec written by serialize() above.
+    const auto key_n_doc = t_keys[kRmqNDoc].get<std::string>();
+    const auto* n_doc_vec = this->template loadItemPtr<sdsl::int_vector<64>>(key_n_doc, t_source, true);
+    n_doc_ = static_cast<std::size_t>((*n_doc_vec)[0]);
   }
 
   std::string key_rmq_;
-  std::string key_da_;
 
   const TRMQ* rmq_ = nullptr;
-  const sdsl::int_vector<>* da_ = nullptr;
   std::size_t n_doc_ = 0;
+  TGetDoc get_doc_;
 };
 
 //~~~~~~~
@@ -224,18 +233,31 @@ template <IlcpVariant kVariant,
           uint8_t t_width,
           typename TBvRunHeads,
           typename TRMQ,
-          typename TBvDocEnds>
+          typename TBvDocEnds,
+          typename TGetDoc = GetDocDA<TStorage, t_width>>
 class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
   using typename Base::size_type;
 
-  explicit IlcpLikeCore(const TStorage& t_storage) : Base(t_storage) {}
+  explicit IlcpLikeCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
   IlcpLikeCore() = default;
+
+  void load(Config t_config) override {
+    Base::load(t_config);
+    get_doc_.load(t_config);
+  }
+
+  void load(std::istream& in, const JSON& t_keys) override {
+    Base::load(in, t_keys);
+    get_doc_.load(in, t_keys);
+  }
+
+  using Base::load;
 
   template <typename TReport>
   void findDocs(std::size_t t_sp, std::size_t t_ep, const TReport& t_report) const {
-    if (t_sp > t_ep || !rmq_ || !da_ || !run_heads_ || !rank_ || !select_) return;
+    if (t_sp > t_ep || !rmq_ || !run_heads_ || !rank_ || !select_) return;
 
     // IlcpState holds the original SA-space [sp, ep] so that get_doc and the
     // fan-out report can recover per-run SA boundaries after PreprocessILCP
@@ -257,7 +279,7 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
     auto get_doc = [this, &select, &state](std::size_t i) {
       const std::size_t head = static_cast<std::size_t>(select(i + 1));
-      return static_cast<std::size_t>((*da_)[std::max(state.sp_orig, head)]);
+      return get_doc_(std::max(state.sp_orig, head));
     };
 
     auto report = [this, &mr, &t_report, &select, &state](std::size_t i, std::size_t doc) {
@@ -265,14 +287,14 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       t_report(doc);
 
       // Fan out remaining positions in this run within [sp_orig, ep_orig]. For
-      // the last run select(i+2) is undefined; da_->size() is the safe sentinel.
+      // the last run select(i+2) is undefined; get_doc_.size() is the safe sentinel.
       const std::size_t head = static_cast<std::size_t>(select(i + 1));
       const std::size_t run_start = std::max(state.sp_orig, head);
       const std::size_t next_head =
-          (i + 1 < n_runs_) ? static_cast<std::size_t>(select(i + 2)) : da_->size();
+          (i + 1 < n_runs_) ? static_cast<std::size_t>(select(i + 2)) : get_doc_.size();
       const std::size_t run_end = std::min(state.ep_orig, next_head - 1);
       for (std::size_t p = run_start + 1; p <= run_end; ++p) {
-        const auto d = static_cast<std::size_t>((*da_)[p]);
+        const auto d = get_doc_(p);
         if constexpr (kVariant == IlcpVariant::CILCP) {
           if (d == doc) break;  // CILCP: stop when we loop back to the run's anchor doc
         }
@@ -299,8 +321,11 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     written += select_
                    ? sdsl::serialize(*select_, out, child, "run_heads_select")
                    : sdsl::serialize_empty_object<typename TBvRunHeads::select_1_type>(out, child, "run_heads_select");
-    written += da_ ? sdsl::serialize(*da_, out, child, "da")
-                   : sdsl::serialize_empty_object<sdsl::int_vector<>>(out, child, "da");
+    // Write n_doc so the istream deserialization path can read it in sequence
+    // (n_runs is always re-derived from rank after loading; no need to persist it).
+    sdsl::int_vector<64> n_doc_vec(1, n_doc_);
+    written += sdsl::serialize(n_doc_vec, out, child, "n_doc");
+    written += get_doc_.serialize(out, child, "get_doc");
     return written;
   }
 
@@ -308,7 +333,8 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     SizeReport r;
     if (rmq_) append(r, "rmq", sdsl::size_in_bytes(*rmq_));
     if (run_heads_) append(r, "run_heads", sdsl::size_in_bytes(*run_heads_));
-    if (da_) append(r, "da", sdsl::size_in_bytes(*da_));
+    auto get_doc_report = get_doc_.GetSizeReport();
+    for (const auto& [k, v] : get_doc_report) append(r, k, v);
     return r;
   }
 
@@ -324,51 +350,49 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     std::string top(TopKey());
     key_rmq_ = t_keys[top][kRmq].get<std::string>();
     key_run_heads_ = t_keys[top][kRunHeads].get<std::string>();
-    key_da_ = t_keys[kDA].get<std::string>();
-    auto key_doc_end = t_keys[kDocEnds].get<std::string>();
 
     rmq_ = this->template loadItemPtr<TRMQ>(key_rmq_, t_source, true);
     run_heads_ = this->template loadItemPtr<TBvRunHeads>(key_run_heads_, t_source, true);
     rank_ = &this->template loadBVRank<TBvRunHeads>(key_run_heads_, t_source, true).get();
     select_ = &this->template loadBVSelect<TBvRunHeads>(key_run_heads_, t_source, true).get();
-    da_ = this->template loadItemPtr<sdsl::int_vector<>>(key_da_, t_source, true);
 
+    // n_runs is always derivable from rank after rank is loaded.
     n_runs_ = (*rank_)(run_heads_->size());
 
-    // Derive n_doc from the DA max (avoids rank_1(size) edge-case on sd_vector).
-    n_doc_ = 0;
-    for (std::size_t i = 0; i < da_->size(); ++i) {
-      auto v = static_cast<std::size_t>((*da_)[i]);
-      if (v + 1 > n_doc_) n_doc_ = v + 1;
-    }
+    // Config path: loads from kRmqNDoc cache; istream path: reads from stream
+    // (matching the n_doc_vec written by serialize() between select and get_doc).
+    const auto key_n_doc = t_keys[kRmqNDoc].get<std::string>();
+    const auto* n_doc_vec = this->template loadItemPtr<sdsl::int_vector<64>>(key_n_doc, t_source, true);
+    n_doc_ = static_cast<std::size_t>((*n_doc_vec)[0]);
   }
 
   std::string key_rmq_;
   std::string key_run_heads_;
-  std::string key_da_;
 
   const TRMQ* rmq_ = nullptr;
   const TBvRunHeads* run_heads_ = nullptr;
   const typename TBvRunHeads::rank_1_type* rank_ = nullptr;
   const typename TBvRunHeads::select_1_type* select_ = nullptr;
-  const sdsl::int_vector<>* da_ = nullptr;
   std::size_t n_doc_ = 0;
   std::size_t n_runs_ = 0;
+  TGetDoc get_doc_;
 };
 
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TBvRunHeads = sdsl::bit_vector,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
-          typename TBvDocEnds = sdsl::sd_vector<>>
-using IlcpCore = IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds>;
+          typename TBvDocEnds = sdsl::sd_vector<>,
+          typename TGetDoc = GetDocDA<TStorage, t_width>>
+using IlcpCore = IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>;
 
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TBvRunHeads = sdsl::bit_vector,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
-          typename TBvDocEnds = sdsl::sd_vector<>>
-using CilcpCore = IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds>;
+          typename TBvDocEnds = sdsl::sd_vector<>,
+          typename TGetDoc = GetDocDA<TStorage, t_width>>
+using CilcpCore = IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>;
 
 //~~~~~~~
 // DocListIdxRMQ
@@ -497,8 +521,8 @@ void StoreRunHeadsAndRMQ(Config& t_config,
 }  // namespace internal
 
 // SADA construction: prev_doc + RMinQ.
-template <typename TStorage, uint8_t t_width, typename TRMQ, typename TBvDocEnds>
-void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds>& t_core, Config& t_config) {
+template <typename TStorage, uint8_t t_width, typename TRMQ, typename TBvDocEnds, typename TGetDoc>
+void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
 
@@ -526,9 +550,9 @@ void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds>& t_core, Config& t_
 }
 
 // ILCP construction: plain RLE on backward-ILCP.
-template <typename TStorage, uint8_t t_width, typename TBvRunHeads, typename TRMQ, typename TBvDocEnds>
+template <typename TStorage, uint8_t t_width, typename TBvRunHeads, typename TRMQ, typename TBvDocEnds, typename TGetDoc>
 void construct(
-    IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds>& t_core,
+    IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
     Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
@@ -561,9 +585,9 @@ void construct(
 }
 
 // CILCP construction: DA-aware RLE rule on backward-ILCP.
-template <typename TStorage, uint8_t t_width, typename TBvRunHeads, typename TRMQ, typename TBvDocEnds>
+template <typename TStorage, uint8_t t_width, typename TBvRunHeads, typename TRMQ, typename TBvDocEnds, typename TGetDoc>
 void construct(
-    IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds>& t_core,
+    IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
     Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
