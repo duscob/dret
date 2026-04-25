@@ -34,6 +34,7 @@ constexpr std::string_view kILCP = "ilcp";
 constexpr std::string_view kCILCP = "cilcp";
 constexpr std::string_view kRmq = "rmq";
 constexpr std::string_view kRunHeads = "runHeads";
+constexpr std::string_view kRmqNDoc = "rmq_n_doc";
 }  // namespace conf
 
 template <uint8_t t_width = DRET_DEFAULT_ALPHABET_WIDTH>
@@ -78,6 +79,7 @@ struct Keys {
                 {conf::kRunHeads, "cilcp_run_heads"},
             },
         },
+        {conf::kRmqNDoc, "rmq_n_doc"},
     });
   }
 

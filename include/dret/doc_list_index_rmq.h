@@ -472,6 +472,12 @@ void EnsureBasicStructures(Config& t_config) {
     auto event = sdsl::memory_monitor::event(key);
     ConstructDocArray<TBvDocEnds>(t_config);
   }
+
+  if (const auto key = t_config.keys[kRmqNDoc].get<std::string>();
+      !sdsl::cache_file_exists<sdsl::int_vector<64>>(key, t_config)) {
+    sdsl::int_vector<64> n_doc_vec(1, ReadNDoc(t_config));
+    sdsl::store_to_cache(n_doc_vec, key, t_config, true);
+  }
 }
 
 // Store run_heads bitvector (with rank/select) and the RMQ built from run values.
