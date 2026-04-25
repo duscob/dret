@@ -6,6 +6,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <format>
 #include <sdsl/dac_vector.hpp>
 #include <sdsl/enc_vector.hpp>
 #include <sdsl/int_vector.hpp>
@@ -21,6 +23,49 @@
 #include "dret/doc_list_sampled_tree_gcda.h"
 
 #include "base_test.h"
+
+//~~~~~~~
+
+template <typename TStorage>
+using RMQCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, dret::Alphabet<>>, 16>;
+
+template <typename TStorage>
+using RMQGetDocSLP = dret::rmq::GetDocSLP<TStorage>;
+
+template <typename TStorage>
+using RMQSadaSLPCore = dret::rmq::SadaCore<TStorage,
+                                           dret::Alphabet<>::int_width,
+                                           sdsl::rmq_succinct_sct<true>,
+                                           sdsl::sd_vector<>,
+                                           RMQGetDocSLP<TStorage>>;
+
+template <typename TStorage>
+using RMQIlcpSLPCore = dret::rmq::IlcpCore<TStorage,
+                                           dret::Alphabet<>::int_width,
+                                           sdsl::bit_vector,
+                                           sdsl::rmq_succinct_sct<true>,
+                                           sdsl::sd_vector<>,
+                                           RMQGetDocSLP<TStorage>>;
+
+template <typename TStorage>
+using RMQCilcpSLPCore = dret::rmq::CilcpCore<TStorage,
+                                             dret::Alphabet<>::int_width,
+                                             sdsl::bit_vector,
+                                             sdsl::rmq_succinct_sct<true>,
+                                             sdsl::sd_vector<>,
+                                             RMQGetDocSLP<TStorage>>;
+
+template <typename TStorage>
+using RMQSadaSLPIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQSadaSLPCore<TStorage>>;
+
+template <typename TStorage>
+using RMQIlcpSLPIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQIlcpSLPCore<TStorage>>;
+
+template <typename TStorage>
+using RMQCilcpSLPIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQCilcpSLPCore<TStorage>>;
 
 //~~~~~~~
 
@@ -58,7 +103,10 @@ using DocListIndexConstructTypes = ::testing::Types<
     dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                              dret::Alphabet<>,
                              sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
-                             dret::rmq::CilcpCore<dret::GenericStorage>>>;
+                             dret::rmq::CilcpCore<dret::GenericStorage>>,
+    RMQSadaSLPIndex<dret::GenericStorage>,
+    RMQIlcpSLPIndex<dret::GenericStorage>,
+    RMQCilcpSLPIndex<dret::GenericStorage>>;
 
 TYPED_TEST_SUITE(DocListIndexConstructTypedTests, DocListIndexConstructTypes);
 
@@ -129,7 +177,10 @@ using DocListIndexSearchTypes = ::testing::Types<
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
                              dret::Alphabet<>,
                              sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
-                             dret::rmq::CilcpCore<ExternalGenericStorage>>>;
+                             dret::rmq::CilcpCore<ExternalGenericStorage>>,
+    RMQSadaSLPIndex<ExternalGenericStorage>,
+    RMQIlcpSLPIndex<ExternalGenericStorage>,
+    RMQCilcpSLPIndex<ExternalGenericStorage>>;
 
 TYPED_TEST_SUITE(DocListIndexSearchTypedTests, DocListIndexSearchTypes);
 
@@ -179,6 +230,38 @@ TYPED_TEST(DocListIndexSearchTypedTests, search) {
   }
 }
 
+class RMQSLPCacheReuseTest : public BaseConfigTests<8> {
+ protected:
+  void SetUp() override {
+    Init(data_);
+  }
+
+  sri::GenericStorage storage_;
+  const std::string data_ = "TATA\1LATA\1LALA\1";
+};
+
+TEST_F(RMQSLPCacheReuseTest, rmq_slp_reuses_gcda_slp_cache) {
+  using GetDocSLP = RMQGetDocSLP<ExternalGenericStorage>;
+  using TSLP = typename GetDocSLP::SLP;
+  using RMQSadaSLP = RMQSadaSLPIndex<ExternalGenericStorage>;
+
+  dret::gcda::DocListIdxGCDA<ExternalGenericStorage> gcda(std::ref(storage_), 512, 4);
+  construct(gcda, config_);
+
+  const auto key_slp = std::format("512-4_{}", config_.keys[dret::conf::kGCDA][dret::conf::kSLP].get<std::string>());
+  const auto slp_path = sdsl::cache_file_name<TSLP>(key_slp, config_);
+  ASSERT_TRUE(std::filesystem::exists(slp_path));
+  const auto before_time = std::filesystem::last_write_time(slp_path);
+  const auto before_size = std::filesystem::file_size(slp_path);
+
+  RMQSadaSLP rmq_sada_slp(std::ref(storage_));
+  construct(rmq_sada_slp, config_);
+
+  ASSERT_TRUE(std::filesystem::exists(slp_path));
+  EXPECT_EQ(std::filesystem::file_size(slp_path), before_size);
+  EXPECT_EQ(std::filesystem::last_write_time(slp_path), before_time);
+}
+
 //~~~~~~~
 
 
@@ -189,18 +272,9 @@ using DifferentialSLPExpandTypes =
     ::testing::Types<dret::DifferentialSLP<>,
                      dret::DifferentialSLP<dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<sdsl::int_vector<>>>>,
                      dret::DifferentialSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<sdsl::int_vector<>>>>,
-                     dret::DifferentialSLP<grammar::SLP<>,
-                                           sdsl::enc_vector<>,
-                                           sdsl::enc_vector<>,
-                                           sdsl::enc_vector<>>,
-                     dret::DifferentialSLP<grammar::SLP<>,
-                                           sdsl::dac_vector<>,
-                                           sdsl::dac_vector<>,
-                                           sdsl::dac_vector<>>,
-                     dret::DifferentialSLP<grammar::SLP<>,
-                                           sdsl::vlc_vector<>,
-                                           sdsl::vlc_vector<>,
-                                           sdsl::vlc_vector<>>>;
+                     dret::DifferentialSLP<grammar::SLP<>, sdsl::enc_vector<>, sdsl::enc_vector<>, sdsl::enc_vector<>>,
+                     dret::DifferentialSLP<grammar::SLP<>, sdsl::dac_vector<>, sdsl::dac_vector<>, sdsl::dac_vector<>>,
+                     dret::DifferentialSLP<grammar::SLP<>, sdsl::vlc_vector<>, sdsl::vlc_vector<>, sdsl::vlc_vector<>>>;
 
 TYPED_TEST_SUITE(DifferentialSLPExpandTypedTests, DifferentialSLPExpandTypes);
 
@@ -251,7 +325,8 @@ class ListDocsRMQSchemeTest : public ::testing::Test {
     }
 
     da_.resize(da_vec.size());
-    for (std::size_t i = 0; i < da_vec.size(); ++i) da_[i] = da_vec[i];
+    for (std::size_t i = 0; i < da_vec.size(); ++i)
+      da_[i] = da_vec[i];
 
     rmq_ = sdsl::rmq_succinct_sct<true>(&prev_doc);
   }
@@ -259,7 +334,9 @@ class ListDocsRMQSchemeTest : public ::testing::Test {
   std::vector<std::size_t> query(std::size_t sp, std::size_t ep_closed) {
     dret::rmq::MarkedReported mr(n_doc_);
     std::vector<std::size_t> reported;
-    auto get_doc = [this](std::size_t k) { return static_cast<std::size_t>(da_[k]); };
+    auto get_doc = [this](std::size_t k) {
+      return static_cast<std::size_t>(da_[k]);
+    };
     auto report = [&mr, &reported](std::size_t /*k*/, std::size_t d) {
       mr.mark(d);
       reported.push_back(d);
