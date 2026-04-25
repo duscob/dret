@@ -40,13 +40,14 @@ DEFINE_int32(min_block_size, 512, "Minimum block size (power of 2).");
 DEFINE_int32(max_block_size, 512, "Maximum block size (power of 2).");
 DEFINE_int32(min_storing_factor, 4, "Minimum storing factor (power of 2).");
 DEFINE_int32(max_storing_factor, 4, "Maximum storing factor (power of 2).");
-DEFINE_string(rmq_get_doc_variants, "da", "RMQ GetDoc variants to build: comma-separated da,slp.");
+DEFINE_string(rmq_get_doc_variants, "da", "RMQ GetDoc variants to build: comma-separated da,slp,dslp.");
 
 //~~~~~~~
 
 enum class RMQGetDocVariant {
   DA,
   SLP,
+  DSLP,
 };
 
 std::vector<RMQGetDocVariant> ParseRMQGetDocVariants(const std::string& value) {
@@ -58,6 +59,8 @@ std::vector<RMQGetDocVariant> ParseRMQGetDocVariants(const std::string& value) {
       variants.push_back(RMQGetDocVariant::DA);
     } else if (item == "slp") {
       variants.push_back(RMQGetDocVariant::SLP);
+    } else if (item == "dslp") {
+      variants.push_back(RMQGetDocVariant::DSLP);
     } else if (!item.empty()) {
       throw std::invalid_argument("Unknown --rmq_get_doc_variants item: " + item);
     }
@@ -297,6 +300,45 @@ int main(int argc, char** argv) {
       benchmark::RegisterBenchmark("DocListILCP-SLP", BM_ConstructDocListIdxRMQSLP<ILCPIdxSLP, ILCPCoreSLP>, config)
           ->ArgsProduct({block_sizes, storing_factors});
       benchmark::RegisterBenchmark("DocListCILCP-SLP", BM_ConstructDocListIdxRMQSLP<CILCPIdxSLP, CILCPCoreSLP>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+    }
+
+    using GetDocDSLP = dret::rmq::GetDocDSLP<dret::GenericStorage>;
+    using SADACoreDSLP = dret::rmq::SadaCore<dret::GenericStorage,
+                                              dret::Alphabet<>::int_width,
+                                              sdsl::rmq_succinct_sct<true>,
+                                              sdsl::sd_vector<>,
+                                              GetDocDSLP>;
+    using ILCPCoreDSLP = dret::rmq::IlcpCore<dret::GenericStorage,
+                                              dret::Alphabet<>::int_width,
+                                              sdsl::bit_vector,
+                                              sdsl::rmq_succinct_sct<true>,
+                                              sdsl::sd_vector<>,
+                                              GetDocDSLP>;
+    using CILCPCoreDSLP = dret::rmq::CilcpCore<dret::GenericStorage,
+                                                dret::Alphabet<>::int_width,
+                                                sdsl::bit_vector,
+                                                sdsl::rmq_succinct_sct<true>,
+                                                sdsl::sd_vector<>,
+                                                GetDocDSLP>;
+    using SADAIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                 dret::Alphabet<>,
+                                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                 SADACoreDSLP>;
+    using ILCPIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                 dret::Alphabet<>,
+                                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                 ILCPCoreDSLP>;
+    using CILCPIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                  dret::Alphabet<>,
+                                                  sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                  CILCPCoreDSLP>;
+    if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::DSLP)) {
+      benchmark::RegisterBenchmark("DocListSADA-DSLP", BM_ConstructDocListIdxRMQSLP<SADAIdxDSLP, SADACoreDSLP>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+      benchmark::RegisterBenchmark("DocListILCP-DSLP", BM_ConstructDocListIdxRMQSLP<ILCPIdxDSLP, ILCPCoreDSLP>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+      benchmark::RegisterBenchmark("DocListCILCP-DSLP", BM_ConstructDocListIdxRMQSLP<CILCPIdxDSLP, CILCPCoreDSLP>, config)
           ->ArgsProduct({block_sizes, storing_factors});
     }
 
