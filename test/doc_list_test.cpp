@@ -13,6 +13,7 @@
 #include "dret/basic_slp_span_length.h"
 #include "dret/differential_slp.h"
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_index_rmq.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 
@@ -42,7 +43,19 @@ using DocListIndexConstructTypes = ::testing::Types<
     dret::dgcda::DocListIdxDGCDA<dret::GenericStorage,
                                  dret::Alphabet<>,
                                  sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
-                                 dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>>;
+                                 dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>,
+    dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                             dret::Alphabet<>,
+                             sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                             dret::rmq::SadaCore<dret::GenericStorage>>,
+    dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                             dret::Alphabet<>,
+                             sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                             dret::rmq::IlcpCore<dret::GenericStorage>>,
+    dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                             dret::Alphabet<>,
+                             sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                             dret::rmq::CilcpCore<dret::GenericStorage>>>;
 
 TYPED_TEST_SUITE(DocListIndexConstructTypedTests, DocListIndexConstructTypes);
 
@@ -101,7 +114,19 @@ using DocListIndexSearchTypes = ::testing::Types<
     dret::dgcda::DocListIdxDGCDA<dret::GenericStorage,
                                  dret::Alphabet<>,
                                  sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
-                                 dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>>;
+                                 dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                             dret::Alphabet<>,
+                             sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
+                             dret::rmq::SadaCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                             dret::Alphabet<>,
+                             sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
+                             dret::rmq::IlcpCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                             dret::Alphabet<>,
+                             sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
+                             dret::rmq::CilcpCore<ExternalGenericStorage>>>;
 
 TYPED_TEST_SUITE(DocListIndexSearchTypedTests, DocListIndexSearchTypes);
 
