@@ -47,6 +47,7 @@ include_directories(${COMMON_INCLUDES})
 set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_brute.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_index_rmq_common.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_rmq.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_gcda.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_sada.h
