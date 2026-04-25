@@ -25,6 +25,7 @@
 #include "dret/differential_light_slp.h"
 #include "dret/doc_list_index.h"
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_index_rmq.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 
@@ -44,6 +45,9 @@ class Factory {
     DGCDA_EV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::enc_vector<>
     DGCDA_DV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::dac_vector<>
     DGCDA_VV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::vlc_vector<>
+    SADA,       // RMinQ on prev_doc
+    ILCP,       // RMinQ on backward-ILCP runs
+    CILCP,      // RMinQ on doc-aware compressed backward-ILCP runs
   };
 
   // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
@@ -79,6 +83,21 @@ class Factory {
       dret::Alphabet<>,
       sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
       TSLP>;
+
+  using TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>;
+
+  using SadaIdx = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                           dret::Alphabet<>,
+                                           TCountIdx,
+                                           dret::rmq::SadaCore<ExternalGenericStorage>>;
+  using IlcpIdx = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                           dret::Alphabet<>,
+                                           TCountIdx,
+                                           dret::rmq::IlcpCore<ExternalGenericStorage>>;
+  using CilcpIdx = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                            dret::Alphabet<>,
+                                            TCountIdx,
+                                            dret::rmq::CilcpCore<ExternalGenericStorage>>;
 
   struct Config {
     IndexEnum index_t;
@@ -210,6 +229,27 @@ class Factory {
       case IndexEnum::DGCDA_VV: {
         auto idx = std::make_shared<DGCDAVariant<DGCDASLP_VV>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::SADA: {
+        auto idx = std::make_shared<SadaIdx>(std::ref(storage_));
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::ILCP: {
+        auto idx = std::make_shared<IlcpIdx>(std::ref(storage_));
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::CILCP: {
+        auto idx = std::make_shared<CilcpIdx>(std::ref(storage_));
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;

@@ -22,6 +22,7 @@
 #include "dret/construct_base.h"
 #include "dret/differential_light_slp.h"
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_index_rmq.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 #include "dret/index_base.h"
@@ -159,6 +160,25 @@ int main(int argc, char** argv) {
                       FLAGS_doc_delim);
 
   benchmark::RegisterBenchmark("DocListIdxBrute", BM_ConstructBruteIdx<dret::DocListIdxBrute<>>, config, data_path);
+
+  // RMQ-based listing variants — no block_size/storing_factor dial; reuse the brute-style harness.
+  using SADAIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                            dret::Alphabet<>,
+                                            sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                            dret::rmq::SadaCore<dret::GenericStorage>>;
+  benchmark::RegisterBenchmark("DocListSADA", BM_ConstructBruteIdx<SADAIdx>, config, data_path);
+
+  using ILCPIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                            dret::Alphabet<>,
+                                            sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                            dret::rmq::IlcpCore<dret::GenericStorage>>;
+  benchmark::RegisterBenchmark("DocListILCP", BM_ConstructBruteIdx<ILCPIdx>, config, data_path);
+
+  using CILCPIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                             dret::Alphabet<>,
+                                             sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                             dret::rmq::CilcpCore<dret::GenericStorage>>;
+  benchmark::RegisterBenchmark("DocListCILCP", BM_ConstructBruteIdx<CILCPIdx>, config, data_path);
 
   auto block_sizes = powersOfTwo(FLAGS_min_block_size, FLAGS_max_block_size);
   auto storing_factors = powersOfTwo(FLAGS_min_storing_factor, FLAGS_max_storing_factor);

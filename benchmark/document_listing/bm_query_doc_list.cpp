@@ -255,6 +255,9 @@ int main(int argc, char* argv[]) {
   std::vector<IndexConfig<Factory<>::Config>> idx_configs = {
       {"Brute-RIndex", Factory<>::Config{Factory<>::IndexEnum::BRUTE_R_INDEX}, false},
       {"Brute-SRIndex", Factory<>::Config{Factory<>::IndexEnum::BRUTE_SR_INDEX}, true},
+      {"SADA", Factory<>::Config{Factory<>::IndexEnum::SADA}, false},
+      {"ILCP", Factory<>::Config{Factory<>::IndexEnum::ILCP}, false},
+      {"CILCP", Factory<>::Config{Factory<>::IndexEnum::CILCP}, false},
   };
 
   for (int64_t bs = FLAGS_min_block_size; bs <= FLAGS_max_block_size; bs *= 2) {
