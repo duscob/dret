@@ -11,6 +11,8 @@
 #include <grammar/slp.h>
 #include <grammar/slp_helper.h>
 
+#include "compact_bp_slp.h"
+#include "compact_louds_slp.h"
 #include "construct_base.h"
 #include "doc_list_sampled_tree.h"
 #include "index_base.h"
@@ -158,6 +160,28 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
 
 template <typename TSLP, typename TSampledSLP, typename TChunks>
 void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
+               Config& t_config,
+               const std::string& t_datafile,
+               uint32_t t_block_size,
+               float t_storing_factor);
+
+// Compact-grammar TSLP variants (added in Phase A.0.3 upstream; the dret-side
+// shims at "compact_bp_slp.h" / "compact_louds_slp.h" re-export them as
+// dret::CompactBPSLP / dret::CompactLOUDSSLP). These forward declarations are
+// required so the unqualified `construct(slp, ...)` call inside the
+// `construct(DocListIdxGCDA&, ...)` template below resolves at the
+// template-definition point — ordinary lookup is fixed there, and ADL on
+// `grammar::CompactBPSLP` searches `namespace grammar` only, never
+// `dret::gcda` where the actual overload definitions live.
+template <typename... Ts>
+void construct(grammar::CompactBPSLP<Ts...>& t_compact,
+               Config& t_config,
+               const std::string& t_datafile,
+               uint32_t t_block_size,
+               float t_storing_factor);
+
+template <typename... Ts>
+void construct(grammar::CompactLOUDSSLP<Ts...>& t_compact,
                Config& t_config,
                const std::string& t_datafile,
                uint32_t t_block_size,
@@ -333,6 +357,64 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
   };
   t_lslp = grammar::LightSLP<TSLP, TSampledSLP, TChunks>(lslp, bit_compress, bit_compress, bit_compress, bit_compress);
   sdsl::store_to_cache(t_lslp, key_lslp, t_config, true);
+}
+
+//~~~~~~~
+
+
+// Shared helper for the compact-grammar construct overloads. Both BP and
+// LOUDS variants follow the same pattern: ensure a default
+// grammar::CombinedSLP<> is present in the cache (building it via the
+// existing construct(CombinedSLP&,...) overload if needed — that path
+// also writes the gcda_docs cache, which the subsequent
+// construct(GCChunks<>,...) consumes), then derive the compact class from
+// the CSLP via Compute(), and store it under the same logical SLP key
+// (the type-hash in store_to_cache disambiguates the on-disk file name
+// across variants).
+template <typename TCompactSLP>
+void constructCompactCommon(TCompactSLP& t_compact,
+                            Config& t_config,
+                            const std::string& t_datafile,
+                            uint32_t t_block_size,
+                            float t_storing_factor) {
+  using namespace conf;
+
+  std::string key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
+  auto key_slp = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
+
+  grammar::CombinedSLP<> cslp;
+  if (!sdsl::cache_file_exists<grammar::CombinedSLP<>>(key_slp, t_config)) {
+    // Lexical scope is dret::gcda; this resolves to the existing
+    // construct(grammar::CombinedSLP&,...) overload above, which also
+    // writes the gcda_docs cache.
+    construct(cslp, t_config, t_datafile, t_block_size, t_storing_factor);
+  } else {
+    sdsl::load_from_cache(cslp, key_slp, t_config, true);
+  }
+
+  auto event = sdsl::memory_monitor::event(
+      sdsl::cache_file_name<TCompactSLP>(key_slp, t_config));
+
+  t_compact.Compute(cslp);
+  sdsl::store_to_cache(t_compact, key_slp, t_config, true);
+}
+
+template <typename... Ts>
+void construct(grammar::CompactBPSLP<Ts...>& t_compact,
+               Config& t_config,
+               const std::string& t_datafile,
+               uint32_t t_block_size,
+               float t_storing_factor) {
+  constructCompactCommon(t_compact, t_config, t_datafile, t_block_size, t_storing_factor);
+}
+
+template <typename... Ts>
+void construct(grammar::CompactLOUDSSLP<Ts...>& t_compact,
+               Config& t_config,
+               const std::string& t_datafile,
+               uint32_t t_block_size,
+               float t_storing_factor) {
+  constructCompactCommon(t_compact, t_config, t_datafile, t_block_size, t_storing_factor);
 }
 
 //~~~~~~~
