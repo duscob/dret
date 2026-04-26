@@ -88,12 +88,12 @@ struct PreprocessNoOp {
 //~~~~~~~
 
 
-// Translates SA-space [sp, ep] into run-space via run_heads rank, and stores
+// Translates SA-space [sp, ep) into run-space via run_heads rank, and stores
 // the original SA-space range on the ILCP state so the report fan-out can
 // recover it to determine per-run SA boundaries.
 //
 // TIlcpState must expose:
-//   setInitialRange(sp, ep) — stash the original SA-space range
+//   setInitialRange(sp, ep) — stash the original SA-space half-open range
 //   rank()                  — reference to run_heads rank structure
 template <typename TIlcpState>
 class PreprocessILCP {
@@ -104,7 +104,7 @@ class PreprocessILCP {
     state_.setInitialRange(sp, ep);
     const auto& rank = state_.rank();
     sp = rank(sp + 1) - 1;
-    ep = rank(ep + 1) - 1;
+    ep = rank(ep);
   }
 
  private:

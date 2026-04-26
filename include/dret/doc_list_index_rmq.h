@@ -171,7 +171,7 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   template <typename TReport>
   void findDocs(std::size_t t_sp, std::size_t t_ep, const TReport& t_report) const {
-    if (t_sp > t_ep || !rmq_)
+    if (t_sp >= t_ep || !rmq_)
       return;
 
     MarkedReported mr(n_doc_);
@@ -180,8 +180,7 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       t_report(d);
     };
 
-    // ListDocsRMQScheme uses half-open [bp, ep); convert closed [t_sp, t_ep].
-    ListDocsRMQScheme(t_sp, t_ep + 1, *rmq_, get_doc_, mr, report);
+    ListDocsRMQScheme(t_sp, t_ep, *rmq_, get_doc_, mr, report);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
@@ -272,10 +271,10 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   template <typename TReport>
   void findDocs(std::size_t t_sp, std::size_t t_ep, const TReport& t_report) const {
-    if (t_sp > t_ep || !rmq_ || !run_heads_ || !rank_ || !select_)
+    if (t_sp >= t_ep || !rmq_ || !run_heads_ || !rank_ || !select_)
       return;
 
-    // IlcpState holds the original SA-space [sp, ep] so that get_doc and the
+    // IlcpState holds the original SA-space [sp, ep) so that get_doc and the
     // fan-out report can recover per-run SA boundaries after PreprocessILCP
     // converts the working range to run-space.
     struct IlcpState {
@@ -308,12 +307,12 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       mr.mark(doc);
       t_report(doc);
 
-      // Fan out remaining positions in this run within [sp_orig, ep_orig]. For
-      // the last run select(i+2) is undefined; get_doc_.size() is the safe sentinel.
+      // Fan out remaining positions in this run within [sp_orig, ep_orig). For
+      // the last run select(i+2) is undefined; run_heads_->size() is the safe sentinel.
       const std::size_t head = static_cast<std::size_t>(select(i + 1));
       const std::size_t run_start = std::max(state.sp_orig, head);
       const std::size_t next_head = (i + 1 < n_runs_) ? static_cast<std::size_t>(select(i + 2)) : run_heads_->size();
-      const std::size_t run_end = std::min(state.ep_orig, next_head - 1);
+      const std::size_t run_end = std::min(state.ep_orig - 1, next_head - 1);
       for (std::size_t p = run_start + 1; p <= run_end; ++p) {
         const auto d = get_doc_(p);
         if constexpr (kVariant == IlcpVariant::CILCP) {
@@ -327,8 +326,7 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       }
     };
 
-    // ListDocsRMQScheme uses half-open [bp, ep); convert closed [run_sp, run_ep].
-    ListDocsRMQScheme(run_sp, run_ep + 1, *rmq_, get_doc, mr, report);
+    ListDocsRMQScheme(run_sp, run_ep, *rmq_, get_doc, mr, report);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
@@ -454,8 +452,8 @@ class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
     auto [sp, ep] = count_idx_.Count(t_pattern);
     if (sp >= ep)
-      return;                              // sri::Count uses half-open [sp, ep)
-    core_.findDocs(sp, ep - 1, t_report);  // convert to closed [sp, ep] for RMQ
+      return;
+    core_.findDocs(sp, ep, t_report);
   }
 
   void load(Config t_config) override {
