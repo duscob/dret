@@ -24,17 +24,17 @@ template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TLocateIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
           typename TGetDoc = GetDocBv<TStorage, sdsl::sd_vector<>, TAlphabet::int_width>>
-class DocListIdxBrute : public DocListIndexExtStorage<TStorage, typename TAlphabet::string_type> {
+class DocListIdxBrute : public DocListIndexExtStorage<TStorage, TAlphabet> {
  public:
-  using Base = DocListIndexExtStorage<TStorage, typename TAlphabet::string_type>;
+  using Base = DocListIndexExtStorage<TStorage, TAlphabet>;
   using typename Base::size_type;
   using typename Base::TDocId;
   using typename Base::TPattern;
 
   explicit DocListIdxBrute(const TStorage& t_storage) : Base(t_storage), locate_idx_(t_storage), get_doc_(t_storage) {}
 
-  explicit DocListIdxBrute(const TStorage& t_storage, const TLocateIdx& t_locate)
-      : Base(t_storage), locate_idx_(t_locate), get_doc_(t_storage) {}
+  explicit DocListIdxBrute(const TStorage& t_storage, const TLocateIdx& t_locate_idx)
+      : Base(t_storage), locate_idx_(t_locate_idx), get_doc_(t_storage) {}
 
   explicit DocListIdxBrute(const TStorage& t_storage, const TLocateIdx& t_locate, const TGetDoc& t_get_doc)
       : Base(t_storage), locate_idx_(t_locate), get_doc_(t_get_doc) {}
@@ -58,6 +58,8 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, typename TAlphab
     locate_idx_.load(in);
     get_doc_.load(in, t_keys);
   }
+
+  using Base::load;
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
@@ -93,12 +95,12 @@ void construct(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_inde
 
 
 template <typename TStorage, typename TBvDocEnds, uint8_t t_width>
-class GetDocBv : public IndexBaseWithExternalStorage<TStorage> {
+class GetDocBv : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage>;
+  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
   using typename Base::size_type;
 
-  GetDocBv(const TStorage& t_storage) : IndexBaseWithExternalStorage<TStorage>(t_storage) {}
+  GetDocBv(const TStorage& t_storage) : IndexBaseWithExternalStorage<TStorage, t_width>(t_storage) {}
 
   GetDocBv() = default;
 

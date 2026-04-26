@@ -26,7 +26,7 @@ include(ConfigSafeGuards)
 
 
 #Global Setup
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 
 #Global C++ Flags
@@ -51,6 +51,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_gcda.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_sada.h
         ${PROJECT_SOURCE_DIR}/include/dret/tf.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp_tools.h
         ${PROJECT_SOURCE_DIR}/include/dret/algorithm.h
         ${PROJECT_SOURCE_DIR}/include/dret/run_length_encode.h
         ${PROJECT_SOURCE_DIR}/include/dret/config.h
@@ -58,6 +59,11 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index_brute.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree_gcda.h
+        ${PROJECT_SOURCE_DIR}/include/dret/basic_slp_span_length.h
+        ${PROJECT_SOURCE_DIR}/include/dret/differential_slp.h
+        ${PROJECT_SOURCE_DIR}/include/dret/differential_light_slp.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree_dgcda.h
 )
 
 add_library(dret INTERFACE)

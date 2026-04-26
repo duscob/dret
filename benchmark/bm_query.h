@@ -17,6 +17,9 @@
 
 #include "base64.h"
 #include "bm_base.h"
+#include "bm_size_counters.h"
+
+#include "dret/size_report.h"
 
 DEFINE_string(pattern_code, "PLAIN", "Codification Algorithm for pattern: PLAIN, BASE64");
 
@@ -67,7 +70,7 @@ auto UpdateCounter = [](benchmark::State& t_state, auto t_n, auto t_index_size, 
 
 
 auto BM_MacroQuery = [](benchmark::State& t_state, auto t_make_index, const auto& t_patterns, auto t_n) {
-  auto [query, index_size] = t_make_index(t_state);
+  auto [query, index_size, sizes] = t_make_index(t_state);
 
   std::size_t total = 0;
 
@@ -80,13 +83,21 @@ auto BM_MacroQuery = [](benchmark::State& t_state, auto t_make_index, const auto
   }
 
   UpdateCounter(t_state, t_n, index_size, t_patterns.size(), total);
+  appendCounters(t_state, sizes);
+  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
+  {
+    auto bm_name = t_state.name();
+    std::string idx_name = bm_name.substr(bm_name.find('/') + 1);
+    std::replace(idx_name.begin(), idx_name.end(), '/', '_');
+    dret::writeSizesJson("sizes-query-" + idx_name + ".json", sizes);
+  }
 };
 
 //~~~~~~~
 
 
 auto BM_MicroQuery = [](benchmark::State& t_state, auto t_make_index, const auto& t_patterns, auto t_i, auto t_n) {
-  auto [query, index_size] = t_make_index(t_state);
+  auto [query, index_size, sizes] = t_make_index(t_state);
 
   const auto& pattern = t_patterns[*t_i];
   std::size_t total = 0;
@@ -101,6 +112,8 @@ auto BM_MicroQuery = [](benchmark::State& t_state, auto t_make_index, const auto
   }
 
   UpdateCounter(t_state, t_n, index_size, 1, total);
+  appendCounters(t_state, sizes);
+  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
 };
 
 //~~~~~~~
@@ -116,7 +129,7 @@ auto BM_PrintQuery =
       }
       std::string output_filename = "result-" + idx_name + ".txt";
 
-      auto [query, index_size] = t_make_index(t_state);
+      auto [query, index_size, sizes] = t_make_index(t_state);
 
       std::size_t total = 0;
 
@@ -133,6 +146,8 @@ auto BM_PrintQuery =
       }
 
       UpdateCounter(t_state, t_n, index_size, t_patterns.size(), total);
+      appendCounters(t_state, sizes);
+      t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
     };
 
 enum KeyQueryBenchmark {

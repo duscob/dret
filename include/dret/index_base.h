@@ -16,22 +16,10 @@
 
 namespace dret {
 
-template <typename TItem>
-const TItem* get(const GenericStorage& t_storage, const std::string& t_key) {
-  auto it = t_storage.find(t_key);
-  return (it != t_storage.end()) ? std::any_cast<TItem>(&it->second) : nullptr;
-}
-
-template <typename TItem>
-const TItem* set(GenericStorage& t_storage, const std::string& t_key, TItem&& t_item) {
-  auto [it, inserted] = t_storage.emplace(t_key, t_item);
-  return std::any_cast<TItem>(&it->second);
-}
-
 //~~~~~~~
 
 
-template <typename TStorage = GenericStorage>
+template <typename TStorage = GenericStorage, uint8_t t_width = Alphabet<>::int_width>
 class IndexBaseWithExternalStorage {
  public:
   typedef std::size_t size_type;
@@ -55,6 +43,10 @@ class IndexBaseWithExternalStorage {
     loadInner(source, t_keys);
   }
 
+  virtual void load(std::istream& in) {
+    load(in, createDefaultKeys<t_width>());
+  }
+
   virtual size_type serialize(std::ostream& out) const {
     return serialize(out, nullptr, "");
   }
@@ -71,13 +63,21 @@ class IndexBaseWithExternalStorage {
   virtual void loadInner(TSource& t_source, const JSON& t_keys) {}
 
   template <typename TItem>
-  auto loadRawItem(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
-    auto item = get<TItem>(storage_, t_key);
+  auto loadItemPtr(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
+    // When add_type_hash is true, the on-disk filename is disambiguated by type; the
+    // in-memory storage key must match, otherwise two variants sharing t_key collide —
+    // get<TItem> returns null on type mismatch, set/emplace refuses to replace the
+    // existing entry, and the subsequent load dereferences a null pointer.
+    const auto storage_key =
+        t_add_type_hash ? (t_key + "_" + sdsl::util::class_to_hash(TItem{})) : t_key;
+    auto item = get<TItem>(storage_, storage_key);
     if (!item) {
-      TItem data;
-      load(data, t_source, t_key, t_add_type_hash);
-
-      item = set(storage_, t_key, std::move(data));
+      // Store a default-constructed item first, then load into it in place.
+      // Loading then moving/copying into storage would break SDSL rank/select support
+      // pointers (e.g. rank_support_sd::m_v) that are set during deserialization.
+      auto* mutable_item = const_cast<TItem*>(set(storage_, storage_key, TItem{}));
+      load(*mutable_item, t_source, t_key, t_add_type_hash);
+      item = mutable_item;
     }
     return item;
   }
@@ -104,7 +104,7 @@ class IndexBaseWithExternalStorage {
 
   template <typename TItem>
   auto loadItem(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
-    auto item = loadRawItem<TItem>(t_key, t_source, t_add_type_hash);
+    auto item = loadItemPtr<TItem>(t_key, t_source, t_add_type_hash);
     return std::cref(*item);
   }
 
@@ -113,7 +113,7 @@ class IndexBaseWithExternalStorage {
     auto key_rank = t_key + "_rank";
     auto item_rank = get<TBvRank>(storage_, key_rank);
     if (!item_rank) {
-      auto item_bv = loadRawItem<TBv>(t_key, t_source, t_add_type_hash);
+      auto item_bv = loadItemPtr<TBv>(t_key, t_source, t_add_type_hash);
 
       TBvRank rank;
       load(rank, t_source, t_key, t_add_type_hash);
@@ -130,7 +130,7 @@ class IndexBaseWithExternalStorage {
     auto key_select = t_key + "_select";
     auto item_select = get<TBvSelect>(storage_, key_select);
     if (!item_select) {
-      auto item_bv = loadRawItem<TBv>(t_key, t_source, t_add_type_hash);
+      auto item_bv = loadItemPtr<TBv>(t_key, t_source, t_add_type_hash);
 
       TBvSelect select;
       load(select, t_source, t_key, t_add_type_hash);

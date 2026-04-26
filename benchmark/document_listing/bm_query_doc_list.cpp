@@ -14,6 +14,9 @@
 
 #include "../bm_query.h"
 #include "../bm_query_set.h"
+#include "../bm_size_counters.h"
+
+#include "dret/size_report.h"
 
 #include "factory.h"
 
@@ -25,6 +28,11 @@ DEFINE_int32(pattern_delim, '\n', "Pattern delimiter.");
 
 DEFINE_int32(min_s, 4, "Minimum sampling parameter s.");
 DEFINE_int32(max_s, 128, "Maximum sampling parameter s.");
+
+DEFINE_int32(min_block_size, 512, "Minimum block size for DocListGCDA (power of 2).");
+DEFINE_int32(max_block_size, 512, "Maximum block size for DocListGCDA (power of 2).");
+DEFINE_int32(min_storing_factor, 4, "Minimum storing factor for DocListGCDA (power of 2).");
+DEFINE_int32(max_storing_factor, 4, "Maximum storing factor for DocListGCDA (power of 2).");
 
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
 DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");
@@ -138,6 +146,12 @@ auto BM_QueryDocList = [](benchmark::State& t_state,  //
   t_state.counters["Patterns"] = t_patterns.size();
   t_state.counters["Time_x_Pattern"] = benchmark::Counter(
       t_patterns.size(), benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kInvert);
+
+  if (idx) {
+    const auto sizes = idx->GetSizeReport();
+    appendCounters(t_state, sizes);
+    t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
+  }
 };
 
 auto BM_PrintQueryDocList = [](benchmark::State& t_state,
@@ -243,6 +257,43 @@ int main(int argc, char* argv[]) {
       {"Brute-SRIndex", Factory<>::Config{Factory<>::IndexEnum::BRUTE_SR_INDEX}, true},
   };
 
+  for (int64_t bs = FLAGS_min_block_size; bs <= FLAGS_max_block_size; bs *= 2) {
+    for (int64_t sf = FLAGS_min_storing_factor; sf <= FLAGS_max_storing_factor; sf *= 2) {
+      auto name = "DocListGCDA-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config cfg{Factory<>::IndexEnum::GCDA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({name, cfg, false});
+
+      auto dgcda_name = "DocListDGCDA-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_cfg{Factory<>::IndexEnum::DGCDA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_name, dgcda_cfg, false});
+
+      auto dgcda_otf_name = "DocListDGCDA-OTF-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_otf_cfg{
+          Factory<>::IndexEnum::DGCDA_OTF, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_otf_name, dgcda_otf_cfg, false});
+
+      auto dgcda_crl_name = "DocListDGCDA-CRL-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_crl_cfg{
+          Factory<>::IndexEnum::DGCDA_CRL, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_crl_name, dgcda_crl_cfg, false});
+
+      auto dgcda_ev_name = "DocListDGCDA-EV-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_ev_cfg{
+          Factory<>::IndexEnum::DGCDA_EV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_ev_name, dgcda_ev_cfg, false});
+
+      auto dgcda_dv_name = "DocListDGCDA-DV-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_dv_cfg{
+          Factory<>::IndexEnum::DGCDA_DV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_dv_name, dgcda_dv_cfg, false});
+
+      auto dgcda_vv_name = "DocListDGCDA-VV-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+      Factory<>::Config dgcda_vv_cfg{
+          Factory<>::IndexEnum::DGCDA_VV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
+      idx_configs.push_back({dgcda_vv_name, dgcda_vv_cfg, false});
+    }
+  }
+
   QueryBenchmarkConfig query_bm_config{FLAGS_report_stats, FLAGS_reps, FLAGS_min_time, FLAGS_print_result};
 
   auto factory_result_vector_int = [&factory](const auto& tt_config) {
@@ -255,7 +306,7 @@ int main(int argc, char* argv[]) {
       return results;
     };
 
-    return std::make_pair(query, idx.size);
+    return std::make_tuple(query, idx.size, idx.idx->GetSizeReport());
   };
 
   RegisterAllQueryBenchmarks(factory_result_vector_int,

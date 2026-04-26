@@ -8,8 +8,11 @@
 #include <utility>
 
 #include <sdsl/config.hpp>
+#include <sdsl/dac_vector.hpp>
+#include <sdsl/enc_vector.hpp>
 #include <sdsl/hyb_vector.hpp>
 #include <sdsl/io.hpp>
+#include <sdsl/vlc_vector.hpp>
 
 #include "sr-index/r_index.h"
 #include "sr-index/sr_idx_generic.h"
@@ -17,9 +20,13 @@
 
 #include "../tool/definitions.h"
 
+#include "dret/basic_slp_span_length.h"
 #include "dret/config.h"
+#include "dret/differential_light_slp.h"
 #include "dret/doc_list_index.h"
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_sampled_tree_dgcda.h"
+#include "dret/doc_list_sampled_tree_gcda.h"
 
 
 using ExternalGenericStorage = std::reference_wrapper<sri::GenericStorage>;
@@ -30,14 +37,63 @@ class Factory {
   enum class IndexEnum {
     BRUTE_R_INDEX,
     BRUTE_SR_INDEX,
+    GCDA,
+    DGCDA,
+    DGCDA_OTF,  // BasicSLPOnTheFlySpanLength — no stored lengths
+    DGCDA_CRL,  // BasicSLPCachedRootSpanLengths — lengths cached for roots only
+    DGCDA_EV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::enc_vector<>
+    DGCDA_DV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::dac_vector<>
+    DGCDA_VV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::vlc_vector<>
   };
+
+  // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
+  // (the span-length strategy). Everything downstream — SampledSLP, Chunks,
+  // GCChunks, count index — is unchanged. Cache files are type-hashed by sdsl,
+  // so the variants do not collide on disk.
+  using DGCDASLP_OTF = dret::DifferentialLightSLP<
+      dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>>;
+  using DGCDASLP_CRL = dret::DifferentialLightSLP<
+      dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>;
+
+  // Vary the three non-monotonic int-vector fields (roots_, span_sums_, samples_).
+  // sample_roots_pos_ keeps its class default sdsl::enc_vector<> (strictly monotonic).
+  using DGCDASLP_EV = dret::DifferentialLightSLP<grammar::SLP<>,
+                                                  grammar::SampledSLP<>,
+                                                  sdsl::enc_vector<>,
+                                                  sdsl::enc_vector<>,
+                                                  sdsl::enc_vector<>>;
+  using DGCDASLP_DV = dret::DifferentialLightSLP<grammar::SLP<>,
+                                                  grammar::SampledSLP<>,
+                                                  sdsl::dac_vector<>,
+                                                  sdsl::dac_vector<>,
+                                                  sdsl::dac_vector<>>;
+  using DGCDASLP_VV = dret::DifferentialLightSLP<grammar::SLP<>,
+                                                  grammar::SampledSLP<>,
+                                                  sdsl::vlc_vector<>,
+                                                  sdsl::vlc_vector<>,
+                                                  sdsl::vlc_vector<>>;
+
+  template <typename TSLP>
+  using DGCDAVariant = dret::dgcda::DocListIdxDGCDA<
+      ExternalGenericStorage,
+      dret::Alphabet<>,
+      sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
+      TSLP>;
 
   struct Config {
     IndexEnum index_t;
-    std::size_t sampling_size;
+    std::size_t sampling_size = 0;
+    uint32_t block_size = 512;
+    float storing_factor = 4;
 
     bool operator<(const Config& t_c) const {
-      return index_t < t_c.index_t || (index_t == t_c.index_t && sampling_size < t_c.sampling_size);
+      if (index_t != t_c.index_t)
+        return index_t < t_c.index_t;
+      if (sampling_size != t_c.sampling_size)
+        return sampling_size < t_c.sampling_size;
+      if (block_size != t_c.block_size)
+        return block_size < t_c.block_size;
+      return storing_factor < t_c.storing_factor;
     }
   };
 
@@ -100,6 +156,63 @@ class Factory {
             std::ref(storage_), sri::SrIndexValidArea<ExternalGenericStorage>(storage_, t_config.sampling_size));
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::GCDA: {
+        auto idx = std::make_shared<dret::gcda::DocListIdxGCDA<ExternalGenericStorage>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA: {
+        auto idx = std::make_shared<dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA_OTF: {
+        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_OTF>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA_CRL: {
+        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_CRL>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA_EV: {
+        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_EV>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA_DV: {
+        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_DV>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::DGCDA_VV: {
+        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_VV>>(
+            std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
       }
     }
 
