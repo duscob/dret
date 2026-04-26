@@ -35,7 +35,7 @@ DEFINE_int32(min_block_size, 512, "Minimum block size for DocListGCDA (power of 
 DEFINE_int32(max_block_size, 512, "Maximum block size for DocListGCDA (power of 2).");
 DEFINE_int32(min_storing_factor, 4, "Minimum storing factor for DocListGCDA (power of 2).");
 DEFINE_int32(max_storing_factor, 4, "Maximum storing factor for DocListGCDA (power of 2).");
-DEFINE_string(rmq_get_doc_variants, "da", "RMQ GetDoc variants to run: comma-separated da,slp,dslp.");
+DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to run: comma-separated da,slp,dslp.");
 
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
 DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");

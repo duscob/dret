@@ -40,7 +40,7 @@ DEFINE_int32(min_block_size, 512, "Minimum block size (power of 2).");
 DEFINE_int32(max_block_size, 512, "Maximum block size (power of 2).");
 DEFINE_int32(min_storing_factor, 4, "Minimum storing factor (power of 2).");
 DEFINE_int32(max_storing_factor, 4, "Maximum storing factor (power of 2).");
-DEFINE_string(rmq_get_doc_variants, "da", "RMQ GetDoc variants to build: comma-separated da,slp,dslp.");
+DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to build: comma-separated da,slp,dslp.");
 
 //~~~~~~~
 
