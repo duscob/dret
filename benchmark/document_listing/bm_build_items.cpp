@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <iostream>
+#include <sstream>
+#include <stdexcept>
 
 #include <gflags/gflags.h>
 
@@ -22,6 +24,7 @@
 #include "dret/construct_base.h"
 #include "dret/differential_light_slp.h"
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_index_rmq.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 #include "dret/index_base.h"
@@ -37,6 +40,39 @@ DEFINE_int32(min_block_size, 512, "Minimum block size (power of 2).");
 DEFINE_int32(max_block_size, 512, "Maximum block size (power of 2).");
 DEFINE_int32(min_storing_factor, 4, "Minimum storing factor (power of 2).");
 DEFINE_int32(max_storing_factor, 4, "Maximum storing factor (power of 2).");
+DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to build: comma-separated da,slp,dslp.");
+
+//~~~~~~~
+
+enum class RMQGetDocVariant {
+  DA,
+  SLP,
+  DSLP,
+};
+
+std::vector<RMQGetDocVariant> ParseRMQGetDocVariants(const std::string& value) {
+  std::vector<RMQGetDocVariant> variants;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "da") {
+      variants.push_back(RMQGetDocVariant::DA);
+    } else if (item == "slp") {
+      variants.push_back(RMQGetDocVariant::SLP);
+    } else if (item == "dslp") {
+      variants.push_back(RMQGetDocVariant::DSLP);
+    } else if (!item.empty()) {
+      throw std::invalid_argument("Unknown --rmq_get_doc_variants item: " + item);
+    }
+  }
+  if (variants.empty())
+    variants.push_back(RMQGetDocVariant::DA);
+  return variants;
+}
+
+bool HasVariant(const std::vector<RMQGetDocVariant>& variants, RMQGetDocVariant variant) {
+  return std::find(variants.begin(), variants.end(), variant) != variants.end();
+}
 
 //~~~~~~~
 
@@ -128,6 +164,38 @@ void BM_ConstructDocListIdxGCDA(benchmark::State& t_state, dret::Config t_config
 
 //~~~~~~~
 
+template <typename TIndex, typename TCore>
+void BM_ConstructDocListIdxRMQCompressed(benchmark::State& t_state, dret::Config t_config) {
+  uint32_t block_size = static_cast<uint32_t>(t_state.range(0));
+  float storing_factor = static_cast<float>(t_state.range(1));
+
+  dret::GenericStorage storage;
+  TCore core(storage, block_size, storing_factor);
+  TIndex index(storage, core);
+
+  for (auto _ : t_state) {
+    sdsl::memory_monitor::start();
+    construct(index, t_config);
+    sdsl::memory_monitor::stop();
+  }
+
+  SetupCommonCounters(t_state);
+  t_state.counters["bs"] = block_size;
+  t_state.counters["sf"] = storing_factor;
+  {
+    using namespace sri::conf;
+    sdsl::int_vector_buffer<> buf(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
+    t_state.counters["n"] = buf.size();
+  }
+
+  index.load(t_config);
+  const auto sizes = index.GetSizeReport();
+  appendCounters(t_state, sizes);
+  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
+}
+
+//~~~~~~~
+
 
 static std::vector<int64_t> powersOfTwo(int32_t t_min, int32_t t_max) {
   std::vector<int64_t> result;
@@ -150,6 +218,13 @@ int main(int argc, char** argv) {
   }
 
   std::string data_path = FLAGS_data;
+  std::vector<RMQGetDocVariant> rmq_get_doc_variants;
+  try {
+    rmq_get_doc_variants = ParseRMQGetDocVariants(FLAGS_rmq_get_doc_variants);
+  } catch (const std::invalid_argument& e) {
+    std::cerr << e.what() << std::endl;
+    return 1;
+  }
 
   dret::Config config(data_path,
                       std::filesystem::current_path(),
@@ -159,6 +234,24 @@ int main(int argc, char** argv) {
                       FLAGS_doc_delim);
 
   benchmark::RegisterBenchmark("DocListIdxBrute", BM_ConstructBruteIdx<dret::DocListIdxBrute<>>, config, data_path);
+
+  using SADAIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                            dret::Alphabet<>,
+                                            sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                            dret::rmq::SadaCore<dret::GenericStorage>>;
+  using ILCPIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                            dret::Alphabet<>,
+                                            sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                            dret::rmq::IlcpCore<dret::GenericStorage>>;
+  using CILCPIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                             dret::Alphabet<>,
+                                             sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                             dret::rmq::CilcpCore<dret::GenericStorage>>;
+  if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::DA)) {
+    benchmark::RegisterBenchmark("DocListSADA-DA", BM_ConstructBruteIdx<SADAIdx>, config, data_path);
+    benchmark::RegisterBenchmark("DocListILCP-DA", BM_ConstructBruteIdx<ILCPIdx>, config, data_path);
+    benchmark::RegisterBenchmark("DocListCILCP-DA", BM_ConstructBruteIdx<CILCPIdx>, config, data_path);
+  }
 
   auto block_sizes = powersOfTwo(FLAGS_min_block_size, FLAGS_max_block_size);
   auto storing_factors = powersOfTwo(FLAGS_min_storing_factor, FLAGS_max_storing_factor);
@@ -170,6 +263,84 @@ int main(int argc, char** argv) {
     benchmark::RegisterBenchmark(
         "DocListDGCDA", BM_ConstructDocListIdxGCDA<dret::dgcda::DocListIdxDGCDA<>>, config)
         ->ArgsProduct({block_sizes, storing_factors});
+
+    using GetDocSLP = dret::rmq::GetDocSLP<dret::GenericStorage>;
+    using SADACoreSLP = dret::rmq::SadaCore<dret::GenericStorage,
+                                             dret::Alphabet<>::int_width,
+                                             sdsl::rmq_succinct_sct<true>,
+                                             sdsl::sd_vector<>,
+                                             GetDocSLP>;
+    using ILCPCoreSLP = dret::rmq::IlcpCore<dret::GenericStorage,
+                                             dret::Alphabet<>::int_width,
+                                             sdsl::bit_vector,
+                                             sdsl::rmq_succinct_sct<true>,
+                                             sdsl::sd_vector<>,
+                                             GetDocSLP>;
+    using CILCPCoreSLP = dret::rmq::CilcpCore<dret::GenericStorage,
+                                               dret::Alphabet<>::int_width,
+                                               sdsl::bit_vector,
+                                               sdsl::rmq_succinct_sct<true>,
+                                               sdsl::sd_vector<>,
+                                               GetDocSLP>;
+    using SADAIdxSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                dret::Alphabet<>,
+                                                sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                SADACoreSLP>;
+    using ILCPIdxSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                dret::Alphabet<>,
+                                                sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                ILCPCoreSLP>;
+    using CILCPIdxSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                 dret::Alphabet<>,
+                                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                 CILCPCoreSLP>;
+    if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::SLP)) {
+      benchmark::RegisterBenchmark("DocListSADA-SLP", BM_ConstructDocListIdxRMQCompressed<SADAIdxSLP, SADACoreSLP>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+      benchmark::RegisterBenchmark("DocListILCP-SLP", BM_ConstructDocListIdxRMQCompressed<ILCPIdxSLP, ILCPCoreSLP>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+      benchmark::RegisterBenchmark("DocListCILCP-SLP", BM_ConstructDocListIdxRMQCompressed<CILCPIdxSLP, CILCPCoreSLP>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+    }
+
+    using GetDocDSLP = dret::rmq::GetDocDSLP<dret::GenericStorage>;
+    using SADACoreDSLP = dret::rmq::SadaCore<dret::GenericStorage,
+                                              dret::Alphabet<>::int_width,
+                                              sdsl::rmq_succinct_sct<true>,
+                                              sdsl::sd_vector<>,
+                                              GetDocDSLP>;
+    using ILCPCoreDSLP = dret::rmq::IlcpCore<dret::GenericStorage,
+                                              dret::Alphabet<>::int_width,
+                                              sdsl::bit_vector,
+                                              sdsl::rmq_succinct_sct<true>,
+                                              sdsl::sd_vector<>,
+                                              GetDocDSLP>;
+    using CILCPCoreDSLP = dret::rmq::CilcpCore<dret::GenericStorage,
+                                                dret::Alphabet<>::int_width,
+                                                sdsl::bit_vector,
+                                                sdsl::rmq_succinct_sct<true>,
+                                                sdsl::sd_vector<>,
+                                                GetDocDSLP>;
+    using SADAIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                 dret::Alphabet<>,
+                                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                 SADACoreDSLP>;
+    using ILCPIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                 dret::Alphabet<>,
+                                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                 ILCPCoreDSLP>;
+    using CILCPIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                  dret::Alphabet<>,
+                                                  sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                  CILCPCoreDSLP>;
+    if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::DSLP)) {
+      benchmark::RegisterBenchmark("DocListSADA-DSLP", BM_ConstructDocListIdxRMQCompressed<SADAIdxDSLP, SADACoreDSLP>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+      benchmark::RegisterBenchmark("DocListILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<ILCPIdxDSLP, ILCPCoreDSLP>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+      benchmark::RegisterBenchmark("DocListCILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<CILCPIdxDSLP, CILCPCoreDSLP>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+    }
 
     using DGCDA_OTF = dret::dgcda::DocListIdxDGCDA<
         dret::GenericStorage,

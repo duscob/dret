@@ -25,6 +25,7 @@
 #include "dret/differential_light_slp.h"
 #include "dret/doc_list_index.h"
 #include "dret/doc_list_index_brute.h"
+#include "dret/doc_list_index_rmq.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 
@@ -44,6 +45,15 @@ class Factory {
     DGCDA_EV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::enc_vector<>
     DGCDA_DV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::dac_vector<>
     DGCDA_VV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::vlc_vector<>
+    SADA,       // RMinQ on prev_doc
+    ILCP,       // RMinQ on backward-ILCP runs
+    CILCP,      // RMinQ on doc-aware compressed backward-ILCP runs
+  };
+
+  enum class GetDocEnum {
+    DA,
+    SLP,
+    DSLP,
   };
 
   // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
@@ -80,11 +90,84 @@ class Factory {
       sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
       TSLP>;
 
+  using TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>;
+  using GetDocSLP = dret::rmq::GetDocSLP<ExternalGenericStorage>;
+  using GetDocDSLP = dret::rmq::GetDocDSLP<ExternalGenericStorage>;
+
+  using SadaIdx = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                           dret::Alphabet<>,
+                                           TCountIdx,
+                                           dret::rmq::SadaCore<ExternalGenericStorage>>;
+  using IlcpIdx = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                           dret::Alphabet<>,
+                                           TCountIdx,
+                                           dret::rmq::IlcpCore<ExternalGenericStorage>>;
+  using CilcpIdx = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                            dret::Alphabet<>, TCountIdx, dret::rmq::CilcpCore<ExternalGenericStorage>>;
+
+  // The GetDocSLP TSLP default intentionally matches gcda::DocListIdxGCDA<>::TSLP;
+  // cache sharing depends on that exact type match because SDSL adds a type hash.
+  using SadaIdxSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                              dret::Alphabet<>,
+                                              TCountIdx,
+                                              dret::rmq::SadaCore<ExternalGenericStorage,
+                                                                  dret::Alphabet<>::int_width,
+                                                                  sdsl::rmq_succinct_sct<true>,
+                                                                  sdsl::sd_vector<>,
+                                                                  GetDocSLP>>;
+  using IlcpIdxSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                              dret::Alphabet<>,
+                                              TCountIdx,
+                                              dret::rmq::IlcpCore<ExternalGenericStorage,
+                                                                  dret::Alphabet<>::int_width,
+                                                                  sdsl::bit_vector,
+                                                                  sdsl::rmq_succinct_sct<true>,
+                                                                  sdsl::sd_vector<>,
+                                                                  GetDocSLP>>;
+  using CilcpIdxSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                               dret::Alphabet<>,
+                                               TCountIdx,
+                                               dret::rmq::CilcpCore<ExternalGenericStorage,
+                                                                    dret::Alphabet<>::int_width,
+                                                                    sdsl::bit_vector,
+                                                                    sdsl::rmq_succinct_sct<true>,
+                                                                    sdsl::sd_vector<>,
+                                                                    GetDocSLP>>;
+
+  // The GetDocDSLP default intentionally matches dgcda::DocListIdxDGCDA<>::TSLP.
+  using SadaIdxDSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                               dret::Alphabet<>,
+                                               TCountIdx,
+                                               dret::rmq::SadaCore<ExternalGenericStorage,
+                                                                   dret::Alphabet<>::int_width,
+                                                                   sdsl::rmq_succinct_sct<true>,
+                                                                   sdsl::sd_vector<>,
+                                                                   GetDocDSLP>>;
+  using IlcpIdxDSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                               dret::Alphabet<>,
+                                               TCountIdx,
+                                               dret::rmq::IlcpCore<ExternalGenericStorage,
+                                                                   dret::Alphabet<>::int_width,
+                                                                   sdsl::bit_vector,
+                                                                   sdsl::rmq_succinct_sct<true>,
+                                                                   sdsl::sd_vector<>,
+                                                                   GetDocDSLP>>;
+  using CilcpIdxDSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
+                                                dret::Alphabet<>,
+                                                TCountIdx,
+                                                dret::rmq::CilcpCore<ExternalGenericStorage,
+                                                                     dret::Alphabet<>::int_width,
+                                                                     sdsl::bit_vector,
+                                                                     sdsl::rmq_succinct_sct<true>,
+                                                                     sdsl::sd_vector<>,
+                                                                     GetDocDSLP>>;
+
   struct Config {
     IndexEnum index_t;
     std::size_t sampling_size = 0;
     uint32_t block_size = 512;
     float storing_factor = 4;
+    GetDocEnum get_doc = GetDocEnum::DA;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -93,7 +176,9 @@ class Factory {
         return sampling_size < t_c.sampling_size;
       if (block_size != t_c.block_size)
         return block_size < t_c.block_size;
-      return storing_factor < t_c.storing_factor;
+      if (storing_factor != t_c.storing_factor)
+        return storing_factor < t_c.storing_factor;
+      return get_doc < t_c.get_doc;
     }
   };
 
@@ -210,6 +295,72 @@ class Factory {
       case IndexEnum::DGCDA_VV: {
         auto idx = std::make_shared<DGCDAVariant<DGCDASLP_VV>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::SADA: {
+        if (t_config.get_doc == GetDocEnum::SLP) {
+          typename SadaIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<SadaIdxSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
+        if (t_config.get_doc == GetDocEnum::DSLP) {
+          typename SadaIdxDSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<SadaIdxDSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
+
+        auto idx = std::make_shared<SadaIdx>(std::ref(storage_));
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::ILCP: {
+        if (t_config.get_doc == GetDocEnum::SLP) {
+          typename IlcpIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<IlcpIdxSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
+        if (t_config.get_doc == GetDocEnum::DSLP) {
+          typename IlcpIdxDSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<IlcpIdxDSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
+
+        auto idx = std::make_shared<IlcpIdx>(std::ref(storage_));
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::CILCP: {
+        if (t_config.get_doc == GetDocEnum::SLP) {
+          typename CilcpIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<CilcpIdxSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
+        if (t_config.get_doc == GetDocEnum::DSLP) {
+          typename CilcpIdxDSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          auto idx = std::make_shared<CilcpIdxDSLP>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
+
+        auto idx = std::make_shared<CilcpIdx>(std::ref(storage_));
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;

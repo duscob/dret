@@ -28,6 +28,13 @@ constexpr std::string_view kGCDA = "gcda";
 constexpr std::string_view kSLP = "slp";
 constexpr std::string_view kDocs = "docs";
 constexpr std::string_view kDGCDA = "dgcda";
+
+constexpr std::string_view kSADA = "sada";
+constexpr std::string_view kILCP = "ilcp";
+constexpr std::string_view kCILCP = "cilcp";
+constexpr std::string_view kRmq = "rmq";
+constexpr std::string_view kRunHeads = "runHeads";
+constexpr std::string_view kRmqNDoc = "rmq_n_doc";
 }  // namespace conf
 
 template <uint8_t t_width = DRET_DEFAULT_ALPHABET_WIDTH>
@@ -52,6 +59,27 @@ struct Keys {
                 {conf::kDocs, "dgcda_docs"},
             },
         },
+        {
+            conf::kSADA,
+            {
+                {conf::kRmq, "sada_rmq"},
+            },
+        },
+        {
+            conf::kILCP,
+            {
+                {conf::kRmq, "ilcp_rmq"},
+                {conf::kRunHeads, "ilcp_run_heads"},
+            },
+        },
+        {
+            conf::kCILCP,
+            {
+                {conf::kRmq, "cilcp_rmq"},
+                {conf::kRunHeads, "cilcp_run_heads"},
+            },
+        },
+        {conf::kRmqNDoc, "rmq_n_doc"},
     });
   }
 

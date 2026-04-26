@@ -5,6 +5,8 @@
 #include <bitset>
 #include <functional>
 #include <iostream>
+#include <sstream>
+#include <stdexcept>
 
 #include <benchmark/benchmark.h>
 
@@ -33,12 +35,47 @@ DEFINE_int32(min_block_size, 512, "Minimum block size for DocListGCDA (power of 
 DEFINE_int32(max_block_size, 512, "Maximum block size for DocListGCDA (power of 2).");
 DEFINE_int32(min_storing_factor, 4, "Minimum storing factor for DocListGCDA (power of 2).");
 DEFINE_int32(max_storing_factor, 4, "Maximum storing factor for DocListGCDA (power of 2).");
+DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to run: comma-separated da,slp,dslp.");
 
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
 DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");
 DEFINE_double(min_time, 0, "Minimum time (seconds) for the locate query micro benchmark.");
 
 DEFINE_bool(print_result, false, "Execute benchmark that print results per index.");
+
+//~~~~~~~
+
+std::vector<Factory<>::GetDocEnum> ParseGetDocVariants(const std::string& value) {
+  std::vector<Factory<>::GetDocEnum> variants;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "da") {
+      variants.push_back(Factory<>::GetDocEnum::DA);
+    } else if (item == "slp") {
+      variants.push_back(Factory<>::GetDocEnum::SLP);
+    } else if (item == "dslp") {
+      variants.push_back(Factory<>::GetDocEnum::DSLP);
+    } else if (!item.empty()) {
+      throw std::invalid_argument("Unknown --rmq_get_doc_variants item: " + item);
+    }
+  }
+  if (variants.empty())
+    variants.push_back(Factory<>::GetDocEnum::DA);
+  return variants;
+}
+
+const char* GetDocName(Factory<>::GetDocEnum variant) {
+  switch (variant) {
+    case Factory<>::GetDocEnum::DA:
+      return "DA";
+    case Factory<>::GetDocEnum::SLP:
+      return "SLP";
+    case Factory<>::GetDocEnum::DSLP:
+      return "DSLP";
+  }
+  return "UNKNOWN";
+}
 
 //~~~~~~~
 
@@ -212,6 +249,13 @@ int main(int argc, char* argv[]) {
 
   // Benchmarks configs
   dret::Config config(FLAGS_data_name, FLAGS_data_dir, sri::SDSL_LIBDIVSUFSORT, true);
+  std::vector<Factory<>::GetDocEnum> rmq_get_doc_variants;
+  try {
+    rmq_get_doc_variants = ParseGetDocVariants(FLAGS_rmq_get_doc_variants);
+  } catch (const std::invalid_argument& e) {
+    std::cerr << e.what() << std::endl;
+    return 1;
+  }
 
   Factory<> factory(config);
 
@@ -257,6 +301,14 @@ int main(int argc, char* argv[]) {
       {"Brute-SRIndex", Factory<>::Config{Factory<>::IndexEnum::BRUTE_SR_INDEX}, true},
   };
 
+  for (const auto get_doc : rmq_get_doc_variants) {
+    if (get_doc == Factory<>::GetDocEnum::DA) {
+      idx_configs.push_back({"SADA-DA", Factory<>::Config{Factory<>::IndexEnum::SADA}, false});
+      idx_configs.push_back({"ILCP-DA", Factory<>::Config{Factory<>::IndexEnum::ILCP}, false});
+      idx_configs.push_back({"CILCP-DA", Factory<>::Config{Factory<>::IndexEnum::CILCP}, false});
+    }
+  }
+
   for (int64_t bs = FLAGS_min_block_size; bs <= FLAGS_max_block_size; bs *= 2) {
     for (int64_t sf = FLAGS_min_storing_factor; sf <= FLAGS_max_storing_factor; sf *= 2) {
       auto name = "DocListGCDA-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
@@ -291,6 +343,23 @@ int main(int argc, char* argv[]) {
       Factory<>::Config dgcda_vv_cfg{
           Factory<>::IndexEnum::DGCDA_VV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
       idx_configs.push_back({dgcda_vv_name, dgcda_vv_cfg, false});
+
+      for (const auto get_doc : rmq_get_doc_variants) {
+        if (get_doc != Factory<>::GetDocEnum::SLP && get_doc != Factory<>::GetDocEnum::DSLP)
+          continue;
+
+        const auto suffix = std::string("-") + GetDocName(get_doc) + "-bs" + std::to_string(bs) + "-sf"
+                            + std::to_string(sf);
+        Factory<>::Config sada_cfg{
+            Factory<>::IndexEnum::SADA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc};
+        Factory<>::Config ilcp_cfg{
+            Factory<>::IndexEnum::ILCP, 0, static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc};
+        Factory<>::Config cilcp_cfg{
+            Factory<>::IndexEnum::CILCP, 0, static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc};
+        idx_configs.push_back({"SADA" + suffix, sada_cfg, false});
+        idx_configs.push_back({"ILCP" + suffix, ilcp_cfg, false});
+        idx_configs.push_back({"CILCP" + suffix, cilcp_cfg, false});
+      }
     }
   }
 
