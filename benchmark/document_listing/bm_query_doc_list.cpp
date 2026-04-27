@@ -38,7 +38,7 @@ DEFINE_int32(max_storing_factor, 4, "Maximum storing factor for DocListGCDA (pow
 DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to run: comma-separated da,slp,dslp.");
 
 DEFINE_string(gcda_slp_variants,
-              "default",
+              "default,compact_bp,compact_louds",
               "GCDA TSLP variants: comma-separated default,compact_bp,compact_louds.");
 
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
