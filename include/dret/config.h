@@ -28,6 +28,11 @@ constexpr std::string_view kGCDA = "gcda";
 constexpr std::string_view kSLP = "slp";
 constexpr std::string_view kDocs = "docs";
 constexpr std::string_view kDGCDA = "dgcda";
+// Phase C: non-sampled grammar::SLP<> cache (dret::DocListIdxSLP).
+// Distinct from kGCDA::kSLP so the bare SLP and the GCDA-sampled SLPs
+// don't share a logical key (their type-hashes are already distinct,
+// but a separate prefix makes the on-disk files easier to inspect).
+constexpr std::string_view kSLPNS = "slpNS";
 
 constexpr std::string_view kSADA = "sada";
 constexpr std::string_view kILCP = "ilcp";
@@ -45,6 +50,7 @@ struct Keys {
     keys.update({
         {conf::kDocEnds, "doc_end"},
         {conf::kDA, "da"},
+        {conf::kSLPNS, "slp_ns"},
         {
             conf::kGCDA,
             {

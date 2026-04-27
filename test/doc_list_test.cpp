@@ -20,6 +20,7 @@
 #include "dret/doc_list_index_rmq.h"
 #include "dret/doc_list_rmq_scheme.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
+#include "dret/doc_list_idx_slp.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 
 #include "base_test.h"
@@ -133,6 +134,7 @@ using DocListIndexConstructTypes = ::testing::Types<
                                dret::Alphabet<>,
                                sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
                                grammar::CombinedSLPWithUnitCover<>>,
+    dret::DocListIdxSLP<>,
     dret::dgcda::DocListIdxDGCDA<>,
     dret::dgcda::DocListIdxDGCDA<dret::GenericStorage,
                                  dret::Alphabet<>,
@@ -222,6 +224,7 @@ using DocListIndexSearchTypes = ::testing::Types<
                                dret::Alphabet<>,
                                sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
                                grammar::CombinedSLPWithUnitCover<>>,
+    dret::DocListIdxSLP<ExternalGenericStorage>,
     dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage>,
     dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage,
                                  dret::Alphabet<>,

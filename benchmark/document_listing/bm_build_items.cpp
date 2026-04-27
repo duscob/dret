@@ -23,6 +23,7 @@
 #include "dret/basic_slp_span_length.h"
 #include "dret/construct_base.h"
 #include "dret/differential_light_slp.h"
+#include "dret/doc_list_idx_slp.h"
 #include "dret/doc_list_index_brute.h"
 #include "dret/doc_list_index_rmq.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
@@ -201,6 +202,46 @@ void BM_ConstructDocListIdxGCDA(benchmark::State& t_state, dret::Config t_config
 
 //~~~~~~~
 
+// Phase C: parameter-less GCDA-shaped construct benchmark for the
+// non-sampled `DocListIdxSLP`. No block_size / storing_factor knobs.
+template <typename TIndex>
+void BM_ConstructDocListIdxSLP(benchmark::State& t_state, dret::Config t_config) {
+  dret::GenericStorage storage;
+  TIndex index(storage);
+
+  for (auto _ : t_state) {
+    sdsl::memory_monitor::start();
+    construct(index, t_config);
+    sdsl::memory_monitor::stop();
+  }
+
+  auto bm_name = t_state.name();
+  std::string idx_name = bm_name.substr(bm_name.find('/') + 1);
+  {
+    std::ofstream ofs("construction-" + idx_name + ".html");
+    sdsl::memory_monitor::write_memory_log<sdsl::HTML_FORMAT>(ofs);
+  }
+  {
+    std::ofstream ofs("construction-" + idx_name + ".json");
+    sdsl::memory_monitor::write_memory_log<sdsl::JSON_FORMAT>(ofs);
+  }
+
+  SetupCommonCounters(t_state);
+  {
+    using namespace sri::conf;
+    sdsl::int_vector_buffer<> buf(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
+    t_state.counters["n"] = buf.size();
+  }
+
+  index.load(t_config);
+  const auto sizes = index.GetSizeReport();
+  appendCounters(t_state, sizes);
+  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
+  dret::writeSizesJson("sizes-" + idx_name + ".json", sizes);
+}
+
+//~~~~~~~
+
 template <typename TIndex, typename TCore>
 void BM_ConstructDocListIdxRMQCompressed(benchmark::State& t_state, dret::Config t_config) {
   uint32_t block_size = static_cast<uint32_t>(t_state.range(0));
@@ -291,6 +332,10 @@ int main(int argc, char** argv) {
     benchmark::RegisterBenchmark("DocListILCP-DA", BM_ConstructBruteIdx<ILCPIdx>, config, data_path);
     benchmark::RegisterBenchmark("DocListCILCP-DA", BM_ConstructBruteIdx<CILCPIdx>, config, data_path);
   }
+
+  // Phase C: non-sampled SLP index. No block_size / storing_factor knobs.
+  benchmark::RegisterBenchmark(
+      "DocListSLP-NS", BM_ConstructDocListIdxSLP<dret::DocListIdxSLP<>>, config);
 
   auto block_sizes = powersOfTwo(FLAGS_min_block_size, FLAGS_max_block_size);
   auto storing_factors = powersOfTwo(FLAGS_min_storing_factor, FLAGS_max_storing_factor);

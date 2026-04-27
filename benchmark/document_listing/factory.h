@@ -23,6 +23,7 @@
 #include "dret/basic_slp_span_length.h"
 #include "dret/config.h"
 #include "dret/differential_light_slp.h"
+#include "dret/doc_list_idx_slp.h"
 #include "dret/doc_list_index.h"
 #include "dret/doc_list_index_brute.h"
 #include "dret/doc_list_index_rmq.h"
@@ -48,6 +49,7 @@ class Factory {
     SADA,       // RMinQ on prev_doc
     ILCP,       // RMinQ on backward-ILCP runs
     CILCP,      // RMinQ on doc-aware compressed backward-ILCP runs
+    SLP_NS,     // Phase C: dret::DocListIdxSLP — non-sampled grammar::SLP<>
   };
 
   enum class GetDocEnum {
@@ -499,6 +501,13 @@ class Factory {
         }
 
         auto idx = std::make_shared<IlcpIdx>(std::ref(storage_));
+        idx->load(config_);
+        index = {idx, sdsl::size_in_bytes(*idx)};
+        break;
+      }
+
+      case IndexEnum::SLP_NS: {
+        auto idx = std::make_shared<dret::DocListIdxSLP<ExternalGenericStorage>>(std::ref(storage_));
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;

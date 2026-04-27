@@ -351,6 +351,9 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  // Phase C: non-sampled SLP index — block-size / storing-factor independent.
+  idx_configs.push_back({"DocListSLP-NS", Factory<>::Config{Factory<>::IndexEnum::SLP_NS}, false});
+
   for (int64_t bs = FLAGS_min_block_size; bs <= FLAGS_max_block_size; bs *= 2) {
     for (int64_t sf = FLAGS_min_storing_factor; sf <= FLAGS_max_storing_factor; sf *= 2) {
       // GCDA — one entry per requested TSLP variant (Default, CompactBP, CompactLOUDS).
