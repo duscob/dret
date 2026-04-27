@@ -38,8 +38,8 @@ DEFINE_int32(max_storing_factor, 4, "Maximum storing factor for DocListGCDA (pow
 DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to run: comma-separated da,slp,dslp.");
 
 DEFINE_string(gcda_slp_variants,
-              "default,compact_bp,compact_louds",
-              "GCDA TSLP variants: comma-separated default,compact_bp,compact_louds.");
+              "default,compact_bp,compact_louds,cslp",
+              "GCDA TSLP variants: comma-separated default,compact_bp,compact_louds,cslp.");
 
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
 DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");
@@ -92,6 +92,8 @@ std::vector<Factory<>::GCDASLPVariant> ParseGCDASLPVariants(const std::string& v
       variants.push_back(Factory<>::GCDASLPVariant::CompactBP);
     } else if (item == "compact_louds") {
       variants.push_back(Factory<>::GCDASLPVariant::CompactLOUDS);
+    } else if (item == "cslp") {
+      variants.push_back(Factory<>::GCDASLPVariant::CSLP);
     } else if (!item.empty()) {
       throw std::invalid_argument("Unknown --gcda_slp_variants item: " + item);
     }
@@ -109,6 +111,8 @@ const char* GCDASLPVariantName(Factory<>::GCDASLPVariant variant) {
       return "CompactBP";
     case Factory<>::GCDASLPVariant::CompactLOUDS:
       return "CompactLOUDS";
+    case Factory<>::GCDASLPVariant::CSLP:
+      return "CSLP";
   }
   return "UNKNOWN";
 }

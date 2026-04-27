@@ -11,6 +11,7 @@
 #include <grammar/slp.h>
 #include <grammar/slp_helper.h>
 
+#include "combined_slp_with_unit_cover.h"
 #include "compact_bp_slp.h"
 #include "compact_louds_slp.h"
 #include "construct_base.h"
@@ -182,6 +183,17 @@ void construct(grammar::CompactBPSLP<Ts...>& t_compact,
 
 template <typename... Ts>
 void construct(grammar::CompactLOUDSSLP<Ts...>& t_compact,
+               Config& t_config,
+               const std::string& t_datafile,
+               uint32_t t_block_size,
+               float t_storing_factor);
+
+// Phase B: CombinedSLP-with-unit-cover variant. Same signature pattern as
+// the compact-grammar variants above; same forward-decl placement reason
+// (visibility for the dispatch template's unqualified `construct(slp, ...)`
+// call below).
+template <typename... Ts>
+void construct(grammar::CombinedSLPWithUnitCover<Ts...>& t_wrapped,
                Config& t_config,
                const std::string& t_datafile,
                uint32_t t_block_size,
@@ -415,6 +427,42 @@ void construct(grammar::CompactLOUDSSLP<Ts...>& t_compact,
                uint32_t t_block_size,
                float t_storing_factor) {
   constructCompactCommon(t_compact, t_config, t_datafile, t_block_size, t_storing_factor);
+}
+
+// Phase B: CombinedSLP-with-unit-cover construct. Builds/loads a default
+// `grammar::CombinedSLP<>` via the existing CSLP construct overload (which
+// writes the `gcda_docs` cache), slices it into the wrapper's CombinedSLP
+// base (the wrapper has no extra fields so this is a clean upcast), then
+// stores the wrapper under the same logical SLP key. Type-hashing makes
+// the wrapper's on-disk file a sibling of the underlying CSLP's; their
+// byte contents are equal but cache lookups are kept distinct.
+template <typename... Ts>
+void construct(grammar::CombinedSLPWithUnitCover<Ts...>& t_wrapped,
+               Config& t_config,
+               const std::string& t_datafile,
+               uint32_t t_block_size,
+               float t_storing_factor) {
+  using namespace conf;
+  using BaseCSLP = typename grammar::CombinedSLPWithUnitCover<Ts...>::Base;
+  static_assert(std::is_same_v<BaseCSLP, grammar::CombinedSLP<>>,
+                "Phase B fixes the underlying CSLP to grammar::CombinedSLP<> "
+                "to match the delegated construct(CombinedSLP&,...) overload.");
+
+  std::string key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
+  auto key_slp = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
+
+  BaseCSLP cslp;
+  if (!sdsl::cache_file_exists<BaseCSLP>(key_slp, t_config)) {
+    construct(cslp, t_config, t_datafile, t_block_size, t_storing_factor);
+  } else {
+    sdsl::load_from_cache(cslp, key_slp, t_config, true);
+  }
+
+  auto event = sdsl::memory_monitor::event(
+      sdsl::cache_file_name<grammar::CombinedSLPWithUnitCover<Ts...>>(key_slp, t_config));
+
+  static_cast<BaseCSLP&>(t_wrapped) = cslp;
+  sdsl::store_to_cache(t_wrapped, key_slp, t_config, true);
 }
 
 //~~~~~~~

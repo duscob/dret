@@ -43,8 +43,8 @@ DEFINE_int32(max_storing_factor, 4, "Maximum storing factor (power of 2).");
 DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to build: comma-separated da,slp,dslp.");
 
 DEFINE_string(gcda_slp_variants,
-              "default,compact_bp,compact_louds",
-              "GCDA TSLP variants: comma-separated default,compact_bp,compact_louds.");
+              "default,compact_bp,compact_louds,cslp",
+              "GCDA TSLP variants: comma-separated default,compact_bp,compact_louds,cslp.");
 
 //~~~~~~~
 
@@ -78,6 +78,7 @@ enum class GCDASLPVariant {
   Default,
   CompactBP,
   CompactLOUDS,
+  CSLP,
 };
 
 std::vector<GCDASLPVariant> ParseGCDASLPVariants(const std::string& value) {
@@ -91,6 +92,8 @@ std::vector<GCDASLPVariant> ParseGCDASLPVariants(const std::string& value) {
       variants.push_back(GCDASLPVariant::CompactBP);
     } else if (item == "compact_louds") {
       variants.push_back(GCDASLPVariant::CompactLOUDS);
+    } else if (item == "cslp") {
+      variants.push_back(GCDASLPVariant::CSLP);
     } else if (!item.empty()) {
       throw std::invalid_argument("Unknown --gcda_slp_variants item: " + item);
     }
@@ -319,6 +322,17 @@ int main(int argc, char** argv) {
           ->ArgsProduct({block_sizes, storing_factors});
     }
 
+    using GCDA_CSLP = dret::gcda::DocListIdxGCDA<
+        dret::GenericStorage,
+        dret::Alphabet<>,
+        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        grammar::CombinedSLPWithUnitCover<>>;
+    if (HasVariant(gcda_slp_variants, GCDASLPVariant::CSLP)) {
+      benchmark::RegisterBenchmark(
+          "DocListGCDA-CSLP", BM_ConstructDocListIdxGCDA<GCDA_CSLP>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+    }
+
     benchmark::RegisterBenchmark(
         "DocListDGCDA", BM_ConstructDocListIdxGCDA<dret::dgcda::DocListIdxDGCDA<>>, config)
         ->ArgsProduct({block_sizes, storing_factors});
@@ -414,6 +428,8 @@ int main(int argc, char** argv) {
         register_rmq_slp_for_tslp.template operator()<grammar::CompactBPSLP<>>("CompactBP");
       if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactLOUDS))
         register_rmq_slp_for_tslp.template operator()<grammar::CompactLOUDSSLP<>>("CompactLOUDS");
+      if (HasVariant(gcda_slp_variants, GCDASLPVariant::CSLP))
+        register_rmq_slp_for_tslp.template operator()<grammar::CombinedSLPWithUnitCover<>>("CSLP");
     }
 
     using GetDocDSLP = dret::rmq::GetDocDSLP<dret::GenericStorage>;

@@ -63,6 +63,7 @@ class Factory {
     Default,       // grammar::LightSLP<...> — the existing GCDA default
     CompactBP,     // grammar::CompactBPSLP<>
     CompactLOUDS,  // grammar::CompactLOUDSSLP<>
+    CSLP,          // grammar::CombinedSLPWithUnitCover<> — Phase B
   };
 
   // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
@@ -99,9 +100,10 @@ class Factory {
       sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
       TSLP>;
 
-  // GCDA TSLP variants (Phase A — Compact-BP / Compact-LOUDS).
+  // GCDA TSLP variants (Phase A — Compact-BP / Compact-LOUDS; Phase B — CSLP).
   using GCDASLP_CompactBP    = grammar::CompactBPSLP<>;
   using GCDASLP_CompactLOUDS = grammar::CompactLOUDSSLP<>;
+  using GCDASLP_CSLP         = grammar::CombinedSLPWithUnitCover<>;
 
   template <typename TSLP>
   using GCDAVariant = dret::gcda::DocListIdxGCDA<
@@ -125,6 +127,9 @@ class Factory {
   using GetDocSLP_CompactLOUDS = dret::rmq::GetDocSLP<ExternalGenericStorage,
                                                        dret::Alphabet<>::int_width,
                                                        GCDASLP_CompactLOUDS>;
+  using GetDocSLP_CSLP         = dret::rmq::GetDocSLP<ExternalGenericStorage,
+                                                       dret::Alphabet<>::int_width,
+                                                       GCDASLP_CSLP>;
 
   using SadaIdx = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
                                            dret::Alphabet<>,
@@ -328,6 +333,13 @@ class Factory {
             index = {idx, sdsl::size_in_bytes(*idx)};
             break;
           }
+          case GCDASLPVariant::CSLP: {
+            auto idx = std::make_shared<GCDAVariant<GCDASLP_CSLP>>(
+                std::ref(storage_), t_config.block_size, t_config.storing_factor);
+            idx->load(config_);
+            index = {idx, sdsl::size_in_bytes(*idx)};
+            break;
+          }
           case GCDASLPVariant::Default:
           default: {
             auto idx = std::make_shared<dret::gcda::DocListIdxGCDA<ExternalGenericStorage>>(
@@ -407,6 +419,14 @@ class Factory {
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
             }
+            case GCDASLPVariant::CSLP: {
+              using IdxT = SadaIdxSLPVariant<GetDocSLP_CSLP>;
+              typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+              auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
             case GCDASLPVariant::Default:
             default: {
               typename SadaIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
@@ -451,6 +471,14 @@ class Factory {
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
             }
+            case GCDASLPVariant::CSLP: {
+              using IdxT = IlcpIdxSLPVariant<GetDocSLP_CSLP>;
+              typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+              auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
             case GCDASLPVariant::Default:
             default: {
               typename IlcpIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
@@ -489,6 +517,14 @@ class Factory {
             }
             case GCDASLPVariant::CompactLOUDS: {
               using IdxT = CilcpIdxSLPVariant<GetDocSLP_CompactLOUDS>;
+              typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
+              auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+            case GCDASLPVariant::CSLP: {
+              using IdxT = CilcpIdxSLPVariant<GetDocSLP_CSLP>;
               typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
               idx->load(config_);
