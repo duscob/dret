@@ -11,6 +11,8 @@
 #include <grammar/slp.h>
 #include <grammar/slp_helper.h>
 
+#include "sr-index/r_index.h"
+
 #include "combined_slp_with_unit_cover.h"
 #include "compact_bp_slp.h"
 #include "compact_louds_slp.h"
@@ -27,7 +29,7 @@ class MergeSetsBinaryTreeFunctor;
 
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
-          typename TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
           typename TSLP = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
                                             grammar::SampledSLP<>,
                                             grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,

@@ -317,15 +317,15 @@ int main(int argc, char** argv) {
 
   using SADAIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                             dret::Alphabet<>,
-                                            sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                            sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                             dret::rmq::SadaCore<dret::GenericStorage>>;
   using ILCPIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                             dret::Alphabet<>,
-                                            sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                            sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                             dret::rmq::IlcpCore<dret::GenericStorage>>;
   using CILCPIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                              dret::Alphabet<>,
-                                             sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                             sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                              dret::rmq::CilcpCore<dret::GenericStorage>>;
   if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::DA)) {
     benchmark::RegisterBenchmark("DocListSADA-DA", BM_ConstructBruteIdx<SADAIdx>, config, data_path);
@@ -349,12 +349,12 @@ int main(int argc, char** argv) {
     using GCDA_CompactBP = dret::gcda::DocListIdxGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
-        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
         grammar::CompactBPSLP<>>;
     using GCDA_CompactLOUDS = dret::gcda::DocListIdxGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
-        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
         grammar::CompactLOUDSSLP<>>;
     if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactBP)) {
       benchmark::RegisterBenchmark(
@@ -370,7 +370,7 @@ int main(int argc, char** argv) {
     using GCDA_CSLP = dret::gcda::DocListIdxGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
-        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
         grammar::CombinedSLPWithUnitCover<>>;
     if (HasVariant(gcda_slp_variants, GCDASLPVariant::CSLP)) {
       benchmark::RegisterBenchmark(
@@ -402,15 +402,15 @@ int main(int argc, char** argv) {
                                                GetDocSLP>;
     using SADAIdxSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                                 dret::Alphabet<>,
-                                                sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                 SADACoreSLP>;
     using ILCPIdxSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                                 dret::Alphabet<>,
-                                                sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                 ILCPCoreSLP>;
     using CILCPIdxSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                                  dret::Alphabet<>,
-                                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                 sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                  CILCPCoreSLP>;
     if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::SLP)) {
       // Default SLP TSLP (matches GCDA default).
@@ -448,15 +448,15 @@ int main(int argc, char** argv) {
                                                 GetDocSLPVar>;
         using SadaIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                                   dret::Alphabet<>,
-                                                  sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                  sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                   SadaCore>;
         using IlcpIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                                   dret::Alphabet<>,
-                                                  sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                  sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                   IlcpCore>;
         using CilcpIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                                    dret::Alphabet<>,
-                                                   sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                   sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                    CilcpCore>;
         benchmark::RegisterBenchmark(std::string("DocListSADA-SLP-") + suffix,
                                      BM_ConstructDocListIdxRMQCompressed<SadaIdx, SadaCore>, config)
@@ -497,15 +497,15 @@ int main(int argc, char** argv) {
                                                 GetDocDSLP>;
     using SADAIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                                  dret::Alphabet<>,
-                                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                 sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                  SADACoreDSLP>;
     using ILCPIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                                  dret::Alphabet<>,
-                                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                 sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                  ILCPCoreDSLP>;
     using CILCPIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                                                   dret::Alphabet<>,
-                                                  sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                                  sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                   CILCPCoreDSLP>;
     if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::DSLP)) {
       benchmark::RegisterBenchmark("DocListSADA-DSLP", BM_ConstructDocListIdxRMQCompressed<SADAIdxDSLP, SADACoreDSLP>, config)
@@ -519,7 +519,7 @@ int main(int argc, char** argv) {
     using DGCDA_OTF = dret::dgcda::DocListIdxDGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
-        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
         dret::DifferentialLightSLP<dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>>>;
     benchmark::RegisterBenchmark(
         "DocListDGCDA-OTF", BM_ConstructDocListIdxGCDA<DGCDA_OTF>, config)
@@ -528,7 +528,7 @@ int main(int argc, char** argv) {
     using DGCDA_CRL = dret::dgcda::DocListIdxDGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
-        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
         dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>;
     benchmark::RegisterBenchmark(
         "DocListDGCDA-CRL", BM_ConstructDocListIdxGCDA<DGCDA_CRL>, config)
@@ -539,7 +539,7 @@ int main(int argc, char** argv) {
     using DGCDA_EV = dret::dgcda::DocListIdxDGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
-        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
         dret::DifferentialLightSLP<grammar::SLP<>,
                                     grammar::SampledSLP<>,
                                     sdsl::enc_vector<>,
@@ -552,7 +552,7 @@ int main(int argc, char** argv) {
     using DGCDA_DV = dret::dgcda::DocListIdxDGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
-        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
         dret::DifferentialLightSLP<grammar::SLP<>,
                                     grammar::SampledSLP<>,
                                     sdsl::dac_vector<>,
@@ -565,7 +565,7 @@ int main(int argc, char** argv) {
     using DGCDA_VV = dret::dgcda::DocListIdxDGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
-        sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
         dret::DifferentialLightSLP<grammar::SLP<>,
                                     grammar::SampledSLP<>,
                                     sdsl::vlc_vector<>,

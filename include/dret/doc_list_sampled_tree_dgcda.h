@@ -18,7 +18,7 @@ namespace dgcda {
 
 template <typename TStorage   = GenericStorage,
           typename TAlphabet  = Alphabet<>,
-          typename TCountIdx  = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
+          typename TCountIdx  = sri::RIndexCount<TStorage, TAlphabet>,
           typename TSLP       = DifferentialLightSLP<>,
           typename TSLPSets   = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>,
                                                    true,

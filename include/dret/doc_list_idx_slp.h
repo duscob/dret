@@ -38,7 +38,7 @@
 #include <grammar/slp.h>
 #include <grammar/slp_helper.h>
 
-#include "sr-index/sr_idx_generic.h"
+#include "sr-index/r_index.h"
 #include "sr-index/sr_index.h"
 
 #include "construct_base.h"
@@ -49,7 +49,7 @@ namespace dret {
 
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
-          typename TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
           typename TSLP = grammar::SLP<>>
 class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
  public:

@@ -15,7 +15,6 @@
 #include <sdsl/vlc_vector.hpp>
 
 #include "sr-index/r_index.h"
-#include "sr-index/sr_idx_generic.h"
 #include "sr-index/sr_index.h"
 
 #include "../tool/definitions.h"
@@ -99,7 +98,7 @@ class Factory {
   using DGCDAVariant = dret::dgcda::DocListIdxDGCDA<
       ExternalGenericStorage,
       dret::Alphabet<>,
-      sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
+      sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
       TSLP>;
 
   // GCDA TSLP variants (Phase A — Compact-BP / Compact-LOUDS; Phase B — CSLP).
@@ -111,10 +110,10 @@ class Factory {
   using GCDAVariant = dret::gcda::DocListIdxGCDA<
       ExternalGenericStorage,
       dret::Alphabet<>,
-      sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
+      sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
       TSLP>;
 
-  using TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>;
+  using TCountIdx = sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>;
   using GetDocSLP = dret::rmq::GetDocSLP<ExternalGenericStorage>;
   using GetDocDSLP = dret::rmq::GetDocDSLP<ExternalGenericStorage>;
 
