@@ -37,6 +37,10 @@ DEFINE_int32(min_storing_factor, 4, "Minimum storing factor for DocListGCDA (pow
 DEFINE_int32(max_storing_factor, 4, "Maximum storing factor for DocListGCDA (power of 2).");
 DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to run: comma-separated da,slp,dslp.");
 
+DEFINE_string(gcda_slp_variants,
+              "default,compact_bp,compact_louds,cslp",
+              "GCDA TSLP variants: comma-separated default,compact_bp,compact_louds,cslp.");
+
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
 DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");
 DEFINE_double(min_time, 0, "Minimum time (seconds) for the locate query micro benchmark.");
@@ -73,6 +77,42 @@ const char* GetDocName(Factory<>::GetDocEnum variant) {
       return "SLP";
     case Factory<>::GetDocEnum::DSLP:
       return "DSLP";
+  }
+  return "UNKNOWN";
+}
+
+std::vector<Factory<>::GCDASLPVariant> ParseGCDASLPVariants(const std::string& value) {
+  std::vector<Factory<>::GCDASLPVariant> variants;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "default") {
+      variants.push_back(Factory<>::GCDASLPVariant::Default);
+    } else if (item == "compact_bp") {
+      variants.push_back(Factory<>::GCDASLPVariant::CompactBP);
+    } else if (item == "compact_louds") {
+      variants.push_back(Factory<>::GCDASLPVariant::CompactLOUDS);
+    } else if (item == "cslp") {
+      variants.push_back(Factory<>::GCDASLPVariant::CSLP);
+    } else if (!item.empty()) {
+      throw std::invalid_argument("Unknown --gcda_slp_variants item: " + item);
+    }
+  }
+  if (variants.empty())
+    variants.push_back(Factory<>::GCDASLPVariant::Default);
+  return variants;
+}
+
+const char* GCDASLPVariantName(Factory<>::GCDASLPVariant variant) {
+  switch (variant) {
+    case Factory<>::GCDASLPVariant::Default:
+      return "Default";
+    case Factory<>::GCDASLPVariant::CompactBP:
+      return "CompactBP";
+    case Factory<>::GCDASLPVariant::CompactLOUDS:
+      return "CompactLOUDS";
+    case Factory<>::GCDASLPVariant::CSLP:
+      return "CSLP";
   }
   return "UNKNOWN";
 }
@@ -250,8 +290,10 @@ int main(int argc, char* argv[]) {
   // Benchmarks configs
   dret::Config config(FLAGS_data_name, FLAGS_data_dir, sri::SDSL_LIBDIVSUFSORT, true);
   std::vector<Factory<>::GetDocEnum> rmq_get_doc_variants;
+  std::vector<Factory<>::GCDASLPVariant> gcda_slp_variants;
   try {
     rmq_get_doc_variants = ParseGetDocVariants(FLAGS_rmq_get_doc_variants);
+    gcda_slp_variants = ParseGCDASLPVariants(FLAGS_gcda_slp_variants);
   } catch (const std::invalid_argument& e) {
     std::cerr << e.what() << std::endl;
     return 1;
@@ -309,11 +351,25 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  // Phase C: non-sampled SLP index — block-size / storing-factor independent.
+  idx_configs.push_back({"DocListSLP-NS", Factory<>::Config{Factory<>::IndexEnum::SLP_NS}, false});
+
   for (int64_t bs = FLAGS_min_block_size; bs <= FLAGS_max_block_size; bs *= 2) {
     for (int64_t sf = FLAGS_min_storing_factor; sf <= FLAGS_max_storing_factor; sf *= 2) {
-      auto name = "DocListGCDA-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
-      Factory<>::Config cfg{Factory<>::IndexEnum::GCDA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
-      idx_configs.push_back({name, cfg, false});
+      // GCDA — one entry per requested TSLP variant (Default, CompactBP, CompactLOUDS).
+      for (const auto gcda_slp : gcda_slp_variants) {
+        auto suffix = (gcda_slp == Factory<>::GCDASLPVariant::Default)
+                          ? std::string{}
+                          : std::string("-") + GCDASLPVariantName(gcda_slp);
+        auto name = "DocListGCDA" + suffix + "-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+        Factory<>::Config cfg{Factory<>::IndexEnum::GCDA,
+                              0,
+                              static_cast<uint32_t>(bs),
+                              static_cast<float>(sf),
+                              Factory<>::GetDocEnum::DA,
+                              gcda_slp};
+        idx_configs.push_back({name, cfg, false});
+      }
 
       auto dgcda_name = "DocListDGCDA-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
       Factory<>::Config dgcda_cfg{Factory<>::IndexEnum::DGCDA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
@@ -348,17 +404,32 @@ int main(int argc, char* argv[]) {
         if (get_doc != Factory<>::GetDocEnum::SLP && get_doc != Factory<>::GetDocEnum::DSLP)
           continue;
 
-        const auto suffix = std::string("-") + GetDocName(get_doc) + "-bs" + std::to_string(bs) + "-sf"
-                            + std::to_string(sf);
-        Factory<>::Config sada_cfg{
-            Factory<>::IndexEnum::SADA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc};
-        Factory<>::Config ilcp_cfg{
-            Factory<>::IndexEnum::ILCP, 0, static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc};
-        Factory<>::Config cilcp_cfg{
-            Factory<>::IndexEnum::CILCP, 0, static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc};
-        idx_configs.push_back({"SADA" + suffix, sada_cfg, false});
-        idx_configs.push_back({"ILCP" + suffix, ilcp_cfg, false});
-        idx_configs.push_back({"CILCP" + suffix, cilcp_cfg, false});
+        // For RMQ-SLP, fan out across the requested gcda_slp variants so the
+        // SLP-backed RMQ index reuses the matching GCDA build's SLP cache.
+        // For RMQ-DSLP, the GCDA TSLP axis is irrelevant — only register one
+        // entry (Default) per (bs, sf, dslp).
+        const auto inner_variants =
+            (get_doc == Factory<>::GetDocEnum::SLP)
+                ? gcda_slp_variants
+                : std::vector<Factory<>::GCDASLPVariant>{Factory<>::GCDASLPVariant::Default};
+
+        for (const auto gcda_slp : inner_variants) {
+          auto variant_suffix = (get_doc == Factory<>::GetDocEnum::SLP &&
+                                 gcda_slp != Factory<>::GCDASLPVariant::Default)
+                                    ? std::string("-") + GCDASLPVariantName(gcda_slp)
+                                    : std::string{};
+          const auto suffix = std::string("-") + GetDocName(get_doc) + variant_suffix +
+                              "-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+          Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA, 0,
+                                     static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
+          Factory<>::Config ilcp_cfg{Factory<>::IndexEnum::ILCP, 0,
+                                     static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
+          Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP, 0,
+                                      static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
+          idx_configs.push_back({"SADA" + suffix, sada_cfg, false});
+          idx_configs.push_back({"ILCP" + suffix, ilcp_cfg, false});
+          idx_configs.push_back({"CILCP" + suffix, cilcp_cfg, false});
+        }
       }
     }
   }

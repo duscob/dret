@@ -23,7 +23,7 @@
 #include <sdsl/rmq_succinct_sct.hpp>
 #include <sdsl/sd_vector.hpp>
 
-#include "sr-index/sr_idx_generic.h"
+#include "sr-index/r_index.h"
 #include "sr-index/sr_index.h"
 
 #include "config.h"
@@ -426,7 +426,7 @@ using CilcpCore = IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHead
 
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
-          typename TCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
           typename TCore = SadaCore<TStorage, TAlphabet::int_width>>
 class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
  public:

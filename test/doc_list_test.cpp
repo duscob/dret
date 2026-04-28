@@ -20,6 +20,7 @@
 #include "dret/doc_list_index_rmq.h"
 #include "dret/doc_list_rmq_scheme.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
+#include "dret/doc_list_idx_slp.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 
 #include "base_test.h"
@@ -27,7 +28,7 @@
 //~~~~~~~
 
 template <typename TStorage>
-using RMQCountIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, dret::Alphabet<>>, 16>;
+using RMQCountIdx = sri::RIndexCount<TStorage, dret::Alphabet<>>;
 
 template <typename TStorage>
 using RMQGetDocSLP = dret::rmq::GetDocSLP<TStorage>;
@@ -121,26 +122,39 @@ class DocListIndexConstructTypedTests : public BaseConfigTests<8> {
 using DocListIndexConstructTypes = ::testing::Types<
     dret::DocListIdxBrute<>,
     dret::gcda::DocListIdxGCDA<>,
+    dret::gcda::DocListIdxGCDA<dret::GenericStorage,
+                               dret::Alphabet<>,
+                               sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                               grammar::CompactBPSLP<>>,
+    dret::gcda::DocListIdxGCDA<dret::GenericStorage,
+                               dret::Alphabet<>,
+                               sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                               grammar::CompactLOUDSSLP<>>,
+    dret::gcda::DocListIdxGCDA<dret::GenericStorage,
+                               dret::Alphabet<>,
+                               sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                               grammar::CombinedSLPWithUnitCover<>>,
+    dret::DocListIdxSLP<>,
     dret::dgcda::DocListIdxDGCDA<>,
     dret::dgcda::DocListIdxDGCDA<dret::GenericStorage,
                                  dret::Alphabet<>,
-                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                 sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                  dret::DifferentialLightSLP<dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>>>,
     dret::dgcda::DocListIdxDGCDA<dret::GenericStorage,
                                  dret::Alphabet<>,
-                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                 sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                  dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>,
     dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                              dret::Alphabet<>,
-                             sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                             sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                              dret::rmq::SadaCore<dret::GenericStorage>>,
     dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                              dret::Alphabet<>,
-                             sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                             sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                              dret::rmq::IlcpCore<dret::GenericStorage>>,
     dret::rmq::DocListIdxRMQ<dret::GenericStorage,
                              dret::Alphabet<>,
-                             sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                             sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                              dret::rmq::CilcpCore<dret::GenericStorage>>,
     RMQSadaSLPIndex<dret::GenericStorage>,
     RMQIlcpSLPIndex<dret::GenericStorage>,
@@ -198,26 +212,39 @@ class DocListIndexSearchTypedTests : public BaseConfigTests<8> {
 using DocListIndexSearchTypes = ::testing::Types<
     dret::DocListIdxBrute<ExternalGenericStorage>,
     dret::gcda::DocListIdxGCDA<ExternalGenericStorage>,
+    dret::gcda::DocListIdxGCDA<ExternalGenericStorage,
+                               dret::Alphabet<>,
+                               sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                               grammar::CompactBPSLP<>>,
+    dret::gcda::DocListIdxGCDA<ExternalGenericStorage,
+                               dret::Alphabet<>,
+                               sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                               grammar::CompactLOUDSSLP<>>,
+    dret::gcda::DocListIdxGCDA<ExternalGenericStorage,
+                               dret::Alphabet<>,
+                               sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                               grammar::CombinedSLPWithUnitCover<>>,
+    dret::DocListIdxSLP<ExternalGenericStorage>,
     dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage>,
     dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage,
                                  dret::Alphabet<>,
-                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                 sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                  dret::DifferentialLightSLP<dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>>>,
     dret::dgcda::DocListIdxDGCDA<dret::GenericStorage,
                                  dret::Alphabet<>,
-                                 sri::SrIdxGeneric<sri::SrIndexValidArea<dret::GenericStorage, dret::Alphabet<>>, 16>,
+                                 sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                  dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
                              dret::Alphabet<>,
-                             sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                              dret::rmq::SadaCore<ExternalGenericStorage>>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
                              dret::Alphabet<>,
-                             sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                              dret::rmq::IlcpCore<ExternalGenericStorage>>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
                              dret::Alphabet<>,
-                             sri::SrIdxGeneric<sri::SrIndexValidArea<ExternalGenericStorage, dret::Alphabet<>>, 16>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                              dret::rmq::CilcpCore<ExternalGenericStorage>>,
     RMQSadaSLPIndex<ExternalGenericStorage>,
     RMQIlcpSLPIndex<ExternalGenericStorage>,
