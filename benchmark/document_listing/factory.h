@@ -54,6 +54,7 @@ class Factory {
   enum class GetDocEnum {
     DA,
     SLP,
+    SLP_NS,  // bare grammar::SLP<>; shares Phase C's kSLPNS cache (no bs/sf knobs).
     DSLP,
   };
 
@@ -115,6 +116,7 @@ class Factory {
 
   using TCountIdx = sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>;
   using GetDocSLP = dret::rmq::GetDocSLP<ExternalGenericStorage>;
+  using GetDocSLP_NS = dret::rmq::GetDocSLP_NS<ExternalGenericStorage>;
   using GetDocDSLP = dret::rmq::GetDocDSLP<ExternalGenericStorage>;
 
   // Parametrized GetDocSLP for compact-grammar TSLP variants. The default
@@ -204,6 +206,12 @@ class Factory {
                                                                            sdsl::rmq_succinct_sct<true>,
                                                                            sdsl::sd_vector<>,
                                                                            TGetDoc>>;
+
+  // SADA / ILCP / CILCP-SLP-NS: RMQ listing cores backed by the bare grammar::SLP<>
+  // cache (kSLPNS) shared with dret::DocListIdxSLP. No bs/sf knobs.
+  using SadaIdxSLP_NS = SadaIdxSLPVariant<GetDocSLP_NS>;
+  using IlcpIdxSLP_NS = IlcpIdxSLPVariant<GetDocSLP_NS>;
+  using CilcpIdxSLP_NS = CilcpIdxSLPVariant<GetDocSLP_NS>;
 
   // The GetDocDSLP default intentionally matches dgcda::DocListIdxDGCDA<>::TSLP.
   using SadaIdxDSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
@@ -402,6 +410,13 @@ class Factory {
       }
 
       case IndexEnum::SADA: {
+        if (t_config.get_doc == GetDocEnum::SLP_NS) {
+          typename SadaIdxSLP_NS::Core core(std::ref(storage_));
+          auto idx = std::make_shared<SadaIdxSLP_NS>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
         if (t_config.get_doc == GetDocEnum::SLP) {
           switch (t_config.gcda_slp) {
             case GCDASLPVariant::CompactBP: {
@@ -454,6 +469,13 @@ class Factory {
       }
 
       case IndexEnum::ILCP: {
+        if (t_config.get_doc == GetDocEnum::SLP_NS) {
+          typename IlcpIdxSLP_NS::Core core(std::ref(storage_));
+          auto idx = std::make_shared<IlcpIdxSLP_NS>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
         if (t_config.get_doc == GetDocEnum::SLP) {
           switch (t_config.gcda_slp) {
             case GCDASLPVariant::CompactBP: {
@@ -513,6 +535,13 @@ class Factory {
       }
 
       case IndexEnum::CILCP: {
+        if (t_config.get_doc == GetDocEnum::SLP_NS) {
+          typename CilcpIdxSLP_NS::Core core(std::ref(storage_));
+          auto idx = std::make_shared<CilcpIdxSLP_NS>(std::ref(storage_), core);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
         if (t_config.get_doc == GetDocEnum::SLP) {
           switch (t_config.gcda_slp) {
             case GCDASLPVariant::CompactBP: {

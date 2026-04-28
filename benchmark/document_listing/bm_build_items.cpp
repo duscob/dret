@@ -41,7 +41,7 @@ DEFINE_int32(min_block_size, 512, "Minimum block size (power of 2).");
 DEFINE_int32(max_block_size, 512, "Maximum block size (power of 2).");
 DEFINE_int32(min_storing_factor, 4, "Minimum storing factor (power of 2).");
 DEFINE_int32(max_storing_factor, 4, "Maximum storing factor (power of 2).");
-DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to build: comma-separated da,slp,dslp.");
+DEFINE_string(rmq_get_doc_variants, "da,slp,slp_ns", "RMQ GetDoc variants to build: comma-separated da,slp,dslp.");
 
 DEFINE_string(gcda_slp_variants,
               "default,compact_bp,compact_louds,cslp",
@@ -52,6 +52,7 @@ DEFINE_string(gcda_slp_variants,
 enum class RMQGetDocVariant {
   DA,
   SLP,
+  SLP_NS,
   DSLP,
 };
 
@@ -64,6 +65,8 @@ std::vector<RMQGetDocVariant> ParseRMQGetDocVariants(const std::string& value) {
       variants.push_back(RMQGetDocVariant::DA);
     } else if (item == "slp") {
       variants.push_back(RMQGetDocVariant::SLP);
+    } else if (item == "slp_ns") {
+      variants.push_back(RMQGetDocVariant::SLP_NS);
     } else if (item == "dslp") {
       variants.push_back(RMQGetDocVariant::DSLP);
     } else if (!item.empty()) {
@@ -242,6 +245,47 @@ void BM_ConstructDocListIdxSLP(benchmark::State& t_state, dret::Config t_config)
 
 //~~~~~~~
 
+// Parameter-less RMQ-Compressed harness for SLP-NS variants. The bare grammar::SLP<>
+// is parameter-free (no bs/sf knobs), so the RMQ core is constructed single-arg.
+template <typename TIndex, typename TCore>
+void BM_ConstructDocListIdxRMQCompressedNS(benchmark::State& t_state, dret::Config t_config) {
+  dret::GenericStorage storage;
+  TCore core(storage);
+  TIndex index(storage, core);
+
+  for (auto _ : t_state) {
+    sdsl::memory_monitor::start();
+    construct(index, t_config);
+    sdsl::memory_monitor::stop();
+  }
+
+  auto bm_name = t_state.name();
+  std::string idx_name = bm_name.substr(bm_name.find('/') + 1);
+  {
+    std::ofstream ofs("construction-" + idx_name + ".html");
+    sdsl::memory_monitor::write_memory_log<sdsl::HTML_FORMAT>(ofs);
+  }
+  {
+    std::ofstream ofs("construction-" + idx_name + ".json");
+    sdsl::memory_monitor::write_memory_log<sdsl::JSON_FORMAT>(ofs);
+  }
+
+  SetupCommonCounters(t_state);
+  {
+    using namespace sri::conf;
+    sdsl::int_vector_buffer<> buf(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
+    t_state.counters["n"] = buf.size();
+  }
+
+  index.load(t_config);
+  const auto sizes = index.GetSizeReport();
+  appendCounters(t_state, sizes);
+  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
+  dret::writeSizesJson("sizes-" + idx_name + ".json", sizes);
+}
+
+//~~~~~~~
+
 template <typename TIndex, typename TCore>
 void BM_ConstructDocListIdxRMQCompressed(benchmark::State& t_state, dret::Config t_config) {
   uint32_t block_size = static_cast<uint32_t>(t_state.range(0));
@@ -336,6 +380,50 @@ int main(int argc, char** argv) {
   // Phase C: non-sampled SLP index. No block_size / storing_factor knobs.
   benchmark::RegisterBenchmark(
       "DocListSLP-NS", BM_ConstructDocListIdxSLP<dret::DocListIdxSLP<>>, config);
+
+  // RMQ listing cores backed by the bare grammar::SLP<> cache (kSLPNS) shared with
+  // DocListSLP-NS. Parameter-free — registered once, outside the (bs, sf) sweep.
+  using GetDocSLP_NS = dret::rmq::GetDocSLP_NS<dret::GenericStorage>;
+  using SADACoreSLP_NS = dret::rmq::SadaCore<dret::GenericStorage,
+                                              dret::Alphabet<>::int_width,
+                                              sdsl::rmq_succinct_sct<true>,
+                                              sdsl::sd_vector<>,
+                                              GetDocSLP_NS>;
+  using ILCPCoreSLP_NS = dret::rmq::IlcpCore<dret::GenericStorage,
+                                              dret::Alphabet<>::int_width,
+                                              sdsl::bit_vector,
+                                              sdsl::rmq_succinct_sct<true>,
+                                              sdsl::sd_vector<>,
+                                              GetDocSLP_NS>;
+  using CILCPCoreSLP_NS = dret::rmq::CilcpCore<dret::GenericStorage,
+                                                dret::Alphabet<>::int_width,
+                                                sdsl::bit_vector,
+                                                sdsl::rmq_succinct_sct<true>,
+                                                sdsl::sd_vector<>,
+                                                GetDocSLP_NS>;
+  using SADAIdxSLP_NS = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                  dret::Alphabet<>,
+                                                  sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                                                  SADACoreSLP_NS>;
+  using ILCPIdxSLP_NS = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                  dret::Alphabet<>,
+                                                  sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                                                  ILCPCoreSLP_NS>;
+  using CILCPIdxSLP_NS = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                                   dret::Alphabet<>,
+                                                   sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                                                   CILCPCoreSLP_NS>;
+  if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::SLP_NS)) {
+    benchmark::RegisterBenchmark(
+        "DocListSADA-SLP-NS",
+        BM_ConstructDocListIdxRMQCompressedNS<SADAIdxSLP_NS, SADACoreSLP_NS>, config);
+    benchmark::RegisterBenchmark(
+        "DocListILCP-SLP-NS",
+        BM_ConstructDocListIdxRMQCompressedNS<ILCPIdxSLP_NS, ILCPCoreSLP_NS>, config);
+    benchmark::RegisterBenchmark(
+        "DocListCILCP-SLP-NS",
+        BM_ConstructDocListIdxRMQCompressedNS<CILCPIdxSLP_NS, CILCPCoreSLP_NS>, config);
+  }
 
   auto block_sizes = powersOfTwo(FLAGS_min_block_size, FLAGS_max_block_size);
   auto storing_factors = powersOfTwo(FLAGS_min_storing_factor, FLAGS_max_storing_factor);

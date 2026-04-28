@@ -35,7 +35,7 @@ DEFINE_int32(min_block_size, 512, "Minimum block size for DocListGCDA (power of 
 DEFINE_int32(max_block_size, 512, "Maximum block size for DocListGCDA (power of 2).");
 DEFINE_int32(min_storing_factor, 4, "Minimum storing factor for DocListGCDA (power of 2).");
 DEFINE_int32(max_storing_factor, 4, "Maximum storing factor for DocListGCDA (power of 2).");
-DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to run: comma-separated da,slp,dslp.");
+DEFINE_string(rmq_get_doc_variants, "da,slp,slp_ns", "RMQ GetDoc variants to run: comma-separated da,slp,dslp.");
 
 DEFINE_string(gcda_slp_variants,
               "default,compact_bp,compact_louds,cslp",
@@ -58,6 +58,8 @@ std::vector<Factory<>::GetDocEnum> ParseGetDocVariants(const std::string& value)
       variants.push_back(Factory<>::GetDocEnum::DA);
     } else if (item == "slp") {
       variants.push_back(Factory<>::GetDocEnum::SLP);
+    } else if (item == "slp_ns") {
+      variants.push_back(Factory<>::GetDocEnum::SLP_NS);
     } else if (item == "dslp") {
       variants.push_back(Factory<>::GetDocEnum::DSLP);
     } else if (!item.empty()) {
@@ -75,6 +77,8 @@ const char* GetDocName(Factory<>::GetDocEnum variant) {
       return "DA";
     case Factory<>::GetDocEnum::SLP:
       return "SLP";
+    case Factory<>::GetDocEnum::SLP_NS:
+      return "SLP-NS";
     case Factory<>::GetDocEnum::DSLP:
       return "DSLP";
   }
@@ -348,6 +352,16 @@ int main(int argc, char* argv[]) {
       idx_configs.push_back({"SADA-DA", Factory<>::Config{Factory<>::IndexEnum::SADA}, false});
       idx_configs.push_back({"ILCP-DA", Factory<>::Config{Factory<>::IndexEnum::ILCP}, false});
       idx_configs.push_back({"CILCP-DA", Factory<>::Config{Factory<>::IndexEnum::CILCP}, false});
+    }
+    if (get_doc == Factory<>::GetDocEnum::SLP_NS) {
+      // RMQ variants over the bare grammar::SLP<> cache (kSLPNS). No (bs, sf) axis —
+      // the bare SLP is parameter-free, so register once outside the sweep.
+      Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA, 0, 512, 4, Factory<>::GetDocEnum::SLP_NS};
+      Factory<>::Config ilcp_cfg{Factory<>::IndexEnum::ILCP, 0, 512, 4, Factory<>::GetDocEnum::SLP_NS};
+      Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP, 0, 512, 4, Factory<>::GetDocEnum::SLP_NS};
+      idx_configs.push_back({"SADA-SLP-NS", sada_cfg, false});
+      idx_configs.push_back({"ILCP-SLP-NS", ilcp_cfg, false});
+      idx_configs.push_back({"CILCP-SLP-NS", cilcp_cfg, false});
     }
   }
 
