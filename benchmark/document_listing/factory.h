@@ -68,6 +68,17 @@ class Factory {
     CSLP,          // grammar::CombinedSLPWithUnitCover<> — Phase B
   };
 
+  // Bare-SLP container choice — independent from `gcda_slp`. Selects which
+  // typed kSLPNS cache file is read by `DocListSLP-NS` and the three RMQ-NS
+  // variants. enc_vector<> is excluded: rule pairs and span lengths are
+  // non-monotonic.
+  enum class BareSLPVariant {
+    Default,  // grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>
+    Raw,      // grammar::SLP<> — library defaults (std::vector<uint32_t>); DRL-equivalent
+    DV,       // grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>
+    VV,       // grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>
+  };
+
   // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
   // (the span-length strategy). Everything downstream — SampledSLP, Chunks,
   // GCChunks, count index — is unchanged. Cache files are type-hashed by sdsl,
@@ -213,6 +224,32 @@ class Factory {
   using IlcpIdxSLP_NS = IlcpIdxSLPVariant<GetDocSLP_NS>;
   using CilcpIdxSLP_NS = CilcpIdxSLPVariant<GetDocSLP_NS>;
 
+  // Bare-SLP container variants. Each typed grammar::SLP gets its own SDSL
+  // type-hash, so cache files don't collide. GetDocSLP_NS_{Raw,DV,VV} share
+  // their cache file with the corresponding DocListIdxSLP-{Raw,DV,VV} via
+  // type matching.
+  using BareSLP_Raw = grammar::SLP<>;
+  using BareSLP_DV = grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>;
+  using BareSLP_VV = grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>;
+  using GetDocSLP_NS_Raw = dret::rmq::GetDocSLP_NS<ExternalGenericStorage,
+                                                    dret::Alphabet<>::int_width,
+                                                    BareSLP_Raw>;
+  using GetDocSLP_NS_DV = dret::rmq::GetDocSLP_NS<ExternalGenericStorage,
+                                                   dret::Alphabet<>::int_width,
+                                                   BareSLP_DV>;
+  using GetDocSLP_NS_VV = dret::rmq::GetDocSLP_NS<ExternalGenericStorage,
+                                                   dret::Alphabet<>::int_width,
+                                                   BareSLP_VV>;
+  using SadaIdxSLP_NS_Raw  = SadaIdxSLPVariant<GetDocSLP_NS_Raw>;
+  using IlcpIdxSLP_NS_Raw  = IlcpIdxSLPVariant<GetDocSLP_NS_Raw>;
+  using CilcpIdxSLP_NS_Raw = CilcpIdxSLPVariant<GetDocSLP_NS_Raw>;
+  using SadaIdxSLP_NS_DV  = SadaIdxSLPVariant<GetDocSLP_NS_DV>;
+  using IlcpIdxSLP_NS_DV  = IlcpIdxSLPVariant<GetDocSLP_NS_DV>;
+  using CilcpIdxSLP_NS_DV = CilcpIdxSLPVariant<GetDocSLP_NS_DV>;
+  using SadaIdxSLP_NS_VV  = SadaIdxSLPVariant<GetDocSLP_NS_VV>;
+  using IlcpIdxSLP_NS_VV  = IlcpIdxSLPVariant<GetDocSLP_NS_VV>;
+  using CilcpIdxSLP_NS_VV = CilcpIdxSLPVariant<GetDocSLP_NS_VV>;
+
   // The GetDocDSLP default intentionally matches dgcda::DocListIdxDGCDA<>::TSLP.
   using SadaIdxDSLP = dret::rmq::DocListIdxRMQ<ExternalGenericStorage,
                                                dret::Alphabet<>,
@@ -248,6 +285,7 @@ class Factory {
     float storing_factor = 4;
     GetDocEnum get_doc = GetDocEnum::DA;
     GCDASLPVariant gcda_slp = GCDASLPVariant::Default;
+    BareSLPVariant bare_slp = BareSLPVariant::Default;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -260,7 +298,9 @@ class Factory {
         return storing_factor < t_c.storing_factor;
       if (get_doc != t_c.get_doc)
         return get_doc < t_c.get_doc;
-      return gcda_slp < t_c.gcda_slp;
+      if (gcda_slp != t_c.gcda_slp)
+        return gcda_slp < t_c.gcda_slp;
+      return bare_slp < t_c.bare_slp;
     }
   };
 
@@ -411,10 +451,37 @@ class Factory {
 
       case IndexEnum::SADA: {
         if (t_config.get_doc == GetDocEnum::SLP_NS) {
-          typename SadaIdxSLP_NS::Core core(std::ref(storage_));
-          auto idx = std::make_shared<SadaIdxSLP_NS>(std::ref(storage_), core);
-          idx->load(config_);
-          index = {idx, sdsl::size_in_bytes(*idx)};
+          switch (t_config.bare_slp) {
+            case BareSLPVariant::Raw: {
+              typename SadaIdxSLP_NS_Raw::Core core(std::ref(storage_));
+              auto idx = std::make_shared<SadaIdxSLP_NS_Raw>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+            case BareSLPVariant::DV: {
+              typename SadaIdxSLP_NS_DV::Core core(std::ref(storage_));
+              auto idx = std::make_shared<SadaIdxSLP_NS_DV>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+            case BareSLPVariant::VV: {
+              typename SadaIdxSLP_NS_VV::Core core(std::ref(storage_));
+              auto idx = std::make_shared<SadaIdxSLP_NS_VV>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+            case BareSLPVariant::Default:
+            default: {
+              typename SadaIdxSLP_NS::Core core(std::ref(storage_));
+              auto idx = std::make_shared<SadaIdxSLP_NS>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+          }
           break;
         }
         if (t_config.get_doc == GetDocEnum::SLP) {
@@ -470,10 +537,37 @@ class Factory {
 
       case IndexEnum::ILCP: {
         if (t_config.get_doc == GetDocEnum::SLP_NS) {
-          typename IlcpIdxSLP_NS::Core core(std::ref(storage_));
-          auto idx = std::make_shared<IlcpIdxSLP_NS>(std::ref(storage_), core);
-          idx->load(config_);
-          index = {idx, sdsl::size_in_bytes(*idx)};
+          switch (t_config.bare_slp) {
+            case BareSLPVariant::Raw: {
+              typename IlcpIdxSLP_NS_Raw::Core core(std::ref(storage_));
+              auto idx = std::make_shared<IlcpIdxSLP_NS_Raw>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+            case BareSLPVariant::DV: {
+              typename IlcpIdxSLP_NS_DV::Core core(std::ref(storage_));
+              auto idx = std::make_shared<IlcpIdxSLP_NS_DV>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+            case BareSLPVariant::VV: {
+              typename IlcpIdxSLP_NS_VV::Core core(std::ref(storage_));
+              auto idx = std::make_shared<IlcpIdxSLP_NS_VV>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+            case BareSLPVariant::Default:
+            default: {
+              typename IlcpIdxSLP_NS::Core core(std::ref(storage_));
+              auto idx = std::make_shared<IlcpIdxSLP_NS>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+          }
           break;
         }
         if (t_config.get_doc == GetDocEnum::SLP) {
@@ -528,18 +622,78 @@ class Factory {
       }
 
       case IndexEnum::SLP_NS: {
-        auto idx = std::make_shared<dret::DocListIdxSLP<ExternalGenericStorage>>(std::ref(storage_));
-        idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*idx)};
+        switch (t_config.bare_slp) {
+          case BareSLPVariant::Raw: {
+            auto idx = std::make_shared<dret::DocListIdxSLP<ExternalGenericStorage,
+                                                            dret::Alphabet<>,
+                                                            sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                                                            BareSLP_Raw>>(std::ref(storage_));
+            idx->load(config_);
+            index = {idx, sdsl::size_in_bytes(*idx)};
+            break;
+          }
+          case BareSLPVariant::DV: {
+            auto idx = std::make_shared<dret::DocListIdxSLP<ExternalGenericStorage,
+                                                            dret::Alphabet<>,
+                                                            sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                                                            BareSLP_DV>>(std::ref(storage_));
+            idx->load(config_);
+            index = {idx, sdsl::size_in_bytes(*idx)};
+            break;
+          }
+          case BareSLPVariant::VV: {
+            auto idx = std::make_shared<dret::DocListIdxSLP<ExternalGenericStorage,
+                                                            dret::Alphabet<>,
+                                                            sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                                                            BareSLP_VV>>(std::ref(storage_));
+            idx->load(config_);
+            index = {idx, sdsl::size_in_bytes(*idx)};
+            break;
+          }
+          case BareSLPVariant::Default:
+          default: {
+            auto idx = std::make_shared<dret::DocListIdxSLP<ExternalGenericStorage>>(std::ref(storage_));
+            idx->load(config_);
+            index = {idx, sdsl::size_in_bytes(*idx)};
+            break;
+          }
+        }
         break;
       }
 
       case IndexEnum::CILCP: {
         if (t_config.get_doc == GetDocEnum::SLP_NS) {
-          typename CilcpIdxSLP_NS::Core core(std::ref(storage_));
-          auto idx = std::make_shared<CilcpIdxSLP_NS>(std::ref(storage_), core);
-          idx->load(config_);
-          index = {idx, sdsl::size_in_bytes(*idx)};
+          switch (t_config.bare_slp) {
+            case BareSLPVariant::Raw: {
+              typename CilcpIdxSLP_NS_Raw::Core core(std::ref(storage_));
+              auto idx = std::make_shared<CilcpIdxSLP_NS_Raw>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+            case BareSLPVariant::DV: {
+              typename CilcpIdxSLP_NS_DV::Core core(std::ref(storage_));
+              auto idx = std::make_shared<CilcpIdxSLP_NS_DV>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+            case BareSLPVariant::VV: {
+              typename CilcpIdxSLP_NS_VV::Core core(std::ref(storage_));
+              auto idx = std::make_shared<CilcpIdxSLP_NS_VV>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+            case BareSLPVariant::Default:
+            default: {
+              typename CilcpIdxSLP_NS::Core core(std::ref(storage_));
+              auto idx = std::make_shared<CilcpIdxSLP_NS>(std::ref(storage_), core);
+              idx->load(config_);
+              index = {idx, sdsl::size_in_bytes(*idx)};
+              break;
+            }
+          }
           break;
         }
         if (t_config.get_doc == GetDocEnum::SLP) {

@@ -41,6 +41,10 @@ DEFINE_string(gcda_slp_variants,
               "default,compact_bp,compact_louds,cslp",
               "GCDA TSLP variants: comma-separated default,compact_bp,compact_louds,cslp.");
 
+DEFINE_string(bare_slp_variants,
+              "default,raw,dv,vv",
+              "Bare-SLP container variants for SLP-NS family: comma-separated default,raw,dv,vv.");
+
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
 DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");
 DEFINE_double(min_time, 0, "Minimum time (seconds) for the locate query micro benchmark.");
@@ -117,6 +121,42 @@ const char* GCDASLPVariantName(Factory<>::GCDASLPVariant variant) {
       return "CompactLOUDS";
     case Factory<>::GCDASLPVariant::CSLP:
       return "CSLP";
+  }
+  return "UNKNOWN";
+}
+
+std::vector<Factory<>::BareSLPVariant> ParseBareSLPVariants(const std::string& value) {
+  std::vector<Factory<>::BareSLPVariant> variants;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "default") {
+      variants.push_back(Factory<>::BareSLPVariant::Default);
+    } else if (item == "raw") {
+      variants.push_back(Factory<>::BareSLPVariant::Raw);
+    } else if (item == "dv") {
+      variants.push_back(Factory<>::BareSLPVariant::DV);
+    } else if (item == "vv") {
+      variants.push_back(Factory<>::BareSLPVariant::VV);
+    } else if (!item.empty()) {
+      throw std::invalid_argument("Unknown --bare_slp_variants item: " + item);
+    }
+  }
+  if (variants.empty())
+    variants.push_back(Factory<>::BareSLPVariant::Default);
+  return variants;
+}
+
+const char* BareSLPVariantName(Factory<>::BareSLPVariant variant) {
+  switch (variant) {
+    case Factory<>::BareSLPVariant::Default:
+      return "Default";
+    case Factory<>::BareSLPVariant::Raw:
+      return "Raw";
+    case Factory<>::BareSLPVariant::DV:
+      return "DV";
+    case Factory<>::BareSLPVariant::VV:
+      return "VV";
   }
   return "UNKNOWN";
 }
@@ -295,9 +335,11 @@ int main(int argc, char* argv[]) {
   dret::Config config(FLAGS_data_name, FLAGS_data_dir, sri::SDSL_LIBDIVSUFSORT, true);
   std::vector<Factory<>::GetDocEnum> rmq_get_doc_variants;
   std::vector<Factory<>::GCDASLPVariant> gcda_slp_variants;
+  std::vector<Factory<>::BareSLPVariant> bare_slp_variants;
   try {
     rmq_get_doc_variants = ParseGetDocVariants(FLAGS_rmq_get_doc_variants);
     gcda_slp_variants = ParseGCDASLPVariants(FLAGS_gcda_slp_variants);
+    bare_slp_variants = ParseBareSLPVariants(FLAGS_bare_slp_variants);
   } catch (const std::invalid_argument& e) {
     std::cerr << e.what() << std::endl;
     return 1;
@@ -355,18 +397,40 @@ int main(int argc, char* argv[]) {
     }
     if (get_doc == Factory<>::GetDocEnum::SLP_NS) {
       // RMQ variants over the bare grammar::SLP<> cache (kSLPNS). No (bs, sf) axis —
-      // the bare SLP is parameter-free, so register once outside the sweep.
-      Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA, 0, 512, 4, Factory<>::GetDocEnum::SLP_NS};
-      Factory<>::Config ilcp_cfg{Factory<>::IndexEnum::ILCP, 0, 512, 4, Factory<>::GetDocEnum::SLP_NS};
-      Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP, 0, 512, 4, Factory<>::GetDocEnum::SLP_NS};
-      idx_configs.push_back({"SADA-SLP-NS", sada_cfg, false});
-      idx_configs.push_back({"ILCP-SLP-NS", ilcp_cfg, false});
-      idx_configs.push_back({"CILCP-SLP-NS", cilcp_cfg, false});
+      // the bare SLP is parameter-free. Fan out across the bare-SLP container axis
+      // (Default = sdsl::int_vector<>, DV = dac_vector<>, VV = vlc_vector<>).
+      for (const auto bare_slp : bare_slp_variants) {
+        const auto suffix = (bare_slp == Factory<>::BareSLPVariant::Default)
+                                ? std::string{}
+                                : std::string("-") + BareSLPVariantName(bare_slp);
+        Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA, 0, 512, 4,
+                                   Factory<>::GetDocEnum::SLP_NS,
+                                   Factory<>::GCDASLPVariant::Default, bare_slp};
+        Factory<>::Config ilcp_cfg{Factory<>::IndexEnum::ILCP, 0, 512, 4,
+                                   Factory<>::GetDocEnum::SLP_NS,
+                                   Factory<>::GCDASLPVariant::Default, bare_slp};
+        Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP, 0, 512, 4,
+                                    Factory<>::GetDocEnum::SLP_NS,
+                                    Factory<>::GCDASLPVariant::Default, bare_slp};
+        idx_configs.push_back({"SADA-SLP-NS" + suffix, sada_cfg, false});
+        idx_configs.push_back({"ILCP-SLP-NS" + suffix, ilcp_cfg, false});
+        idx_configs.push_back({"CILCP-SLP-NS" + suffix, cilcp_cfg, false});
+      }
     }
   }
 
   // Phase C: non-sampled SLP index — block-size / storing-factor independent.
-  idx_configs.push_back({"DocListSLP-NS", Factory<>::Config{Factory<>::IndexEnum::SLP_NS}, false});
+  // Fan across the bare-SLP container axis (same cache pool as the RMQ-NS variants
+  // above; type-hash on grammar::SLP<TVars,TLens> distinguishes the three on disk).
+  for (const auto bare_slp : bare_slp_variants) {
+    const auto suffix = (bare_slp == Factory<>::BareSLPVariant::Default)
+                            ? std::string{}
+                            : std::string("-") + BareSLPVariantName(bare_slp);
+    Factory<>::Config slp_ns_cfg{Factory<>::IndexEnum::SLP_NS, 0, 512, 4,
+                                 Factory<>::GetDocEnum::DA,
+                                 Factory<>::GCDASLPVariant::Default, bare_slp};
+    idx_configs.push_back({"DocListSLP-NS" + suffix, slp_ns_cfg, false});
+  }
 
   for (int64_t bs = FLAGS_min_block_size; bs <= FLAGS_max_block_size; bs *= 2) {
     for (int64_t sf = FLAGS_min_storing_factor; sf <= FLAGS_max_storing_factor; sf *= 2) {
