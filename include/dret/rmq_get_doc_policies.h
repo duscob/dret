@@ -201,9 +201,13 @@ void construct(GetDocSLP<TStorage, t_width, TSLP>& t_get_doc, Config& t_config) 
 // Document-array lookup over a bare `grammar::SLP<>` (Phase C cache, kSLPNS).
 // Distinct from `GetDocSLP`: the bare SLP has no sampled tree, no precomputed
 // covers, and no block_size / storing_factor knobs — its cache file is keyed
-// directly on `kSLPNS` with no `{bs}-{sf}_` prefix, and is shared with
-// `dret::DocListIdxSLP` via SDSL type-hashing on `grammar::SLP<>`.
-template <typename TStorage = GenericStorage, uint8_t t_width = 8, typename TSLP = grammar::SLP<>>
+// directly on `kSLPNS` with no `{bs}-{sf}_` prefix. Default TSLP intentionally
+// matches `dret::DocListIdxSLP<>`'s default so the typed cache file is shared;
+// any drift between the two defaults silently desyncs the on-disk cache and
+// produces two parallel SLP files for the same logical "Default" variant.
+template <typename TStorage = GenericStorage,
+          uint8_t t_width = 8,
+          typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>
 class GetDocSLP_NS : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
