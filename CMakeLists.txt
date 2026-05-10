@@ -68,6 +68,9 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/differential_slp.h
         ${PROJECT_SOURCE_DIR}/include/dret/differential_light_slp.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree_dgcda.h
+
+        # PDL (precomputed document listing) — append new include/dret/pdl/*.h here.
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_core.h
 )
 
 add_library(dret INTERFACE)
