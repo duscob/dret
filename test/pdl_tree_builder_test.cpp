@@ -23,6 +23,7 @@ using dret::pdl::BuilderNode;
 using dret::pdl::BuilderPool;
 using dret::pdl::BuildSparseSuffixTree;
 using dret::pdl::CollapseSubtreesByBlockSize;
+using dret::pdl::ComputeDocSetsBottomUp;
 using dret::pdl::InsertExplicitLeaves;
 
 struct NodeView {
@@ -298,6 +299,120 @@ TEST(PDLTreeBuilder, CollapsedBlockSkippedAndStillCoversItsRange) {
   EXPECT_THAT(ranges, testing::ElementsAre(std::make_pair(0u, 1u),
                                            std::make_pair(1u, 4u),
                                            std::make_pair(4u, 7u)));
+}
+
+auto DocsFromVector(const std::vector<std::size_t>& v) {
+  return [&v](std::size_t i) { return v.at(i); };
+}
+
+// Single-position leaf reads exactly one DA value.
+TEST(PDLTreeBuilder, ComputeDocSetsLeafReadsRawDA) {
+  // Tree: just a root over [0, 1). DA = {7}.
+  std::vector<std::size_t> lcp = {0, 0};
+  std::vector<std::size_t> da = {7};
+  BuilderPool pool;
+  auto* root = BuildSparseSuffixTree(pool, LcpFromVector(lcp), 1);
+
+  ComputeDocSetsBottomUp(root, /*n_doc=*/8, DocsFromVector(da));
+
+  EXPECT_FALSE(root->contains_all);
+  EXPECT_THAT(root->docs, testing::ElementsAre(7u));
+  EXPECT_EQ(root->stored_documents, 1u);
+}
+
+// Internal node sorts and deduplicates the union of its children.
+TEST(PDLTreeBuilder, ComputeDocSetsInternalUnionSortedUnique) {
+  // "abab" tree: root has children A([0,2)) and B([2,4)).
+  std::vector<std::size_t> lcp = {0, 2, 0, 1, 0};
+  // DA[0]=2, DA[1]=2 (duplicate within A), DA[2]=1, DA[3]=0.
+  std::vector<std::size_t> da = {2, 2, 1, 0};
+  BuilderPool pool;
+  auto* root = BuildSparseSuffixTree(pool, LcpFromVector(lcp), 4);
+
+  ComputeDocSetsBottomUp(root, /*n_doc=*/3, DocsFromVector(da));
+
+  // A's docs after dedup: {2}; B's: {0, 1}. Root's union: {0, 1, 2} -> 3
+  // docs. n_doc=3 triggers the all-doc sentinel at root.
+  EXPECT_TRUE(root->contains_all);
+  EXPECT_TRUE(root->docs.empty());
+  // stored_documents is the pre-dedup weight: A=2 + B=2 = 4.
+  EXPECT_EQ(root->stored_documents, 4u);
+
+  auto* a = root->first_child;
+  auto* b = a->next_sibling;
+  EXPECT_FALSE(a->contains_all);
+  EXPECT_THAT(a->docs, testing::ElementsAre(2u));
+  EXPECT_EQ(a->stored_documents, 2u);
+  EXPECT_FALSE(b->contains_all);
+  EXPECT_THAT(b->docs, testing::ElementsAre(0u, 1u));
+  EXPECT_EQ(b->stored_documents, 2u);
+}
+
+// Internal node WITHOUT triggering the n_doc sentinel keeps a materialized
+// sorted-unique union.
+TEST(PDLTreeBuilder, ComputeDocSetsInternalKeepsMaterializedSet) {
+  std::vector<std::size_t> lcp = {0, 2, 0, 1, 0};
+  std::vector<std::size_t> da = {2, 2, 1, 0};
+  BuilderPool pool;
+  auto* root = BuildSparseSuffixTree(pool, LcpFromVector(lcp), 4);
+
+  // n_doc=10: root's 3 distinct docs is well below the sentinel threshold.
+  ComputeDocSetsBottomUp(root, /*n_doc=*/10, DocsFromVector(da));
+
+  EXPECT_FALSE(root->contains_all);
+  EXPECT_THAT(root->docs, testing::ElementsAre(0u, 1u, 2u));
+  EXPECT_EQ(root->stored_documents, 4u);
+}
+
+// All-doc child propagates contains_all to the parent and the sibling's
+// contribution is dropped. drl/src/pdltree.cpp:209-213 verbatim semantics:
+// stored_documents at the parent matches the all-doc child's value.
+TEST(PDLTreeBuilder, ComputeDocSetsContainsAllShortCircuits) {
+  // "abab" tree, n_doc=2: A covers DA[0]=DA[1]=0, so |A.docs|=1; B covers
+  // DA[2]=0, DA[3]=1, so |B.docs|=2 == n_doc -> B.contains_all triggers.
+  std::vector<std::size_t> lcp = {0, 2, 0, 1, 0};
+  std::vector<std::size_t> da = {0, 0, 0, 1};
+  BuilderPool pool;
+  auto* root = BuildSparseSuffixTree(pool, LcpFromVector(lcp), 4);
+
+  ComputeDocSetsBottomUp(root, /*n_doc=*/2, DocsFromVector(da));
+
+  auto* a = root->first_child;
+  auto* b = a->next_sibling;
+  EXPECT_FALSE(a->contains_all);
+  EXPECT_THAT(a->docs, testing::ElementsAre(0u));
+  EXPECT_TRUE(b->contains_all);
+  EXPECT_TRUE(b->docs.empty());
+  EXPECT_EQ(b->stored_documents, 2u);
+
+  // Root sees A first (no contains_all) — accumulates A.docs and weight.
+  // Then sees B with contains_all -> short-circuit: drop the accumulator,
+  // copy B.stored_documents, set contains_all.
+  EXPECT_TRUE(root->contains_all);
+  EXPECT_TRUE(root->docs.empty());
+  EXPECT_EQ(root->stored_documents, b->stored_documents);
+}
+
+// End-to-end: union over the full collapse-fixture tree, after explicit
+// leaves are inserted so every SA position is covered, computes the
+// correct distinct-doc set at the root.
+TEST(PDLTreeBuilder, ComputeDocSetsFixtureFullTree) {
+  // 7 SA positions, 4 distinct docs.
+  std::vector<std::size_t> da = {3, 0, 1, 1, 2, 0, 3};
+  BuilderPool pool;
+  auto* root = BuildCollapseFixture(pool);
+  InsertExplicitLeaves(pool, root);
+
+  ComputeDocSetsBottomUp(root, /*n_doc=*/5, DocsFromVector(da));
+
+  EXPECT_FALSE(root->contains_all);
+  EXPECT_THAT(root->docs, testing::ElementsAre(0u, 1u, 2u, 3u));
+  // pre-dedup occurrence count = SA length = 7.
+  EXPECT_EQ(root->stored_documents, 7u);
+}
+
+TEST(PDLTreeBuilder, ComputeDocSetsNullRootIsNoop) {
+  ComputeDocSetsBottomUp(nullptr, 1, [](std::size_t) { return 0u; });
 }
 
 // Half-open intervals: every internal node's [sp, ep) lies inside its

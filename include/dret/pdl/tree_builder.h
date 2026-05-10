@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -170,6 +171,84 @@ BuilderNode* BuildSparseSuffixTree(BuilderPool& t_pool, TLCPFn&& t_lcp, std::siz
   while (root->parent) root = root->parent;
   root->ep = t_n;
   return root;
+}
+
+// Compute every node's document set bottom-up. Leaves and collapsed
+// "block" nodes read raw documents from t_get_doc over their [sp, ep)
+// range; internal nodes union their children's sets. Sets are kept
+// sorted-unique. Full sets (size >= t_n_doc) are collapsed to the
+// all-doc sentinel: contains_all = true, docs cleared. The
+// stored_documents counter holds the pre-dedup occurrence weight used
+// by the OriginalDrl selection rule in Task 10.
+//
+// The all-doc short-circuit at internal nodes (drop the partially-built
+// docs accumulator and copy the all-doc child's stored_documents) ports
+// drl/src/pdltree.cpp:209-213 verbatim. drl's OriginalDrl rule never
+// reads docs.size() when contains_all is true (pdltree.cpp:390 short-
+// circuits), so the slightly approximate stored_documents this leaves
+// is harmless.
+//
+// t_get_doc must be callable as t_get_doc(i) returning the document id
+// at SA position i. Task 28 wires DA / GCDA / DGCDA in via construct();
+// for unit testing pass any std::function-like that maps a position to
+// a doc id.
+template <typename TGetDocAt>
+void ComputeDocSetsBottomUp(BuilderNode* t_root, std::size_t t_n_doc, TGetDocAt&& t_get_doc) {
+  if (!t_root) return;
+
+  // Iterative post-order: push everything in a single forward DFS, then
+  // process in reverse. Visiting children left-to-right via the for-loop
+  // gives us the desired left-to-right order after reversal too.
+  std::vector<BuilderNode*> post_order;
+  post_order.reserve(64);
+  std::vector<BuilderNode*> stack{t_root};
+  while (!stack.empty()) {
+    auto* n = stack.back();
+    stack.pop_back();
+    post_order.push_back(n);
+    for (auto* c = n->first_child; c; c = c->next_sibling) {
+      stack.push_back(c);
+    }
+  }
+
+  for (auto it = post_order.rbegin(); it != post_order.rend(); ++it) {
+    auto* n = *it;
+    n->docs.clear();
+    n->stored_documents = 0;
+    n->contains_all = false;
+
+    if (!n->first_child) {
+      n->docs.reserve(n->ep - n->sp);
+      for (std::size_t i = n->sp; i < n->ep; ++i) {
+        n->docs.push_back(static_cast<std::size_t>(t_get_doc(i)));
+      }
+      n->stored_documents = n->docs.size();
+      std::sort(n->docs.begin(), n->docs.end());
+      n->docs.erase(std::unique(n->docs.begin(), n->docs.end()), n->docs.end());
+    } else {
+      bool short_circuit = false;
+      for (auto* c = n->first_child; c; c = c->next_sibling) {
+        if (c->contains_all) {
+          n->contains_all = true;
+          n->stored_documents = c->stored_documents;
+          n->docs.clear();
+          short_circuit = true;
+          break;
+        }
+        n->docs.insert(n->docs.end(), c->docs.begin(), c->docs.end());
+        n->stored_documents += c->stored_documents;
+      }
+      if (!short_circuit) {
+        std::sort(n->docs.begin(), n->docs.end());
+        n->docs.erase(std::unique(n->docs.begin(), n->docs.end()), n->docs.end());
+      }
+    }
+
+    if (!n->contains_all && n->docs.size() >= t_n_doc) {
+      n->contains_all = true;
+      n->docs.clear();
+    }
+  }
 }
 
 // Insert explicit leaves to fill SA-position gaps among each non-collapsed
