@@ -301,6 +301,44 @@ inline void ApplyStoragePolicy(BuilderNode* t_root,
   }
 }
 
+// Assign sequential ids 0, 1, 2, ... to every node reachable from t_root,
+// in post-order (children before parent, left-to-right within siblings).
+// Returns the number of ids assigned (== node count).
+//
+// Single id space across selected and navigation (unselected) nodes — the
+// codec slot for a selected node is later derived via
+// selected_rank_(node_id), see PDLTreeCore::selected_marker_. Where drl
+// uses a dual leaves/internals id range (drl/src/pdltree.cpp:410-419)
+// because it splices unselected internals out, dret keeps them and lets
+// the bitvector + rank do the filtering.
+//
+// Determinism: post-order traversal of the immutable post-Task-10 tree is
+// a pure function of the tree shape, so two construct() runs on the same
+// inputs yield identical id sequences and (downstream) identical
+// serialized layouts.
+inline std::size_t AssignNodeIds(BuilderNode* t_root) {
+  if (!t_root) return 0;
+
+  // Iterative post-order: forward DFS into a list, reverse to consume.
+  std::vector<BuilderNode*> post_order;
+  post_order.reserve(64);
+  std::vector<BuilderNode*> stack{t_root};
+  while (!stack.empty()) {
+    auto* n = stack.back();
+    stack.pop_back();
+    post_order.push_back(n);
+    for (auto* c = n->first_child; c; c = c->next_sibling) {
+      stack.push_back(c);
+    }
+  }
+
+  std::size_t id = 0;
+  for (auto it = post_order.rbegin(); it != post_order.rend(); ++it) {
+    (*it)->node_id = id++;
+  }
+  return id;
+}
+
 // Insert explicit leaves to fill SA-position gaps among each non-collapsed
 // node's children. After this pass, every internal node with children has
 // children whose [sp, ep) ranges partition the parent's range; collapsed

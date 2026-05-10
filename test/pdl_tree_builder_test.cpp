@@ -20,6 +20,7 @@
 namespace {
 
 using dret::pdl::ApplyStoragePolicy;
+using dret::pdl::AssignNodeIds;
 using dret::pdl::BuilderNode;
 using dret::pdl::BuilderPool;
 using dret::pdl::BuildSparseSuffixTree;
@@ -535,6 +536,130 @@ TEST(PDLTreeBuilder, ApplyStoragePolicyOccurrenceWeightedContainsAllOverridesWei
   ASSERT_NE(root->first_child, nullptr);
   EXPECT_TRUE(root->first_child->selected) << "A selected via contains_all";
   EXPECT_TRUE(root->first_child->contains_all);
+}
+
+// Walks the tree and returns (sp, ep, depth, node_id) for every node in
+// post-order (children before parent, left-to-right within siblings) —
+// the same order AssignNodeIds uses internally. Verifies the node_id
+// matches the post-order index by construction.
+struct IdProbe {
+  std::size_t sp, ep, depth, node_id;
+  bool operator==(const IdProbe&) const = default;
+};
+
+std::vector<IdProbe> CollectNodesInPostOrder(const BuilderNode* root) {
+  std::vector<const BuilderNode*> forward;
+  std::vector<const BuilderNode*> stack{root};
+  while (!stack.empty()) {
+    const auto* n = stack.back();
+    stack.pop_back();
+    forward.push_back(n);
+    for (const auto* c = n->first_child; c; c = c->next_sibling) stack.push_back(c);
+  }
+  std::vector<IdProbe> out;
+  out.reserve(forward.size());
+  for (auto it = forward.rbegin(); it != forward.rend(); ++it) {
+    out.push_back({(*it)->sp, (*it)->ep, (*it)->depth, (*it)->node_id});
+  }
+  return out;
+}
+
+TEST(PDLTreeBuilder, AssignNodeIdsNullRootReturnsZero) {
+  EXPECT_EQ(AssignNodeIds(nullptr), 0u);
+}
+
+TEST(PDLTreeBuilder, AssignNodeIdsSingleNode) {
+  std::vector<std::size_t> lcp = {0, 0};
+  BuilderPool pool;
+  auto* root = BuildSparseSuffixTree(pool, LcpFromVector(lcp), 1);
+
+  EXPECT_EQ(AssignNodeIds(root), 1u);
+  EXPECT_EQ(root->node_id, 0u);
+}
+
+// On the collapse fixture (no leaves) the post-order walk visits
+// B[1,3), C[1,4), D[4,6), E[4,7), A[0,7), root[0,7). The hand-trace lives
+// in the comment block above the fixture builder; re-trace before
+// changing any expected id below.
+TEST(PDLTreeBuilder, AssignNodeIdsPostOrderOnFixture) {
+  BuilderPool pool;
+  auto* root = BuildCollapseFixture(pool);
+
+  EXPECT_EQ(AssignNodeIds(root), 6u);
+
+  EXPECT_THAT(CollectNodesInPostOrder(root),
+              testing::ElementsAre(IdProbe{1, 3, 4, 0},   // B
+                                   IdProbe{1, 4, 2, 1},   // C
+                                   IdProbe{4, 6, 5, 2},   // D
+                                   IdProbe{4, 7, 3, 3},   // E
+                                   IdProbe{0, 7, 1, 4},   // A
+                                   IdProbe{0, 7, 0, 5})); // root
+}
+
+TEST(PDLTreeBuilder, AssignNodeIdsAreUniqueAndContiguous) {
+  BuilderPool pool;
+  auto* root = BuildCollapseFixture(pool);
+  InsertExplicitLeaves(pool, root);
+
+  std::size_t count = AssignNodeIds(root);
+
+  std::vector<bool> seen(count, false);
+  std::vector<const BuilderNode*> stack{root};
+  while (!stack.empty()) {
+    const auto* n = stack.back();
+    stack.pop_back();
+    ASSERT_LT(n->node_id, count);
+    EXPECT_FALSE(seen[n->node_id]) << "duplicate id " << n->node_id;
+    seen[n->node_id] = true;
+    for (const auto* c = n->first_child; c; c = c->next_sibling) stack.push_back(c);
+  }
+  for (std::size_t i = 0; i < count; ++i) EXPECT_TRUE(seen[i]) << "missing id " << i;
+}
+
+// Acceptance criterion: two builds with the same input yield identical
+// node-id sequences.
+TEST(PDLTreeBuilder, AssignNodeIdsDeterministicAcrossBuilds) {
+  std::vector<std::size_t> da = {3, 0, 1, 1, 2, 0, 3};
+  auto build = [&] {
+    BuilderPool pool;
+    auto* root = BuildCollapseFixture(pool);
+    InsertExplicitLeaves(pool, root);
+    ComputeDocSetsBottomUp(root, /*n_doc=*/5, DocsFromVector(da));
+    ApplyStoragePolicy(root, StoragePolicy::OccurrenceWeighted);
+    AssignNodeIds(root);
+    auto probes = CollectNodesInPostOrder(root);
+    return probes;
+  };
+
+  EXPECT_EQ(build(), build());
+}
+
+// Single id space spans selected and unselected nodes alike. With
+// LeavesOnly only childless nodes are selected, but every node still
+// gets an id.
+TEST(PDLTreeBuilder, AssignNodeIdsCoversUnselectedNavigationNodes) {
+  std::vector<std::size_t> da = {3, 0, 1, 1, 2, 0, 3};
+  BuilderPool pool;
+  auto* root = BuildCollapseFixture(pool);
+  InsertExplicitLeaves(pool, root);
+  ComputeDocSetsBottomUp(root, /*n_doc=*/5, DocsFromVector(da));
+  ApplyStoragePolicy(root, StoragePolicy::LeavesOnly);
+
+  std::size_t count = AssignNodeIds(root);
+  EXPECT_EQ(count, 9u);
+
+  std::size_t selected_with_id = 0;
+  std::size_t unselected_with_id = 0;
+  std::vector<const BuilderNode*> stack{root};
+  while (!stack.empty()) {
+    const auto* n = stack.back();
+    stack.pop_back();
+    EXPECT_NE(n->node_id, BuilderNode::kInvalidId) << "every node gets an id";
+    if (n->selected) ++selected_with_id; else ++unselected_with_id;
+    for (const auto* c = n->first_child; c; c = c->next_sibling) stack.push_back(c);
+  }
+  EXPECT_EQ(selected_with_id, 5u) << "5 leaves selected under LeavesOnly";
+  EXPECT_EQ(unselected_with_id, 4u) << "4 navigation internals also receive ids";
 }
 
 // Half-open intervals: every internal node's [sp, ep) lies inside its
