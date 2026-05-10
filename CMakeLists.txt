@@ -74,6 +74,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_builder.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/build_pdl_core.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/set_codecs.h
 )
 
 add_library(dret INTERFACE)
@@ -116,6 +117,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(doc_list_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_test.cpp)
     cxx_test_with_flags_and_args(pdl_tree_builder_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_tree_builder_test.cpp)
     cxx_test_with_flags_and_args(pdl_tree_core_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_tree_core_test.cpp)
+    cxx_test_with_flags_and_args(pdl_set_codecs_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_set_codecs_test.cpp)
 endif ()
 
 
