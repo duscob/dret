@@ -1,15 +1,17 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/10/26.
 //
-// Skeleton for the PDL sparse-suffix-tree core. Construction logic, real
-// cover computation, and codec wiring land in later tasks (see
-// docs/pdl_indexes_tasks.md, Tasks 6–13). For now this header just compiles
-// with default template arguments so dependent classes (Tasks 23–25) can be
-// declared in parallel.
+// PDL sparse-suffix-tree core. Holds the compact navigation
+// representation (per-node intervals + linked-list children encoded as
+// id arrays + selected-node bitvector) and answers multi-range cover
+// queries from DLSampledTreeScheme. Built either from a BuilderNode tree
+// at construction (Task 28's construct() via build_pdl_core.h) or from
+// disk via load() (Task 13).
 //
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <istream>
@@ -52,35 +54,91 @@ class PDLTreeCore {
 
   PDLTreeCore() = default;
 
-  // Single-range cover; matches DLSampledTreeScheme::computeCover. Real impl
-  // in Task 12; the skeleton returns an empty selected-node set so callers
-  // fall back to raw-range retrieval over the whole [sp, ep).
+  // Single-range cover; matches DLSampledTreeScheme::computeCover. Stub
+  // remains for Tasks 23-25 that may need the legacy single-range API
+  // alongside the multi-range computeCoverFull below.
   std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
       std::size_t t_sp,
       std::size_t /*t_ep*/) const {
     return {{t_sp, t_sp}, {}};
   }
 
-  // Multi-range cover; needed because non-OccurrenceWeighted storage policies can
-  // leave non-contiguous gaps in [sp, ep). The default delegates to
-  // computeCover and is safe for any single-range subclass; PDLTreeCore will
-  // override this once Task 12 wires real navigation in.
+  // Multi-range cover. Iterative DFS from the root: a node fully inside
+  // [sp, ep) contributes either its codec slot (when selected) or — if
+  // it's a leaf — its raw range; navigation-only internal nodes recurse
+  // into their children. Partial overlaps always recurse (or yield the
+  // overlap as raw if the node is a leaf).
+  //
+  // Output `t_nodes` carries codec slots (selected-rank of the node id),
+  // not raw node ids — this matches DLSampledTreeScheme's getDocSet
+  // contract, which indexes the stored-set codec.
   void computeCoverFull(std::size_t t_sp,
                         std::size_t t_ep,
                         std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,
                         std::vector<std::size_t>& t_nodes) const {
-    auto [range, nodes] = computeCover(t_sp, t_ep);
-    if (nodes.empty()) {
-      t_raw_ranges.emplace_back(t_sp, t_ep);
-    } else {
-      if (t_sp < range.first) t_raw_ranges.emplace_back(t_sp, range.first);
-      if (range.second < t_ep) t_raw_ranges.emplace_back(range.second, t_ep);
+    if (n_nodes_ == 0 || t_sp >= t_ep) return;
+
+    // Root id is n_nodes_ - 1 by AssignNodeIds' post-order convention.
+    std::vector<std::size_t> stack{n_nodes_ - 1};
+    while (!stack.empty()) {
+      const std::size_t id = stack.back();
+      stack.pop_back();
+      const std::size_t n_sp = node_starts_[id];
+      const std::size_t n_ep = node_ends_[id];
+      if (n_ep <= t_sp || n_sp >= t_ep) continue;  // disjoint
+
+      const std::size_t fc = first_child_[id];
+      const bool is_leaf = (fc == kSentinel());
+      const bool fully_inside = (t_sp <= n_sp && n_ep <= t_ep);
+
+      if (fully_inside && selected_marker_[id]) {
+        t_nodes.push_back(selected_rank_(id));
+        continue;
+      }
+      if (is_leaf) {
+        const std::size_t b = fully_inside ? n_sp : std::max(t_sp, n_sp);
+        const std::size_t e = fully_inside ? n_ep : std::min(t_ep, n_ep);
+        t_raw_ranges.emplace_back(b, e);
+        continue;
+      }
+      // Navigation node OR partial-overlap internal: descend.
+      for (std::size_t cid = fc; cid != kSentinel(); cid = next_sibling_[cid]) {
+        stack.push_back(cid);
+      }
     }
-    t_nodes = std::move(nodes);
   }
 
-  std::vector<TDocId> getDocSet(std::size_t /*t_node_id*/) const {
+  std::vector<TDocId> getDocSet(std::size_t /*t_codec_slot*/) const {
+    // Real expansion lands once a non-NullCodec is wired in (Tasks 15-17).
     return {};
+  }
+
+  // Internal — populate the compact representation in one shot. Used by
+  // build_pdl_core.h (construction) and load() (disk path). The rank /
+  // select supports MUST be re-pointed at the new bitvector after every
+  // assignment; doing it here keeps callers from forgetting.
+  void Assemble(TIntVector t_node_starts,
+                TIntVector t_node_ends,
+                TIntVector t_first_child,
+                TIntVector t_next_sibling,
+                TBitvector t_selected_marker,
+                TStoredSetCodec t_stored_sets,
+                std::size_t t_n_doc,
+                uint32_t t_block_size,
+                float t_storing_factor,
+                StoragePolicy t_policy) {
+    node_starts_ = std::move(t_node_starts);
+    node_ends_ = std::move(t_node_ends);
+    first_child_ = std::move(t_first_child);
+    next_sibling_ = std::move(t_next_sibling);
+    selected_marker_ = std::move(t_selected_marker);
+    stored_sets_ = std::move(t_stored_sets);
+    n_doc_ = t_n_doc;
+    n_nodes_ = node_starts_.size();
+    block_size_ = t_block_size;
+    storing_factor_ = t_storing_factor;
+    policy_ = t_policy;
+    rebindRankSelect();
   }
 
   std::size_t serialize(std::ostream& out,
@@ -91,8 +149,11 @@ class PDLTreeCore {
     bytes += selected_marker_.serialize(out, child, "selected_marker");
     bytes += node_starts_.serialize(out, child, "node_starts");
     bytes += node_ends_.serialize(out, child, "node_ends");
+    bytes += first_child_.serialize(out, child, "first_child");
+    bytes += next_sibling_.serialize(out, child, "next_sibling");
     bytes += stored_sets_.serialize(out, child, "stored_sets");
     bytes += sdsl::write_member(n_doc_, out, child, "n_doc");
+    bytes += sdsl::write_member(n_nodes_, out, child, "n_nodes");
     bytes += sdsl::write_member(block_size_, out, child, "block_size");
     bytes += sdsl::write_member(storing_factor_, out, child, "storing_factor");
     auto policy_id = static_cast<uint8_t>(policy_);
@@ -105,13 +166,17 @@ class PDLTreeCore {
     selected_marker_.load(in);
     node_starts_.load(in);
     node_ends_.load(in);
+    first_child_.load(in);
+    next_sibling_.load(in);
     stored_sets_.load(in);
     sdsl::read_member(n_doc_, in);
+    sdsl::read_member(n_nodes_, in);
     sdsl::read_member(block_size_, in);
     sdsl::read_member(storing_factor_, in);
     uint8_t policy_id = 0;
     sdsl::read_member(policy_id, in);
     policy_ = static_cast<StoragePolicy>(policy_id);
+    rebindRankSelect();
   }
 
   SizeReport GetSizeReport() const {
@@ -119,22 +184,41 @@ class PDLTreeCore {
     append(r, "selected_marker", sdsl::size_in_bytes(selected_marker_));
     append(r, "node_starts", sdsl::size_in_bytes(node_starts_));
     append(r, "node_ends", sdsl::size_in_bytes(node_ends_));
+    append(r, "first_child", sdsl::size_in_bytes(first_child_));
+    append(r, "next_sibling", sdsl::size_in_bytes(next_sibling_));
     return r;
   }
 
   std::size_t n_doc() const { return n_doc_; }
+  std::size_t n_nodes() const { return n_nodes_; }
   uint32_t block_size() const { return block_size_; }
   float storing_factor() const { return storing_factor_; }
   StoragePolicy policy() const { return policy_; }
 
  private:
+  // Sentinel for "no child / no sibling". Equals n_nodes_ so
+  // first_child_[id] / next_sibling_[id] are sized to fit n_nodes_.
+  std::size_t kSentinel() const { return n_nodes_; }
+
+  // Re-point rank/select supports at selected_marker_ after any move/load.
+  // Per the project's loadItemPtr gotcha: SDSL rank/select hold raw
+  // pointers into the underlying bitvector and become dangling after
+  // moves. Re-binding from the now-stable member address is safe.
+  void rebindRankSelect() {
+    selected_rank_ = TBvRank(&selected_marker_);
+    selected_select_ = TBvSelect(&selected_marker_);
+  }
+
   TBitvector selected_marker_{};
   TBvRank selected_rank_{};
   TBvSelect selected_select_{};
   TIntVector node_starts_{};
   TIntVector node_ends_{};
+  TIntVector first_child_{};
+  TIntVector next_sibling_{};
   TStoredSetCodec stored_sets_{};
   std::size_t n_doc_ = 0;
+  std::size_t n_nodes_ = 0;
   uint32_t block_size_ = 512;
   float storing_factor_ = 4.0f;
   StoragePolicy policy_ = StoragePolicy::OccurrenceWeighted;
