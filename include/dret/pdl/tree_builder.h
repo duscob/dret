@@ -172,4 +172,76 @@ BuilderNode* BuildSparseSuffixTree(BuilderPool& t_pool, TLCPFn&& t_lcp, std::siz
   return root;
 }
 
+// Insert explicit leaves to fill SA-position gaps among each non-collapsed
+// node's children. After this pass, every internal node with children has
+// children whose [sp, ep) ranges partition the parent's range; collapsed
+// (childless) nodes are skipped because their range is handled by
+// raw-range fallback at query time. Explicit leaves carry depth = 0,
+// is_explicit_leaf = true, and length-1 ranges [pos, pos+1).
+//
+// Ports drl/src/pdltree.cpp:78-99 (PDLTreeNode::addLeaves) +
+// :101-110 (addLeaf), with inclusive->half-open boundary conversion.
+inline void InsertExplicitLeaves(BuilderPool& t_pool, BuilderNode* t_root) {
+  if (!t_root) return;
+  std::vector<BuilderNode*> stack{t_root};
+  while (!stack.empty()) {
+    auto* curr = stack.back();
+    stack.pop_back();
+    if (!curr->first_child) continue;  // collapsed block — raw-fallback covers it.
+
+    std::size_t expect = curr->sp;
+    BuilderNode* prev = nullptr;
+
+    auto insert_leaf = [&](std::size_t pos, BuilderNode* right) {
+      auto* leaf = t_pool.create(pos, pos + 1, 0);
+      leaf->parent = curr;
+      leaf->is_explicit_leaf = true;
+      leaf->next_sibling = right;
+      if (!prev) curr->first_child = leaf;
+      else prev->next_sibling = leaf;
+      prev = leaf;
+    };
+
+    for (auto* temp = curr->first_child; temp; temp = temp->next_sibling) {
+      while (expect < temp->sp) {
+        insert_leaf(expect, temp);
+        ++expect;
+      }
+      stack.push_back(temp);
+      expect = temp->ep;
+      prev = temp;
+    }
+    while (expect < curr->ep) {
+      insert_leaf(expect, nullptr);
+      ++expect;
+    }
+  }
+}
+
+// Collapse subtrees whose SA interval [sp, ep) has length <= t_block_size:
+// the node itself stays (its [sp, ep) is the boundary info needed for
+// raw-range fallback at query time) but its descendants are unlinked.
+// Orphaned descendants stay alive in their BuilderPool until the pool is
+// destroyed; we never reach them again because no live parent references
+// them. Top-down DFS — once a parent collapses, recursion stops there.
+//
+// Equivalent to drl's inline collapse at drl/src/pdltree.cpp:345
+// (`if(CSA::length(prev->range) <= this->block_size) prev->deleteChildren();`)
+// but applied as a post-pass so BuildSparseSuffixTree stays focused.
+inline void CollapseSubtreesByBlockSize(BuilderNode* t_root, std::size_t t_block_size) {
+  if (!t_root) return;
+  std::vector<BuilderNode*> stack{t_root};
+  while (!stack.empty()) {
+    auto* n = stack.back();
+    stack.pop_back();
+    if (n->ep - n->sp <= t_block_size) {
+      n->first_child = nullptr;
+      continue;
+    }
+    for (auto* c = n->first_child; c; c = c->next_sibling) {
+      stack.push_back(c);
+    }
+  }
+}
+
 }  // namespace dret::pdl
