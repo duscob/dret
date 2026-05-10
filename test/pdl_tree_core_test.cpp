@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -22,6 +23,7 @@
 #include "dret/pdl/storage_policy.h"
 #include "dret/pdl/tree_builder.h"
 #include "dret/pdl/tree_core.h"
+#include "dret/size_report.h"
 
 namespace {
 
@@ -180,6 +182,126 @@ TEST(PDLTreeCoreCover, WholePatternRangeUnderLeavesOnly) {
 
   EXPECT_THAT(r.raw, testing::IsEmpty());
   EXPECT_EQ(r.nodes.size(), 5u);
+}
+
+// Serialize / load tests (Task 13).
+
+// Run computeCoverFull on a representative set of query ranges and
+// collect the results into a stable representation, suitable for
+// equality comparison across two cores.
+struct FullCoverProbe {
+  std::vector<CoverResult> answers;
+  bool operator==(const FullCoverProbe&) const = default;
+};
+
+bool operator==(const CoverResult& a, const CoverResult& b) {
+  return a.raw == b.raw && a.nodes == b.nodes;
+}
+
+FullCoverProbe ProbeAllQueries(const PDLTreeCore<>& core) {
+  // 7 SA positions -> all (sp, ep) with 0 <= sp < ep <= 7 plus a few
+  // empty-range edge cases. 28 non-empty + 8 empty = 36 queries.
+  FullCoverProbe out;
+  for (std::size_t sp = 0; sp <= 7; ++sp) {
+    for (std::size_t ep = sp; ep <= 7; ++ep) {
+      out.answers.push_back(Cover(core, sp, ep));
+    }
+  }
+  return out;
+}
+
+TEST(PDLTreeCoreSerialize, RoundTripPreservesQueriesStoreAllInternal) {
+  auto f = MakeFixture(StoragePolicy::StoreAllInternal);
+  auto before = ProbeAllQueries(f.core);
+
+  std::stringstream ss;
+  std::size_t bytes = f.core.serialize(ss);
+  EXPECT_GT(bytes, 0u);
+
+  PDLTreeCore<> reloaded;
+  reloaded.load(ss);
+
+  EXPECT_EQ(reloaded.n_nodes(), f.core.n_nodes());
+  EXPECT_EQ(reloaded.n_doc(), f.core.n_doc());
+  EXPECT_EQ(reloaded.policy(), f.core.policy());
+
+  EXPECT_EQ(ProbeAllQueries(reloaded), before);
+}
+
+TEST(PDLTreeCoreSerialize, RoundTripPreservesQueriesLeavesOnly) {
+  auto f = MakeFixture(StoragePolicy::LeavesOnly);
+  auto before = ProbeAllQueries(f.core);
+
+  std::stringstream ss;
+  f.core.serialize(ss);
+
+  PDLTreeCore<> reloaded;
+  reloaded.load(ss);
+
+  EXPECT_EQ(ProbeAllQueries(reloaded), before);
+}
+
+TEST(PDLTreeCoreSerialize, RoundTripPreservesQueriesOccurrenceWeighted) {
+  auto f = MakeFixture(StoragePolicy::OccurrenceWeighted, /*n_doc=*/4,
+                       /*storing_factor=*/10.0f);
+  auto before = ProbeAllQueries(f.core);
+
+  std::stringstream ss;
+  f.core.serialize(ss);
+
+  PDLTreeCore<> reloaded;
+  reloaded.load(ss);
+
+  EXPECT_EQ(ProbeAllQueries(reloaded), before);
+}
+
+// Loaded rank/select must point at the loaded bitvector — otherwise the
+// codec-slot computation in computeCoverFull (selected_rank_(id)) would
+// dereference a dangling pointer. Round-trip a query that hits a
+// selected node and check the codec slot matches.
+TEST(PDLTreeCoreSerialize, RankSelectRebindAfterLoad) {
+  auto f = MakeFixture(StoragePolicy::StoreAllInternal);
+  auto before = Cover(f.core, 0, 7);  // root selected -> 1 node
+  ASSERT_EQ(before.nodes.size(), 1u);
+
+  std::stringstream ss;
+  f.core.serialize(ss);
+  PDLTreeCore<> reloaded;
+  reloaded.load(ss);
+
+  auto after = Cover(reloaded, 0, 7);
+  EXPECT_EQ(after.nodes, before.nodes);
+}
+
+TEST(PDLTreeCoreSerialize, EmptyCoreRoundTrip) {
+  PDLTreeCore<> core;  // un-Assembled
+  std::stringstream ss;
+  core.serialize(ss);
+
+  PDLTreeCore<> reloaded;
+  reloaded.load(ss);
+
+  EXPECT_EQ(reloaded.n_nodes(), 0u);
+  auto r = Cover(reloaded, 0, 10);
+  EXPECT_THAT(r.raw, testing::IsEmpty());
+  EXPECT_THAT(r.nodes, testing::IsEmpty());
+}
+
+// Acceptance criterion: GetSizeReport returns nonzero counters for the
+// populated arrays.
+TEST(PDLTreeCoreSerialize, SizeReportHasNonzeroCounters) {
+  auto f = MakeFixture(StoragePolicy::StoreAllInternal);
+  auto report = f.core.GetSizeReport();
+
+  ASSERT_FALSE(report.empty());
+  std::size_t total = dret::totalBytes(report);
+  EXPECT_GT(total, 0u) << "report total bytes should be > 0";
+
+  // Every navigation array entry should contribute nonzero bytes (the
+  // 9-node fixture populates each).
+  for (const auto& field : report) {
+    EXPECT_GT(field.bytes, 0u) << "field " << field.name << " is unexpectedly 0";
+  }
 }
 
 }  // namespace
