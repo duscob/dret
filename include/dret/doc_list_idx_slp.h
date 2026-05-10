@@ -32,6 +32,7 @@
 #include <vector>
 
 #include <sdsl/construct_sa.hpp>
+#include <sdsl/int_vector.hpp>
 #include <sdsl/memory_management.hpp>
 
 #include <grammar/re_pair.h>
@@ -50,7 +51,7 @@ namespace dret {
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TSLP = grammar::SLP<>>
+          typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>
 class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
  public:
   using StorageBase = DocListIndexExtStorage<TStorage, TAlphabet>;
@@ -182,8 +183,8 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
   using namespace conf;
 
   // Run RePair on the DA file (only if the .R/.C outputs aren't already
-  // present from an earlier GCDA-side build — the file pair is shared
-  // across all SLP-using variants).
+  // present from an earlier sibling build — the file pair is shared
+  // across all SLP-using variants and is independent of TSLP container types).
   if (!std::filesystem::exists(t_datafile + ".R") && REPAIR_EXE) {
     const auto filename = std::filesystem::path(t_datafile).filename().string();
     auto event = sdsl::memory_monitor::event("RePair-" + filename);
@@ -197,11 +198,34 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
   auto event = sdsl::memory_monitor::event(
       sdsl::cache_file_name<grammar::SLP<TVarsContainer, TLengthsContainer>>(key_slp, t_config));
 
+  // Build into a default-typed SLP first (push_back-friendly std::vector<uint32_t>
+  // containers), then convert via the SLP template copy constructor — sdsl::dac_vector
+  // and sdsl::vlc_vector have no push_back, so RePairReader cannot fill them
+  // directly. The conversion uses grammar::Construct overloads (grammar/utility.h)
+  // which dispatch via SFINAE: dac_vector / vlc_vector use their templated Container
+  // constructor (which bit-packs internally); sdsl::int_vector falls through to the
+  // resize-and-std::copy branch (which leaves the default 64-bit width). Pass a
+  // bit-compress action so int_vector targets get tight per-element width; the
+  // action no-ops on dac_vector / vlc_vector via `if constexpr` detection.
+  grammar::SLP<> tmp_slp;
   {
     grammar::RePairReader<true> re_pair_reader;
-    auto slp_wrapper = grammar::BuildSLPWrapper(t_slp);
+    auto slp_wrapper = grammar::BuildSLPWrapper(tmp_slp);
     re_pair_reader.Read(t_datafile, slp_wrapper);
   }
+  auto bc = []<typename TVec>(TVec& v) {
+    // Probe for bit_resize/width members directly — `requires { bit_compress(vv); }`
+    // would unhelpfully pass for any T (since bit_compress is an unconstrained
+    // template) and only fail at body instantiation. int_vector has both members;
+    // std::vector and dac_vector / vlc_vector have neither.
+    if constexpr (requires(TVec& vv) {
+                    vv.bit_resize(std::size_t{});
+                    vv.width(uint8_t{});
+                  }) {
+      sdsl::util::bit_compress(v);
+    }
+  };
+  t_slp = grammar::SLP<TVarsContainer, TLengthsContainer>(tmp_slp, bc, bc);
 
   sdsl::store_to_cache(t_slp, key_slp, t_config, true);
 }

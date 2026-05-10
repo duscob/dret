@@ -313,16 +313,33 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       const std::size_t run_start = std::max(state.sp_orig, head);
       const std::size_t next_head = (i + 1 < n_runs_) ? static_cast<std::size_t>(select(i + 2)) : run_heads_->size();
       const std::size_t run_end = std::min(state.ep_orig - 1, next_head - 1);
-      for (std::size_t p = run_start + 1; p <= run_end; ++p) {
-        const auto d = get_doc_(p);
-        if constexpr (kVariant == IlcpVariant::CILCP) {
+      if constexpr (kVariant == IlcpVariant::CILCP) {
+        // CILCP keeps the per-position loop: its early-exit on doc-match has
+        // no equivalent in ExpandSLP's range emit, so the short-circuit can
+        // only be expressed by reading positions one-at-a-time.
+        for (std::size_t p = run_start + 1; p <= run_end; ++p) {
+          const auto d = get_doc_(p);
           if (d == doc)
-            break;  // CILCP: stop when we loop back to the run's anchor doc
+            break;
+          if (!mr(0, d)) {
+            mr.mark(d);
+            t_report(d);
+          }
         }
-        if (!mr(0, d)) {
-          mr.mark(d);
-          t_report(d);
-        }
+      } else {
+        // ILCP: a single range-based SLP descent emits all docs in the run.
+        // Cost L * O(height) per-position becomes O(|cover| * height + L) once.
+        auto report_dedup = [&mr, &t_report](auto d) {
+          const auto dd = static_cast<std::size_t>(d);
+          if (!mr(0, dd)) {
+            mr.mark(dd);
+            t_report(dd);
+          }
+        };
+        const std::size_t b = run_start + 1;
+        const std::size_t e = run_end + 1;
+        if (b < e)
+          get_doc_(b, e, report_dedup);
       }
     };
 
@@ -406,7 +423,7 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
-          typename TBvRunHeads = sdsl::bit_vector,
+          typename TBvRunHeads = sdsl::sd_vector<>,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = GetDocDA<TStorage, t_width>>
@@ -414,7 +431,7 @@ using IlcpCore = IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads,
 
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
-          typename TBvRunHeads = sdsl::bit_vector,
+          typename TBvRunHeads = sdsl::sd_vector<>,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = GetDocDA<TStorage, t_width>>

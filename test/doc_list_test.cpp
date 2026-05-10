@@ -34,6 +34,22 @@ template <typename TStorage>
 using RMQGetDocSLP = dret::rmq::GetDocSLP<TStorage>;
 
 template <typename TStorage>
+using RMQGetDocSLP_NS = dret::rmq::GetDocSLP_NS<TStorage>;
+
+using BareSLP_Raw = grammar::SLP<>;
+using BareSLP_DV = grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>;
+using BareSLP_VV = grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>;
+
+template <typename TStorage>
+using RMQGetDocSLP_NS_Raw = dret::rmq::GetDocSLP_NS<TStorage, dret::Alphabet<>::int_width, BareSLP_Raw>;
+
+template <typename TStorage>
+using RMQGetDocSLP_NS_DV = dret::rmq::GetDocSLP_NS<TStorage, dret::Alphabet<>::int_width, BareSLP_DV>;
+
+template <typename TStorage>
+using RMQGetDocSLP_NS_VV = dret::rmq::GetDocSLP_NS<TStorage, dret::Alphabet<>::int_width, BareSLP_VV>;
+
+template <typename TStorage>
 using RMQGetDocDSLP = dret::rmq::GetDocDSLP<TStorage>;
 
 template <typename TStorage>
@@ -53,7 +69,7 @@ using RMQSadaDSLPCore = dret::rmq::SadaCore<TStorage,
 template <typename TStorage>
 using RMQIlcpSLPCore = dret::rmq::IlcpCore<TStorage,
                                            dret::Alphabet<>::int_width,
-                                           sdsl::bit_vector,
+                                           sdsl::sd_vector<>,
                                            sdsl::rmq_succinct_sct<true>,
                                            sdsl::sd_vector<>,
                                            RMQGetDocSLP<TStorage>>;
@@ -61,7 +77,7 @@ using RMQIlcpSLPCore = dret::rmq::IlcpCore<TStorage,
 template <typename TStorage>
 using RMQIlcpDSLPCore = dret::rmq::IlcpCore<TStorage,
                                             dret::Alphabet<>::int_width,
-                                            sdsl::bit_vector,
+                                            sdsl::sd_vector<>,
                                             sdsl::rmq_succinct_sct<true>,
                                             sdsl::sd_vector<>,
                                             RMQGetDocDSLP<TStorage>>;
@@ -69,7 +85,7 @@ using RMQIlcpDSLPCore = dret::rmq::IlcpCore<TStorage,
 template <typename TStorage>
 using RMQCilcpSLPCore = dret::rmq::CilcpCore<TStorage,
                                              dret::Alphabet<>::int_width,
-                                             sdsl::bit_vector,
+                                             sdsl::sd_vector<>,
                                              sdsl::rmq_succinct_sct<true>,
                                              sdsl::sd_vector<>,
                                              RMQGetDocSLP<TStorage>>;
@@ -77,10 +93,102 @@ using RMQCilcpSLPCore = dret::rmq::CilcpCore<TStorage,
 template <typename TStorage>
 using RMQCilcpDSLPCore = dret::rmq::CilcpCore<TStorage,
                                              dret::Alphabet<>::int_width,
-                                             sdsl::bit_vector,
+                                             sdsl::sd_vector<>,
                                              sdsl::rmq_succinct_sct<true>,
                                              sdsl::sd_vector<>,
                                              RMQGetDocDSLP<TStorage>>;
+
+template <typename TStorage>
+using RMQSadaSLPNSCore = dret::rmq::SadaCore<TStorage,
+                                              dret::Alphabet<>::int_width,
+                                              sdsl::rmq_succinct_sct<true>,
+                                              sdsl::sd_vector<>,
+                                              RMQGetDocSLP_NS<TStorage>>;
+
+template <typename TStorage>
+using RMQIlcpSLPNSCore = dret::rmq::IlcpCore<TStorage,
+                                              dret::Alphabet<>::int_width,
+                                              sdsl::sd_vector<>,
+                                              sdsl::rmq_succinct_sct<true>,
+                                              sdsl::sd_vector<>,
+                                              RMQGetDocSLP_NS<TStorage>>;
+
+template <typename TStorage>
+using RMQCilcpSLPNSCore = dret::rmq::CilcpCore<TStorage,
+                                                dret::Alphabet<>::int_width,
+                                                sdsl::sd_vector<>,
+                                                sdsl::rmq_succinct_sct<true>,
+                                                sdsl::sd_vector<>,
+                                                RMQGetDocSLP_NS<TStorage>>;
+
+template <typename TStorage>
+using RMQSadaSLPNSRawCore = dret::rmq::SadaCore<TStorage,
+                                                 dret::Alphabet<>::int_width,
+                                                 sdsl::rmq_succinct_sct<true>,
+                                                 sdsl::sd_vector<>,
+                                                 RMQGetDocSLP_NS_Raw<TStorage>>;
+
+template <typename TStorage>
+using RMQIlcpSLPNSRawCore = dret::rmq::IlcpCore<TStorage,
+                                                 dret::Alphabet<>::int_width,
+                                                 sdsl::sd_vector<>,
+                                                 sdsl::rmq_succinct_sct<true>,
+                                                 sdsl::sd_vector<>,
+                                                 RMQGetDocSLP_NS_Raw<TStorage>>;
+
+template <typename TStorage>
+using RMQCilcpSLPNSRawCore = dret::rmq::CilcpCore<TStorage,
+                                                   dret::Alphabet<>::int_width,
+                                                   sdsl::sd_vector<>,
+                                                   sdsl::rmq_succinct_sct<true>,
+                                                   sdsl::sd_vector<>,
+                                                   RMQGetDocSLP_NS_Raw<TStorage>>;
+
+template <typename TStorage>
+using RMQSadaSLPNSDVCore = dret::rmq::SadaCore<TStorage,
+                                                dret::Alphabet<>::int_width,
+                                                sdsl::rmq_succinct_sct<true>,
+                                                sdsl::sd_vector<>,
+                                                RMQGetDocSLP_NS_DV<TStorage>>;
+
+template <typename TStorage>
+using RMQIlcpSLPNSDVCore = dret::rmq::IlcpCore<TStorage,
+                                                dret::Alphabet<>::int_width,
+                                                sdsl::sd_vector<>,
+                                                sdsl::rmq_succinct_sct<true>,
+                                                sdsl::sd_vector<>,
+                                                RMQGetDocSLP_NS_DV<TStorage>>;
+
+template <typename TStorage>
+using RMQCilcpSLPNSDVCore = dret::rmq::CilcpCore<TStorage,
+                                                  dret::Alphabet<>::int_width,
+                                                  sdsl::sd_vector<>,
+                                                  sdsl::rmq_succinct_sct<true>,
+                                                  sdsl::sd_vector<>,
+                                                  RMQGetDocSLP_NS_DV<TStorage>>;
+
+template <typename TStorage>
+using RMQSadaSLPNSVVCore = dret::rmq::SadaCore<TStorage,
+                                                dret::Alphabet<>::int_width,
+                                                sdsl::rmq_succinct_sct<true>,
+                                                sdsl::sd_vector<>,
+                                                RMQGetDocSLP_NS_VV<TStorage>>;
+
+template <typename TStorage>
+using RMQIlcpSLPNSVVCore = dret::rmq::IlcpCore<TStorage,
+                                                dret::Alphabet<>::int_width,
+                                                sdsl::sd_vector<>,
+                                                sdsl::rmq_succinct_sct<true>,
+                                                sdsl::sd_vector<>,
+                                                RMQGetDocSLP_NS_VV<TStorage>>;
+
+template <typename TStorage>
+using RMQCilcpSLPNSVVCore = dret::rmq::CilcpCore<TStorage,
+                                                  dret::Alphabet<>::int_width,
+                                                  sdsl::sd_vector<>,
+                                                  sdsl::rmq_succinct_sct<true>,
+                                                  sdsl::sd_vector<>,
+                                                  RMQGetDocSLP_NS_VV<TStorage>>;
 
 template <typename TStorage>
 using RMQSadaSLPIndex =
@@ -105,6 +213,54 @@ using RMQCilcpSLPIndex =
 template <typename TStorage>
 using RMQCilcpDSLPIndex =
     dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQCilcpDSLPCore<TStorage>>;
+
+template <typename TStorage>
+using RMQSadaSLPNSIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQSadaSLPNSCore<TStorage>>;
+
+template <typename TStorage>
+using RMQIlcpSLPNSIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQIlcpSLPNSCore<TStorage>>;
+
+template <typename TStorage>
+using RMQCilcpSLPNSIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQCilcpSLPNSCore<TStorage>>;
+
+template <typename TStorage>
+using RMQSadaSLPNSRawIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQSadaSLPNSRawCore<TStorage>>;
+
+template <typename TStorage>
+using RMQIlcpSLPNSRawIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQIlcpSLPNSRawCore<TStorage>>;
+
+template <typename TStorage>
+using RMQCilcpSLPNSRawIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQCilcpSLPNSRawCore<TStorage>>;
+
+template <typename TStorage>
+using RMQSadaSLPNSDVIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQSadaSLPNSDVCore<TStorage>>;
+
+template <typename TStorage>
+using RMQIlcpSLPNSDVIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQIlcpSLPNSDVCore<TStorage>>;
+
+template <typename TStorage>
+using RMQCilcpSLPNSDVIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQCilcpSLPNSDVCore<TStorage>>;
+
+template <typename TStorage>
+using RMQSadaSLPNSVVIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQSadaSLPNSVVCore<TStorage>>;
+
+template <typename TStorage>
+using RMQIlcpSLPNSVVIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQIlcpSLPNSVVCore<TStorage>>;
+
+template <typename TStorage>
+using RMQCilcpSLPNSVVIndex =
+    dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQCilcpSLPNSVVCore<TStorage>>;
 
 //~~~~~~~
 
@@ -159,6 +315,30 @@ using DocListIndexConstructTypes = ::testing::Types<
     RMQSadaSLPIndex<dret::GenericStorage>,
     RMQIlcpSLPIndex<dret::GenericStorage>,
     RMQCilcpSLPIndex<dret::GenericStorage>,
+    RMQSadaSLPNSIndex<dret::GenericStorage>,
+    RMQIlcpSLPNSIndex<dret::GenericStorage>,
+    RMQCilcpSLPNSIndex<dret::GenericStorage>,
+    dret::DocListIdxSLP<dret::GenericStorage,
+                        dret::Alphabet<>,
+                        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                        BareSLP_Raw>,
+    RMQSadaSLPNSRawIndex<dret::GenericStorage>,
+    RMQIlcpSLPNSRawIndex<dret::GenericStorage>,
+    RMQCilcpSLPNSRawIndex<dret::GenericStorage>,
+    dret::DocListIdxSLP<dret::GenericStorage,
+                        dret::Alphabet<>,
+                        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                        BareSLP_DV>,
+    dret::DocListIdxSLP<dret::GenericStorage,
+                        dret::Alphabet<>,
+                        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                        BareSLP_VV>,
+    RMQSadaSLPNSDVIndex<dret::GenericStorage>,
+    RMQIlcpSLPNSDVIndex<dret::GenericStorage>,
+    RMQCilcpSLPNSDVIndex<dret::GenericStorage>,
+    RMQSadaSLPNSVVIndex<dret::GenericStorage>,
+    RMQIlcpSLPNSVVIndex<dret::GenericStorage>,
+    RMQCilcpSLPNSVVIndex<dret::GenericStorage>,
     RMQSadaDSLPIndex<dret::GenericStorage>,
     RMQIlcpDSLPIndex<dret::GenericStorage>,
     RMQCilcpDSLPIndex<dret::GenericStorage>>;
@@ -249,6 +429,30 @@ using DocListIndexSearchTypes = ::testing::Types<
     RMQSadaSLPIndex<ExternalGenericStorage>,
     RMQIlcpSLPIndex<ExternalGenericStorage>,
     RMQCilcpSLPIndex<ExternalGenericStorage>,
+    RMQSadaSLPNSIndex<ExternalGenericStorage>,
+    RMQIlcpSLPNSIndex<ExternalGenericStorage>,
+    RMQCilcpSLPNSIndex<ExternalGenericStorage>,
+    dret::DocListIdxSLP<ExternalGenericStorage,
+                        dret::Alphabet<>,
+                        sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                        BareSLP_Raw>,
+    RMQSadaSLPNSRawIndex<ExternalGenericStorage>,
+    RMQIlcpSLPNSRawIndex<ExternalGenericStorage>,
+    RMQCilcpSLPNSRawIndex<ExternalGenericStorage>,
+    dret::DocListIdxSLP<ExternalGenericStorage,
+                        dret::Alphabet<>,
+                        sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                        BareSLP_DV>,
+    dret::DocListIdxSLP<ExternalGenericStorage,
+                        dret::Alphabet<>,
+                        sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                        BareSLP_VV>,
+    RMQSadaSLPNSDVIndex<ExternalGenericStorage>,
+    RMQIlcpSLPNSDVIndex<ExternalGenericStorage>,
+    RMQCilcpSLPNSDVIndex<ExternalGenericStorage>,
+    RMQSadaSLPNSVVIndex<ExternalGenericStorage>,
+    RMQIlcpSLPNSVVIndex<ExternalGenericStorage>,
+    RMQCilcpSLPNSVVIndex<ExternalGenericStorage>,
     RMQSadaDSLPIndex<ExternalGenericStorage>,
     RMQIlcpDSLPIndex<ExternalGenericStorage>,
     RMQCilcpDSLPIndex<ExternalGenericStorage>>;

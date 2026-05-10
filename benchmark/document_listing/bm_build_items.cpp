@@ -41,17 +41,22 @@ DEFINE_int32(min_block_size, 512, "Minimum block size (power of 2).");
 DEFINE_int32(max_block_size, 512, "Maximum block size (power of 2).");
 DEFINE_int32(min_storing_factor, 4, "Minimum storing factor (power of 2).");
 DEFINE_int32(max_storing_factor, 4, "Maximum storing factor (power of 2).");
-DEFINE_string(rmq_get_doc_variants, "da,slp", "RMQ GetDoc variants to build: comma-separated da,slp,dslp.");
+DEFINE_string(rmq_get_doc_variants, "da,slp,slp_ns", "RMQ GetDoc variants to build: comma-separated da,slp,dslp.");
 
 DEFINE_string(gcda_slp_variants,
               "default,compact_bp,compact_louds,cslp",
               "GCDA TSLP variants: comma-separated default,compact_bp,compact_louds,cslp.");
+
+DEFINE_string(bare_slp_variants,
+              "default,raw,dv,vv",
+              "Bare-SLP container variants for SLP-NS family: comma-separated default,raw,dv,vv.");
 
 //~~~~~~~
 
 enum class RMQGetDocVariant {
   DA,
   SLP,
+  SLP_NS,
   DSLP,
 };
 
@@ -64,6 +69,8 @@ std::vector<RMQGetDocVariant> ParseRMQGetDocVariants(const std::string& value) {
       variants.push_back(RMQGetDocVariant::DA);
     } else if (item == "slp") {
       variants.push_back(RMQGetDocVariant::SLP);
+    } else if (item == "slp_ns") {
+      variants.push_back(RMQGetDocVariant::SLP_NS);
     } else if (item == "dslp") {
       variants.push_back(RMQGetDocVariant::DSLP);
     } else if (!item.empty()) {
@@ -81,6 +88,35 @@ enum class GCDASLPVariant {
   CompactLOUDS,
   CSLP,
 };
+
+enum class BareSLPVariant {
+  Default,
+  Raw,
+  DV,
+  VV,
+};
+
+std::vector<BareSLPVariant> ParseBareSLPVariants(const std::string& value) {
+  std::vector<BareSLPVariant> variants;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "default") {
+      variants.push_back(BareSLPVariant::Default);
+    } else if (item == "raw") {
+      variants.push_back(BareSLPVariant::Raw);
+    } else if (item == "dv") {
+      variants.push_back(BareSLPVariant::DV);
+    } else if (item == "vv") {
+      variants.push_back(BareSLPVariant::VV);
+    } else if (!item.empty()) {
+      throw std::invalid_argument("Unknown --bare_slp_variants item: " + item);
+    }
+  }
+  if (variants.empty())
+    variants.push_back(BareSLPVariant::Default);
+  return variants;
+}
 
 std::vector<GCDASLPVariant> ParseGCDASLPVariants(const std::string& value) {
   std::vector<GCDASLPVariant> variants;
@@ -109,6 +145,10 @@ bool HasVariant(const std::vector<GCDASLPVariant>& variants, GCDASLPVariant vari
 }
 
 bool HasVariant(const std::vector<RMQGetDocVariant>& variants, RMQGetDocVariant variant) {
+  return std::find(variants.begin(), variants.end(), variant) != variants.end();
+}
+
+bool HasVariant(const std::vector<BareSLPVariant>& variants, BareSLPVariant variant) {
   return std::find(variants.begin(), variants.end(), variant) != variants.end();
 }
 
@@ -242,6 +282,47 @@ void BM_ConstructDocListIdxSLP(benchmark::State& t_state, dret::Config t_config)
 
 //~~~~~~~
 
+// Parameter-less RMQ-Compressed harness for SLP-NS variants. The bare grammar::SLP<>
+// is parameter-free (no bs/sf knobs), so the RMQ core is constructed single-arg.
+template <typename TIndex, typename TCore>
+void BM_ConstructDocListIdxRMQCompressedNS(benchmark::State& t_state, dret::Config t_config) {
+  dret::GenericStorage storage;
+  TCore core(storage);
+  TIndex index(storage, core);
+
+  for (auto _ : t_state) {
+    sdsl::memory_monitor::start();
+    construct(index, t_config);
+    sdsl::memory_monitor::stop();
+  }
+
+  auto bm_name = t_state.name();
+  std::string idx_name = bm_name.substr(bm_name.find('/') + 1);
+  {
+    std::ofstream ofs("construction-" + idx_name + ".html");
+    sdsl::memory_monitor::write_memory_log<sdsl::HTML_FORMAT>(ofs);
+  }
+  {
+    std::ofstream ofs("construction-" + idx_name + ".json");
+    sdsl::memory_monitor::write_memory_log<sdsl::JSON_FORMAT>(ofs);
+  }
+
+  SetupCommonCounters(t_state);
+  {
+    using namespace sri::conf;
+    sdsl::int_vector_buffer<> buf(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
+    t_state.counters["n"] = buf.size();
+  }
+
+  index.load(t_config);
+  const auto sizes = index.GetSizeReport();
+  appendCounters(t_state, sizes);
+  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
+  dret::writeSizesJson("sizes-" + idx_name + ".json", sizes);
+}
+
+//~~~~~~~
+
 template <typename TIndex, typename TCore>
 void BM_ConstructDocListIdxRMQCompressed(benchmark::State& t_state, dret::Config t_config) {
   uint32_t block_size = static_cast<uint32_t>(t_state.range(0));
@@ -298,9 +379,11 @@ int main(int argc, char** argv) {
   std::string data_path = FLAGS_data;
   std::vector<RMQGetDocVariant> rmq_get_doc_variants;
   std::vector<GCDASLPVariant> gcda_slp_variants;
+  std::vector<BareSLPVariant> bare_slp_variants;
   try {
     rmq_get_doc_variants = ParseRMQGetDocVariants(FLAGS_rmq_get_doc_variants);
     gcda_slp_variants = ParseGCDASLPVariants(FLAGS_gcda_slp_variants);
+    bare_slp_variants = ParseBareSLPVariants(FLAGS_bare_slp_variants);
   } catch (const std::invalid_argument& e) {
     std::cerr << e.what() << std::endl;
     return 1;
@@ -333,9 +416,69 @@ int main(int argc, char** argv) {
     benchmark::RegisterBenchmark("DocListCILCP-DA", BM_ConstructBruteIdx<CILCPIdx>, config, data_path);
   }
 
-  // Phase C: non-sampled SLP index. No block_size / storing_factor knobs.
-  benchmark::RegisterBenchmark(
-      "DocListSLP-NS", BM_ConstructDocListIdxSLP<dret::DocListIdxSLP<>>, config);
+  // Phase C: non-sampled SLP index, plus the three RMQ listing cores backed by
+  // the bare grammar::SLP<> cache (kSLPNS). All four are parameter-free (no bs/sf
+  // axis). Each gets fanned out across the bare-SLP container axis (Default =
+  // sdsl::int_vector<>, DV = sdsl::dac_vector<>, VV = sdsl::vlc_vector<>); type-
+  // hashes on grammar::SLP<TVars,TLens> distinguish the on-disk cache files.
+  auto register_slp_ns_for_tslp = [&]<typename TSLP>(const char* suffix) {
+    using IdxSLP = dret::DocListIdxSLP<dret::GenericStorage,
+                                        dret::Alphabet<>,
+                                        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                                        TSLP>;
+    using GetDoc = dret::rmq::GetDocSLP_NS<dret::GenericStorage,
+                                            dret::Alphabet<>::int_width,
+                                            TSLP>;
+    using SadaCore = dret::rmq::SadaCore<dret::GenericStorage,
+                                          dret::Alphabet<>::int_width,
+                                          sdsl::rmq_succinct_sct<true>,
+                                          sdsl::sd_vector<>,
+                                          GetDoc>;
+    using IlcpCore = dret::rmq::IlcpCore<dret::GenericStorage,
+                                          dret::Alphabet<>::int_width,
+                                          sdsl::sd_vector<>,
+                                          sdsl::rmq_succinct_sct<true>,
+                                          sdsl::sd_vector<>,
+                                          GetDoc>;
+    using CilcpCore = dret::rmq::CilcpCore<dret::GenericStorage,
+                                            dret::Alphabet<>::int_width,
+                                            sdsl::sd_vector<>,
+                                            sdsl::rmq_succinct_sct<true>,
+                                            sdsl::sd_vector<>,
+                                            GetDoc>;
+    using SadaIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                              dret::Alphabet<>,
+                                              sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                                              SadaCore>;
+    using IlcpIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                              dret::Alphabet<>,
+                                              sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                                              IlcpCore>;
+    using CilcpIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
+                                               dret::Alphabet<>,
+                                               sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
+                                               CilcpCore>;
+
+    benchmark::RegisterBenchmark(
+        std::string("DocListSLP-NS") + suffix, BM_ConstructDocListIdxSLP<IdxSLP>, config);
+    if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::SLP_NS)) {
+      benchmark::RegisterBenchmark(std::string("DocListSADA-SLP-NS") + suffix,
+                                   BM_ConstructDocListIdxRMQCompressedNS<SadaIdx, SadaCore>, config);
+      benchmark::RegisterBenchmark(std::string("DocListILCP-SLP-NS") + suffix,
+                                   BM_ConstructDocListIdxRMQCompressedNS<IlcpIdx, IlcpCore>, config);
+      benchmark::RegisterBenchmark(std::string("DocListCILCP-SLP-NS") + suffix,
+                                   BM_ConstructDocListIdxRMQCompressedNS<CilcpIdx, CilcpCore>, config);
+    }
+  };
+
+  if (HasVariant(bare_slp_variants, BareSLPVariant::Default))
+    register_slp_ns_for_tslp.template operator()<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>("");
+  if (HasVariant(bare_slp_variants, BareSLPVariant::Raw))
+    register_slp_ns_for_tslp.template operator()<grammar::SLP<>>("-Raw");
+  if (HasVariant(bare_slp_variants, BareSLPVariant::DV))
+    register_slp_ns_for_tslp.template operator()<grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>>("-DV");
+  if (HasVariant(bare_slp_variants, BareSLPVariant::VV))
+    register_slp_ns_for_tslp.template operator()<grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>>("-VV");
 
   auto block_sizes = powersOfTwo(FLAGS_min_block_size, FLAGS_max_block_size);
   auto storing_factors = powersOfTwo(FLAGS_min_storing_factor, FLAGS_max_storing_factor);
@@ -390,13 +533,13 @@ int main(int argc, char** argv) {
                                              GetDocSLP>;
     using ILCPCoreSLP = dret::rmq::IlcpCore<dret::GenericStorage,
                                              dret::Alphabet<>::int_width,
-                                             sdsl::bit_vector,
+                                             sdsl::sd_vector<>,
                                              sdsl::rmq_succinct_sct<true>,
                                              sdsl::sd_vector<>,
                                              GetDocSLP>;
     using CILCPCoreSLP = dret::rmq::CilcpCore<dret::GenericStorage,
                                                dret::Alphabet<>::int_width,
-                                               sdsl::bit_vector,
+                                               sdsl::sd_vector<>,
                                                sdsl::rmq_succinct_sct<true>,
                                                sdsl::sd_vector<>,
                                                GetDocSLP>;
@@ -436,13 +579,13 @@ int main(int argc, char** argv) {
                                               GetDocSLPVar>;
         using IlcpCore = dret::rmq::IlcpCore<dret::GenericStorage,
                                               dret::Alphabet<>::int_width,
-                                              sdsl::bit_vector,
+                                              sdsl::sd_vector<>,
                                               sdsl::rmq_succinct_sct<true>,
                                               sdsl::sd_vector<>,
                                               GetDocSLPVar>;
         using CilcpCore = dret::rmq::CilcpCore<dret::GenericStorage,
                                                 dret::Alphabet<>::int_width,
-                                                sdsl::bit_vector,
+                                                sdsl::sd_vector<>,
                                                 sdsl::rmq_succinct_sct<true>,
                                                 sdsl::sd_vector<>,
                                                 GetDocSLPVar>;
@@ -485,13 +628,13 @@ int main(int argc, char** argv) {
                                               GetDocDSLP>;
     using ILCPCoreDSLP = dret::rmq::IlcpCore<dret::GenericStorage,
                                               dret::Alphabet<>::int_width,
-                                              sdsl::bit_vector,
+                                              sdsl::sd_vector<>,
                                               sdsl::rmq_succinct_sct<true>,
                                               sdsl::sd_vector<>,
                                               GetDocDSLP>;
     using CILCPCoreDSLP = dret::rmq::CilcpCore<dret::GenericStorage,
                                                 dret::Alphabet<>::int_width,
-                                                sdsl::bit_vector,
+                                                sdsl::sd_vector<>,
                                                 sdsl::rmq_succinct_sct<true>,
                                                 sdsl::sd_vector<>,
                                                 GetDocDSLP>;

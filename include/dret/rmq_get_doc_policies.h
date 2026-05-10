@@ -23,11 +23,35 @@
 #include <sdsl/io.hpp>
 
 #include "config.h"
+#include "doc_list_idx_slp.h"
 #include "doc_list_sampled_tree_dgcda.h"
 #include "doc_list_sampled_tree_gcda.h"
 #include "index_base.h"
 #include "size_report.h"
 #include "slp_tools.h"
+
+namespace dret {
+
+// ExpandSLP overload for bare `grammar::SLP<>` (no sampled tree, no covers).
+// The default templated `ExpandSLP` (slp_tools.h) calls `Leaf`/`Position`/`Cover`,
+// which `grammar::SLP<>` does not provide. This overload instead splits [bp, ep)
+// into cover variables via `ComputeSpanCover` and expands each via
+// `ExpandSLPForward` — same algorithm as `DocListIdxSLP::Search`. Must be visible
+// before `GetDocSLP_NS`'s definition for ordinary two-phase lookup to find it.
+template <typename TVars, typename TLens, typename Report>
+void ExpandSLP(const grammar::SLP<TVars, TLens>& slp,
+               std::size_t bp, std::size_t ep, Report& report) {
+  if (bp >= ep) return;
+  using V = typename grammar::SLP<TVars, TLens>::VariableType;
+  std::vector<V> cover;
+  grammar::ComputeSpanCover(slp, bp, ep, std::back_inserter(cover));
+  for (auto var : cover) {
+    auto length = slp.SpanLength(var);
+    grammar::ExpandSLPForward(slp.GetRules(), slp.Sigma(), var, length, report);
+  }
+}
+
+}  // namespace dret
 
 namespace dret::rmq {
 
@@ -172,6 +196,83 @@ void construct(GetDocSLP<TStorage, t_width, TSLP>& t_get_doc, Config& t_config) 
   auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
   TSLP slp;
   gcda::construct(slp, t_config, filepath_da, t_get_doc.block_size(), t_get_doc.storing_factor());
+}
+
+// Document-array lookup over a bare `grammar::SLP<>` (Phase C cache, kSLPNS).
+// Distinct from `GetDocSLP`: the bare SLP has no sampled tree, no precomputed
+// covers, and no block_size / storing_factor knobs — its cache file is keyed
+// directly on `kSLPNS` with no `{bs}-{sf}_` prefix. Default TSLP intentionally
+// matches `dret::DocListIdxSLP<>`'s default so the typed cache file is shared;
+// any drift between the two defaults silently desyncs the on-disk cache and
+// produces two parallel SLP files for the same logical "Default" variant.
+template <typename TStorage = GenericStorage,
+          uint8_t t_width = 8,
+          typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>
+class GetDocSLP_NS : public IndexBaseWithExternalStorage<TStorage, t_width> {
+ public:
+  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using SLP = TSLP;
+  using typename Base::size_type;
+
+  explicit GetDocSLP_NS(const TStorage& t_storage) : Base(t_storage) {}
+
+  GetDocSLP_NS() = default;
+
+  std::size_t operator()(std::size_t i) const {
+    std::size_t value = 0;
+    auto report = [&value](auto d) {
+      value = static_cast<std::size_t>(d);
+    };
+    ExpandSLP(*slp_, i, i + 1, report);
+    return value;
+  }
+
+  // Half-open range expansion: calls r(doc) for each position in [b, e).
+  template <typename TReport>
+  void operator()(std::size_t b, std::size_t e, TReport& r) const {
+    ExpandSLP(*slp_, b, e, r);
+  }
+
+  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
+    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    return slp_ ? sdsl::serialize(*slp_, out, child, "slp") : sdsl::serialize_empty_object<TSLP>(out, child, "slp");
+  }
+
+  SizeReport GetSizeReport() const {
+    SizeReport r;
+    if (slp_)
+      append(r, "slp", sdsl::size_in_bytes(*slp_));
+    return r;
+  }
+
+ protected:
+  using typename Base::TSource;
+
+  void loadInner(TSource& t_source, const JSON& t_keys) override {
+    key_slp_ = t_keys[conf::kSLPNS].get<std::string>();
+    slp_ = this->template loadItemPtr<TSLP>(key_slp_, t_source, true);
+  }
+
+  std::string key_slp_;
+  const TSLP* slp_ = nullptr;
+};
+
+// Build the bare-SLP cache (kSLPNS) by delegating to dret::construct(grammar::SLP&,
+// Config&, datafile). Idempotent: short-circuits if the typed cache file already
+// exists. DA is guaranteed by the surrounding RMQ core's construct(), which calls
+// EnsureBasicStructures before invoking this through construct(get_doc_policy()).
+template <typename TStorage, uint8_t t_width, typename TSLP>
+void construct(GetDocSLP_NS<TStorage, t_width, TSLP>& /*unused*/, Config& t_config) {
+  using namespace conf;
+
+  const auto key_slp = t_config.keys[kSLPNS].get<std::string>();
+  if (sdsl::cache_file_exists<TSLP>(key_slp, t_config))
+    return;
+
+  auto event = sdsl::memory_monitor::event(key_slp);
+  auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
+  TSLP slp;
+  dret::construct(slp, t_config, filepath_da);
 }
 
 // Document-array lookup over a differential grammar-compressed SLP. The default
