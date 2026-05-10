@@ -22,11 +22,14 @@
 #include <cstddef>
 #include <functional>
 #include <istream>
+#include <iterator>
 #include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <grammar/re_pair.h>
+#include <grammar/slp.h>
 #include <grammar/slp_metadata.h>
 #include <sdsl/int_vector.hpp>
 #include <sdsl/io.hpp>
@@ -181,5 +184,105 @@ class PlainCodec {
 
 static_assert(SetCodec<PlainCodec<>>,
               "PlainCodec<> must satisfy the SetCodec concept");
+
+// RPCodec — RePair-compressed stored sets via grammar::GCChunks. All
+// slots share a single RePair grammar (built over the concatenated
+// per-slot doc-id sequences) plus per-slot compressed compact sequences;
+// a query expands its slot's compact sequence by recursively walking
+// the shared SLP. Ports the recursive-expansion idea from
+// drl/src/pdlrp.cpp:202-236, but reuses grammar::RePairEncoder<false>
+// (the encoder GCDA already uses for its chunk grammar) instead of
+// reinventing RePair.
+//
+// All-doc sentinel handling is identical to PlainCodec: at Build time
+// the slot's "set" is a single n_doc; at Expand time the expanded
+// chunk vector with a single n_doc dispatches to ExpandAllDoc. RePair
+// might compress runs of n_doc into rules, but each slot's chunk
+// expansion still yields a single n_doc per all-doc slot.
+//
+// Templated on the underlying SLP and per-slot Chunks types so Task 18
+// can swap them; defaults match GCDA's chunk grammar setup so the same
+// type-hashed cache entries can be shared if needed.
+template <typename TSLP = grammar::SLP<>,
+          typename TChunks = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
+class RPCodec {
+ public:
+  using TStoredChunks = grammar::GCChunks<TSLP, /*kExpand=*/true, TChunks>;
+
+  RPCodec() = default;
+
+  template <typename TGetSetAt>
+  void Build(std::size_t t_n_slots, TGetSetAt&& t_get_set_at, std::size_t t_n_doc) {
+    // Stage 1: build a temporary uncompressed Chunks holding all slots.
+    grammar::Chunks<std::vector<std::size_t>, std::vector<std::size_t>> tmp;
+    for (std::size_t s = 0; s < t_n_slots; ++s) {
+      StoredSet set = t_get_set_at(s);
+      if (set.contains_all) {
+        tmp.Insert(t_n_doc);
+      } else {
+        tmp.Insert(set.docs.begin(), set.docs.end());
+      }
+    }
+
+    // Stage 2: encode via RePair into a default (std::vector-backed)
+    // intermediate GCChunks. The detour through std::vector storage is
+    // necessary because grammar/slp_metadata.h:202 does
+    // back_inserter(objs_) unqualified — ADL finds std::back_inserter only
+    // when objs_ lives in std (i.e., std::vector). Mirrors the staged
+    // construct() path GCDA uses (doc_list_sampled_tree_gcda.h:474-516).
+    grammar::GCChunks<TSLP> intermediate;
+    grammar::RePairEncoder<false> encoder;
+    const auto& objs = tmp.GetObjects();
+    intermediate.Compute(objs.begin(), objs.end(), tmp, encoder);
+
+    // Stage 3: copy-convert into the configured TStoredChunks. The
+    // generic action bit-compresses sdsl::int_vector<> fields when the
+    // configured TSLP/TChunks use them, and is a no-op for std::vector
+    // fields (e.g., grammar::SLP<>'s default storage).
+    auto compress_if_iv = [](auto& v) {
+      if constexpr (std::is_same_v<std::remove_reference_t<decltype(v)>,
+                                   sdsl::int_vector<>>) {
+        sdsl::util::bit_compress(v);
+      }
+    };
+    chunks_ = TStoredChunks(intermediate, compress_if_iv, compress_if_iv,
+                            compress_if_iv, compress_if_iv);
+  }
+
+  template <typename TReport>
+  void Expand(std::size_t t_slot, std::size_t t_n_doc, TReport&& t_report) const {
+    auto v = chunks_[t_slot + 1];  // expanded set; grammar::Chunks is 1-indexed.
+    if (v.size() == 1 && static_cast<std::size_t>(v[0]) == t_n_doc) {
+      ExpandAllDoc(t_n_doc, std::forward<TReport>(t_report));
+      return;
+    }
+    for (auto x : v) t_report(static_cast<std::size_t>(x));
+  }
+
+  std::size_t serialize(std::ostream& out,
+                        sdsl::structure_tree_node* v = nullptr,
+                        const std::string& name = "") const {
+    auto* child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    auto bytes = chunks_.serialize(out, child, "gc_chunks");
+    sdsl::structure_tree::add_size(child, bytes);
+    return bytes;
+  }
+
+  void load(std::istream& in) { chunks_.load(in); }
+
+  std::size_t n_slots() const { return chunks_.size(); }
+
+  SizeReport GetSizeReport() const {
+    SizeReport r;
+    append(r, "gc_chunks", sdsl::size_in_bytes(chunks_));
+    return r;
+  }
+
+ private:
+  TStoredChunks chunks_;
+};
+
+static_assert(SetCodec<RPCodec<>>,
+              "RPCodec<> must satisfy the SetCodec concept");
 
 }  // namespace dret::pdl

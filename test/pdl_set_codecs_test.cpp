@@ -21,6 +21,7 @@ namespace {
 using dret::pdl::DummyCodec;
 using dret::pdl::ExpandAllDoc;
 using dret::pdl::PlainCodec;
+using dret::pdl::RPCodec;
 using dret::pdl::SetCodec;
 using dret::pdl::StoredSet;
 
@@ -185,6 +186,115 @@ TEST(PDLPlainCodec, SerializeLoadRoundTripPreservesExpansions) {
 TEST(PDLPlainCodec, GetSizeReportNonzero) {
   std::vector<StoredSet> sets = {{false, {1, 2, 3}}, {true, {}}};
   PlainCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), /*n_doc=*/5);
+
+  auto report = codec.GetSizeReport();
+  ASSERT_FALSE(report.empty());
+  for (const auto& f : report) {
+    EXPECT_GT(f.bytes, 0u) << "field " << f.name;
+  }
+}
+
+// RPCodec tests (Task 16). Acceptance: expansion matches PlainCodec for
+// the same selected sets, including nested rules and the all-doc
+// sentinel.
+
+static_assert(SetCodec<RPCodec<>>);
+
+std::vector<std::size_t> RPExpandAt(const RPCodec<>& codec, std::size_t slot,
+                                    std::size_t n_doc) {
+  std::vector<std::size_t> out;
+  codec.Expand(slot, n_doc, [&out](std::size_t d) { out.push_back(d); });
+  return out;
+}
+
+// Convenience: build both codecs from the same set source and confirm
+// each slot's expansion matches.
+void ExpectPlainRPParity(const std::vector<StoredSet>& sets, std::size_t n_doc) {
+  PlainCodec<> plain;
+  RPCodec<> rp;
+  plain.Build(sets.size(), SetSource(sets), n_doc);
+  rp.Build(sets.size(), SetSource(sets), n_doc);
+
+  ASSERT_EQ(plain.n_slots(), rp.n_slots());
+  for (std::size_t s = 0; s < sets.size(); ++s) {
+    SCOPED_TRACE(testing::Message() << "slot " << s);
+    EXPECT_EQ(RPExpandAt(rp, s, n_doc), ExpandAt(plain, s, n_doc));
+  }
+}
+
+TEST(PDLRPCodec, ExpandSingletonSet) {
+  ExpectPlainRPParity({{false, {7}}}, /*n_doc=*/10);
+}
+
+TEST(PDLRPCodec, ExpandMultiDocSet) {
+  ExpectPlainRPParity({{false, {0, 2, 4, 9}}}, /*n_doc=*/10);
+}
+
+TEST(PDLRPCodec, ExpandAllDocSentinel) {
+  ExpectPlainRPParity({{false, {0, 1}}, {true, {}}, {false, {2}}}, /*n_doc=*/4);
+}
+
+TEST(PDLRPCodec, ExpandLargestLegalSingleDocIsNotSentinel) {
+  // The largest legal doc id is n_doc-1 = 9; the sentinel is 10.
+  ExpectPlainRPParity({{false, {9}}}, /*n_doc=*/10);
+}
+
+// Nested-rule fixture: many slots with overlapping subsets so RePair
+// has material to discover repeated pairs and build multi-level rules.
+TEST(PDLRPCodec, ExpandRepeatedPatternsExerciseNestedRules) {
+  std::vector<StoredSet> sets = {
+      {false, {0, 1, 2, 3}},
+      {false, {0, 1, 2, 3}},
+      {false, {0, 1, 2, 3}},
+      {false, {0, 1}},
+      {false, {2, 3}},
+      {false, {0, 1, 2, 3}},
+      {false, {1, 2}},
+      {false, {0, 3}},
+  };
+  ExpectPlainRPParity(sets, /*n_doc=*/4);
+}
+
+TEST(PDLRPCodec, ExpandMixedFixtureMatchesPlain) {
+  // Same shape as PlainCodec's mixed fixture; tests parity end-to-end.
+  std::vector<StoredSet> sets = {
+      {false, {0}},
+      {false, {1, 2, 3}},
+      {true,  {}},
+      {false, {3}},
+      {false, {0, 1, 2, 3}},
+  };
+  ExpectPlainRPParity(sets, /*n_doc=*/4);
+}
+
+TEST(PDLRPCodec, SerializeLoadRoundTripPreservesExpansions) {
+  std::vector<StoredSet> sets = {
+      {false, {0, 4}},
+      {true,  {}},
+      {false, {2}},
+      {false, {0, 1, 2, 3, 4}},
+  };
+  RPCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), /*n_doc=*/5);
+
+  std::stringstream ss;
+  std::size_t bytes = codec.serialize(ss);
+  EXPECT_GT(bytes, 0u);
+
+  RPCodec<> reloaded;
+  reloaded.load(ss);
+
+  EXPECT_EQ(reloaded.n_slots(), codec.n_slots());
+  for (std::size_t s = 0; s < sets.size(); ++s) {
+    SCOPED_TRACE(testing::Message() << "slot " << s);
+    EXPECT_EQ(RPExpandAt(reloaded, s, 5), RPExpandAt(codec, s, 5));
+  }
+}
+
+TEST(PDLRPCodec, GetSizeReportNonzero) {
+  std::vector<StoredSet> sets = {{false, {1, 2, 3}}, {true, {}}};
+  RPCodec<> codec;
   codec.Build(sets.size(), SetSource(sets), /*n_doc=*/5);
 
   auto report = codec.GetSizeReport();
