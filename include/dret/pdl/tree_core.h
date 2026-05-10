@@ -24,14 +24,9 @@
 #include <sdsl/util.hpp>
 
 #include "../size_report.h"
+#include "storage_policy.h"
 
 namespace dret::pdl {
-
-enum class StoragePolicy : uint8_t {
-  OriginalDrl = 0,
-  StoreAllInternal = 1,
-  LeavesOnly = 2,
-};
 
 // Placeholder codec satisfying the minimum API used by PDLTreeCore. Replaced
 // by Plain / RP / BC codecs in Tasks 15–17.
@@ -66,7 +61,7 @@ class PDLTreeCore {
     return {{t_sp, t_sp}, {}};
   }
 
-  // Multi-range cover; needed because non-OriginalDrl storage policies can
+  // Multi-range cover; needed because non-OccurrenceWeighted storage policies can
   // leave non-contiguous gaps in [sp, ep). The default delegates to
   // computeCover and is safe for any single-range subclass; PDLTreeCore will
   // override this once Task 12 wires real navigation in.
@@ -142,7 +137,7 @@ class PDLTreeCore {
   std::size_t n_doc_ = 0;
   uint32_t block_size_ = 512;
   float storing_factor_ = 4.0f;
-  StoragePolicy policy_ = StoragePolicy::OriginalDrl;
+  StoragePolicy policy_ = StoragePolicy::OccurrenceWeighted;
 };
 
 }  // namespace dret::pdl

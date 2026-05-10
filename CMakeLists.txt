@@ -70,6 +70,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree_dgcda.h
 
         # PDL (precomputed document listing) — append new include/dret/pdl/*.h here.
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/storage_policy.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_builder.h
 )

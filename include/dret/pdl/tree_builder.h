@@ -22,6 +22,8 @@
 #include <utility>
 #include <vector>
 
+#include "storage_policy.h"
+
 namespace dret::pdl {
 
 struct BuilderNode {
@@ -58,7 +60,7 @@ struct BuilderNode {
   // navigation later on.
   bool is_explicit_leaf = false;
 
-  // Weighted size used by the OriginalDrl selection rule in Task 10:
+  // Weighted size used by the OccurrenceWeighted selection rule in Task 10:
   // sum of stored-set sizes from the subtree rooted here. 0 until Task 10.
   std::size_t stored_documents = 0;
 
@@ -179,11 +181,11 @@ BuilderNode* BuildSparseSuffixTree(BuilderPool& t_pool, TLCPFn&& t_lcp, std::siz
 // sorted-unique. Full sets (size >= t_n_doc) are collapsed to the
 // all-doc sentinel: contains_all = true, docs cleared. The
 // stored_documents counter holds the pre-dedup occurrence weight used
-// by the OriginalDrl selection rule in Task 10.
+// by the OccurrenceWeighted selection rule in Task 10.
 //
 // The all-doc short-circuit at internal nodes (drop the partially-built
 // docs accumulator and copy the all-doc child's stored_documents) ports
-// drl/src/pdltree.cpp:209-213 verbatim. drl's OriginalDrl rule never
+// drl/src/pdltree.cpp:209-213 verbatim. drl's OccurrenceWeighted rule never
 // reads docs.size() when contains_all is true (pdltree.cpp:390 short-
 // circuits), so the slightly approximate stored_documents this leaves
 // is harmless.
@@ -247,6 +249,54 @@ void ComputeDocSetsBottomUp(BuilderNode* t_root, std::size_t t_n_doc, TGetDocAt&
     if (!n->contains_all && n->docs.size() >= t_n_doc) {
       n->contains_all = true;
       n->docs.clear();
+    }
+  }
+}
+
+// Set t_root and every descendant's `selected` flag according to t_policy.
+// Tasks 11-12 then assign stable ids and the compact navigation
+// representation only over selected nodes.
+//
+// - StoragePolicy::OccurrenceWeighted: drl/src/pdltree.cpp:390 verbatim.
+//   Childless OR contains_all OR stored_documents > storing_factor *
+//   |distinct docs|. Where drl physically removes the failing internal
+//   nodes via PDLTreeNode::remove(), dret keeps them in the tree and
+//   relies on `selected` to filter at id-assignment / navigation time.
+// - StoragePolicy::StoreAllInternal: every node selected, regardless of
+//   weight. Diagnostic upper bound.
+// - StoragePolicy::LeavesOnly: only childless (collapsed-block + explicit-
+//   leaf) nodes selected. Internal nodes stay in the tree for navigation
+//   but contribute no stored set.
+//
+// Requires Task 9 to have populated stored_documents, docs, and
+// contains_all on every node.
+inline void ApplyStoragePolicy(BuilderNode* t_root,
+                               StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted,
+                               float t_storing_factor = 4.0f) {
+  if (!t_root) return;
+  std::vector<BuilderNode*> stack{t_root};
+  while (!stack.empty()) {
+    auto* n = stack.back();
+    stack.pop_back();
+
+    bool select = false;
+    switch (t_policy) {
+      case StoragePolicy::OccurrenceWeighted:
+        select = (n->first_child == nullptr) || n->contains_all
+                 || (static_cast<float>(n->stored_documents)
+                     > t_storing_factor * static_cast<float>(n->docs.size()));
+        break;
+      case StoragePolicy::StoreAllInternal:
+        select = true;
+        break;
+      case StoragePolicy::LeavesOnly:
+        select = (n->first_child == nullptr);
+        break;
+    }
+    n->selected = select;
+
+    for (auto* c = n->first_child; c; c = c->next_sibling) {
+      stack.push_back(c);
     }
   }
 }

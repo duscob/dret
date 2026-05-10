@@ -19,12 +19,14 @@
 
 namespace {
 
+using dret::pdl::ApplyStoragePolicy;
 using dret::pdl::BuilderNode;
 using dret::pdl::BuilderPool;
 using dret::pdl::BuildSparseSuffixTree;
 using dret::pdl::CollapseSubtreesByBlockSize;
 using dret::pdl::ComputeDocSetsBottomUp;
 using dret::pdl::InsertExplicitLeaves;
+using dret::pdl::StoragePolicy;
 
 struct NodeView {
   std::size_t sp = 0;
@@ -413,6 +415,126 @@ TEST(PDLTreeBuilder, ComputeDocSetsFixtureFullTree) {
 
 TEST(PDLTreeBuilder, ComputeDocSetsNullRootIsNoop) {
   ComputeDocSetsBottomUp(nullptr, 1, [](std::size_t) { return 0u; });
+}
+
+// Counts selected vs. childless nodes via DFS, returning (total, selected,
+// childless, selected_childless).
+struct PolicyCounts {
+  std::size_t total = 0;
+  std::size_t selected = 0;
+  std::size_t childless = 0;
+  std::size_t selected_childless = 0;
+};
+
+PolicyCounts CountSelected(const BuilderNode* root) {
+  PolicyCounts out;
+  std::vector<const BuilderNode*> stack{root};
+  while (!stack.empty()) {
+    const auto* n = stack.back();
+    stack.pop_back();
+    ++out.total;
+    if (n->selected) ++out.selected;
+    if (!n->first_child) {
+      ++out.childless;
+      if (n->selected) ++out.selected_childless;
+    }
+    for (const auto* c = n->first_child; c; c = c->next_sibling) {
+      stack.push_back(c);
+    }
+  }
+  return out;
+}
+
+// Build the canonical post-Task-9 fixture used by the policy tests below.
+// The collapse fixture (lcp = [0,1,4,2,1,5,3,0]) plus explicit leaves plus
+// DA = {3, 0, 1, 1, 2, 0, 3} yields:
+//   total nodes = 9 (root, A, leaf(0,1), C, B, leaf(3,4), E, D, leaf(6,7))
+//   childless = 5 (leaf(0,1), B, leaf(3,4), D, leaf(6,7))
+auto BuildPolicyFixture(BuilderPool& pool) {
+  std::vector<std::size_t> da = {3, 0, 1, 1, 2, 0, 3};
+  auto* root = BuildCollapseFixture(pool);
+  InsertExplicitLeaves(pool, root);
+  ComputeDocSetsBottomUp(root, /*n_doc=*/5, DocsFromVector(da));
+  return root;
+}
+
+TEST(PDLTreeBuilder, ApplyStoragePolicyNullRootIsNoop) {
+  ApplyStoragePolicy(nullptr);
+}
+
+TEST(PDLTreeBuilder, ApplyStoragePolicyStoreAllInternalSelectsEverything) {
+  BuilderPool pool;
+  auto* root = BuildPolicyFixture(pool);
+
+  ApplyStoragePolicy(root, StoragePolicy::StoreAllInternal);
+
+  auto c = CountSelected(root);
+  EXPECT_EQ(c.total, 9u);
+  EXPECT_EQ(c.selected, c.total);
+}
+
+TEST(PDLTreeBuilder, ApplyStoragePolicyLeavesOnlySelectsChildlessOnly) {
+  BuilderPool pool;
+  auto* root = BuildPolicyFixture(pool);
+
+  ApplyStoragePolicy(root, StoragePolicy::LeavesOnly);
+
+  auto c = CountSelected(root);
+  EXPECT_EQ(c.total, 9u);
+  EXPECT_EQ(c.childless, 5u);
+  EXPECT_EQ(c.selected, c.childless);
+  EXPECT_EQ(c.selected_childless, c.childless);
+}
+
+TEST(PDLTreeBuilder, ApplyStoragePolicyOccurrenceWeightedExcludesUnderweightInternal) {
+  BuilderPool pool;
+  auto* root = BuildPolicyFixture(pool);
+
+  // sf = 1 makes the weighted rule barely-selective: in this fixture s, A,
+  // C are selected (stored 7 > 4, 7 > 4, 3 > 2) but E is NOT (3 > 3 is
+  // false). All 5 childless nodes are selected unconditionally. Total = 8.
+  ApplyStoragePolicy(root, StoragePolicy::OccurrenceWeighted, /*storing_factor=*/1.0f);
+
+  auto c = CountSelected(root);
+  EXPECT_EQ(c.total, 9u);
+  EXPECT_EQ(c.selected, 8u);
+  EXPECT_EQ(c.selected_childless, c.childless) << "every childless node selected";
+
+  // Verify E is the unselected one. E covers [4, 7).
+  const BuilderNode* e = nullptr;
+  std::vector<const BuilderNode*> stack{root};
+  while (!stack.empty()) {
+    const auto* n = stack.back();
+    stack.pop_back();
+    if (n->sp == 4u && n->ep == 7u && n->depth == 3u) e = n;
+    for (const auto* x = n->first_child; x; x = x->next_sibling) stack.push_back(x);
+  }
+  ASSERT_NE(e, nullptr);
+  EXPECT_FALSE(e->selected);
+}
+
+TEST(PDLTreeBuilder, ApplyStoragePolicyOccurrenceWeightedContainsAllOverridesWeight) {
+  // n_doc = 4 makes root and A reach the all-doc sentinel; sf=10 is high
+  // enough that the weighted rule alone would NOT select C or E (their
+  // stored 3 vs sf*|docs| = 10*2=20 or 10*3=30). So selected = root + A
+  // (via contains_all) + 5 leaves = 7. C and E remain unselected.
+  BuilderPool pool;
+  std::vector<std::size_t> da = {3, 0, 1, 1, 2, 0, 3};
+  auto* root = BuildCollapseFixture(pool);
+  InsertExplicitLeaves(pool, root);
+  ComputeDocSetsBottomUp(root, /*n_doc=*/4, DocsFromVector(da));
+
+  ApplyStoragePolicy(root, StoragePolicy::OccurrenceWeighted, /*storing_factor=*/10.0f);
+
+  auto c = CountSelected(root);
+  EXPECT_EQ(c.total, 9u);
+  EXPECT_EQ(c.selected, 7u);
+  EXPECT_EQ(c.selected_childless, c.childless);
+  EXPECT_TRUE(root->selected);
+  EXPECT_TRUE(root->contains_all);
+  ASSERT_NE(root->first_child, nullptr);
+  EXPECT_TRUE(root->first_child->selected) << "A selected via contains_all";
+  EXPECT_TRUE(root->first_child->contains_all);
 }
 
 // Half-open intervals: every internal node's [sp, ep) lies inside its
