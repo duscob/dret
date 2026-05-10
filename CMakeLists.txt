@@ -71,6 +71,7 @@ set(SOURCE_FILES
 
         # PDL (precomputed document listing) — append new include/dret/pdl/*.h here.
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_core.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_builder.h
 )
 
 add_library(dret INTERFACE)
@@ -111,6 +112,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(tf_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/tf_test.cpp)
     cxx_test_with_flags_and_args(algorithm_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/algorithm_test.cpp)
     cxx_test_with_flags_and_args(doc_list_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_test.cpp)
+    cxx_test_with_flags_and_args(pdl_tree_builder_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_tree_builder_test.cpp)
 endif ()
 
 
