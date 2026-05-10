@@ -27,6 +27,8 @@
 #include <utility>
 #include <vector>
 
+#include <grammar/slp_metadata.h>
+#include <sdsl/int_vector.hpp>
 #include <sdsl/io.hpp>
 #include <sdsl/util.hpp>
 
@@ -99,5 +101,85 @@ class DummyCodec {
 
 static_assert(SetCodec<DummyCodec>,
               "DummyCodec must satisfy the SetCodec concept (Task 14 acceptance)");
+
+// PlainCodec — sorted-doc-id payload per slot, backed by grammar::Chunks
+// (a flat objects vector + per-chunk start positions). Templated on the
+// object and position container types so Task 18 can swap them for
+// compressed alternatives.
+//
+// All-doc sentinel: stored as a single-element chunk holding the value
+// n_doc (one past the maximum legal doc id). At Expand time a chunk that
+// is exactly [n_doc] dispatches to ExpandAllDoc; everything else
+// iterates the chunk verbatim. The sentinel is recognised at expansion,
+// not at construction time, so the codec doesn't need to store n_doc
+// itself — the caller passes it via the Expand argument.
+//
+// Build signature: (n_slots, get_set_at, n_doc). get_set_at(slot) must
+// return a StoredSet with sorted-unique zero-based docs.
+template <typename TObjContainer = sdsl::int_vector<>,
+          typename TPosContainer = sdsl::int_vector<>>
+class PlainCodec {
+ public:
+  using TStoredChunks = grammar::Chunks<TObjContainer, TPosContainer>;
+
+  PlainCodec() = default;
+
+  template <typename TGetSetAt>
+  void Build(std::size_t t_n_slots, TGetSetAt&& t_get_set_at, std::size_t t_n_doc) {
+    // Build into a std::vector-backed Chunks (which has push_back), then
+    // copy-construct into the (possibly compressed) TObjContainer/TPosContainer.
+    grammar::Chunks<std::vector<std::size_t>, std::vector<std::size_t>> tmp;
+    for (std::size_t s = 0; s < t_n_slots; ++s) {
+      StoredSet set = t_get_set_at(s);
+      if (set.contains_all) {
+        tmp.Insert(t_n_doc);
+      } else {
+        tmp.Insert(set.docs.begin(), set.docs.end());
+      }
+    }
+    chunks_ = TStoredChunks(tmp);
+  }
+
+  template <typename TReport>
+  void Expand(std::size_t t_slot, std::size_t t_n_doc, TReport&& t_report) const {
+    auto chunk = chunks_[t_slot + 1];  // grammar::Chunks is 1-indexed.
+    if (chunk.size() == 1
+        && static_cast<std::size_t>(*chunk.begin()) == t_n_doc) {
+      ExpandAllDoc(t_n_doc, std::forward<TReport>(t_report));
+      return;
+    }
+    for (auto it = chunk.begin(); it != chunk.end(); ++it) {
+      t_report(static_cast<std::size_t>(*it));
+    }
+  }
+
+  std::size_t serialize(std::ostream& out,
+                        sdsl::structure_tree_node* v = nullptr,
+                        const std::string& name = "") const {
+    auto* child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    auto bytes = chunks_.serialize(out, child, "chunks");
+    sdsl::structure_tree::add_size(child, bytes);
+    return bytes;
+  }
+
+  void load(std::istream& in) {
+    chunks_.load(in);
+  }
+
+  std::size_t n_slots() const { return chunks_.size(); }
+
+  SizeReport GetSizeReport() const {
+    SizeReport r;
+    append(r, "chunks_objs", sdsl::size_in_bytes(chunks_.GetObjects()));
+    append(r, "chunks_pos", sdsl::size_in_bytes(chunks_.GetChunksPositions()));
+    return r;
+  }
+
+ private:
+  TStoredChunks chunks_;
+};
+
+static_assert(SetCodec<PlainCodec<>>,
+              "PlainCodec<> must satisfy the SetCodec concept");
 
 }  // namespace dret::pdl
