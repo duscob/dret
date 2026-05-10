@@ -69,7 +69,7 @@ using RMQSadaDSLPCore = dret::rmq::SadaCore<TStorage,
 template <typename TStorage>
 using RMQIlcpSLPCore = dret::rmq::IlcpCore<TStorage,
                                            dret::Alphabet<>::int_width,
-                                           sdsl::bit_vector,
+                                           sdsl::sd_vector<>,
                                            sdsl::rmq_succinct_sct<true>,
                                            sdsl::sd_vector<>,
                                            RMQGetDocSLP<TStorage>>;
@@ -77,7 +77,7 @@ using RMQIlcpSLPCore = dret::rmq::IlcpCore<TStorage,
 template <typename TStorage>
 using RMQIlcpDSLPCore = dret::rmq::IlcpCore<TStorage,
                                             dret::Alphabet<>::int_width,
-                                            sdsl::bit_vector,
+                                            sdsl::sd_vector<>,
                                             sdsl::rmq_succinct_sct<true>,
                                             sdsl::sd_vector<>,
                                             RMQGetDocDSLP<TStorage>>;
@@ -85,7 +85,7 @@ using RMQIlcpDSLPCore = dret::rmq::IlcpCore<TStorage,
 template <typename TStorage>
 using RMQCilcpSLPCore = dret::rmq::CilcpCore<TStorage,
                                              dret::Alphabet<>::int_width,
-                                             sdsl::bit_vector,
+                                             sdsl::sd_vector<>,
                                              sdsl::rmq_succinct_sct<true>,
                                              sdsl::sd_vector<>,
                                              RMQGetDocSLP<TStorage>>;
@@ -93,7 +93,7 @@ using RMQCilcpSLPCore = dret::rmq::CilcpCore<TStorage,
 template <typename TStorage>
 using RMQCilcpDSLPCore = dret::rmq::CilcpCore<TStorage,
                                              dret::Alphabet<>::int_width,
-                                             sdsl::bit_vector,
+                                             sdsl::sd_vector<>,
                                              sdsl::rmq_succinct_sct<true>,
                                              sdsl::sd_vector<>,
                                              RMQGetDocDSLP<TStorage>>;
@@ -108,7 +108,7 @@ using RMQSadaSLPNSCore = dret::rmq::SadaCore<TStorage,
 template <typename TStorage>
 using RMQIlcpSLPNSCore = dret::rmq::IlcpCore<TStorage,
                                               dret::Alphabet<>::int_width,
-                                              sdsl::bit_vector,
+                                              sdsl::sd_vector<>,
                                               sdsl::rmq_succinct_sct<true>,
                                               sdsl::sd_vector<>,
                                               RMQGetDocSLP_NS<TStorage>>;
@@ -116,7 +116,7 @@ using RMQIlcpSLPNSCore = dret::rmq::IlcpCore<TStorage,
 template <typename TStorage>
 using RMQCilcpSLPNSCore = dret::rmq::CilcpCore<TStorage,
                                                 dret::Alphabet<>::int_width,
-                                                sdsl::bit_vector,
+                                                sdsl::sd_vector<>,
                                                 sdsl::rmq_succinct_sct<true>,
                                                 sdsl::sd_vector<>,
                                                 RMQGetDocSLP_NS<TStorage>>;
@@ -131,7 +131,7 @@ using RMQSadaSLPNSRawCore = dret::rmq::SadaCore<TStorage,
 template <typename TStorage>
 using RMQIlcpSLPNSRawCore = dret::rmq::IlcpCore<TStorage,
                                                  dret::Alphabet<>::int_width,
-                                                 sdsl::bit_vector,
+                                                 sdsl::sd_vector<>,
                                                  sdsl::rmq_succinct_sct<true>,
                                                  sdsl::sd_vector<>,
                                                  RMQGetDocSLP_NS_Raw<TStorage>>;
@@ -139,7 +139,7 @@ using RMQIlcpSLPNSRawCore = dret::rmq::IlcpCore<TStorage,
 template <typename TStorage>
 using RMQCilcpSLPNSRawCore = dret::rmq::CilcpCore<TStorage,
                                                    dret::Alphabet<>::int_width,
-                                                   sdsl::bit_vector,
+                                                   sdsl::sd_vector<>,
                                                    sdsl::rmq_succinct_sct<true>,
                                                    sdsl::sd_vector<>,
                                                    RMQGetDocSLP_NS_Raw<TStorage>>;
@@ -154,7 +154,7 @@ using RMQSadaSLPNSDVCore = dret::rmq::SadaCore<TStorage,
 template <typename TStorage>
 using RMQIlcpSLPNSDVCore = dret::rmq::IlcpCore<TStorage,
                                                 dret::Alphabet<>::int_width,
-                                                sdsl::bit_vector,
+                                                sdsl::sd_vector<>,
                                                 sdsl::rmq_succinct_sct<true>,
                                                 sdsl::sd_vector<>,
                                                 RMQGetDocSLP_NS_DV<TStorage>>;
@@ -162,7 +162,7 @@ using RMQIlcpSLPNSDVCore = dret::rmq::IlcpCore<TStorage,
 template <typename TStorage>
 using RMQCilcpSLPNSDVCore = dret::rmq::CilcpCore<TStorage,
                                                   dret::Alphabet<>::int_width,
-                                                  sdsl::bit_vector,
+                                                  sdsl::sd_vector<>,
                                                   sdsl::rmq_succinct_sct<true>,
                                                   sdsl::sd_vector<>,
                                                   RMQGetDocSLP_NS_DV<TStorage>>;
@@ -177,7 +177,7 @@ using RMQSadaSLPNSVVCore = dret::rmq::SadaCore<TStorage,
 template <typename TStorage>
 using RMQIlcpSLPNSVVCore = dret::rmq::IlcpCore<TStorage,
                                                 dret::Alphabet<>::int_width,
-                                                sdsl::bit_vector,
+                                                sdsl::sd_vector<>,
                                                 sdsl::rmq_succinct_sct<true>,
                                                 sdsl::sd_vector<>,
                                                 RMQGetDocSLP_NS_VV<TStorage>>;
@@ -185,7 +185,7 @@ using RMQIlcpSLPNSVVCore = dret::rmq::IlcpCore<TStorage,
 template <typename TStorage>
 using RMQCilcpSLPNSVVCore = dret::rmq::CilcpCore<TStorage,
                                                   dret::Alphabet<>::int_width,
-                                                  sdsl::bit_vector,
+                                                  sdsl::sd_vector<>,
                                                   sdsl::rmq_succinct_sct<true>,
                                                   sdsl::sd_vector<>,
                                                   RMQGetDocSLP_NS_VV<TStorage>>;

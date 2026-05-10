@@ -423,7 +423,7 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
-          typename TBvRunHeads = sdsl::bit_vector,
+          typename TBvRunHeads = sdsl::sd_vector<>,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = GetDocDA<TStorage, t_width>>
@@ -431,7 +431,7 @@ using IlcpCore = IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads,
 
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
-          typename TBvRunHeads = sdsl::bit_vector,
+          typename TBvRunHeads = sdsl::sd_vector<>,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = GetDocDA<TStorage, t_width>>

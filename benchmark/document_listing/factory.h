@@ -171,7 +171,7 @@ class Factory {
                                               TCountIdx,
                                               dret::rmq::IlcpCore<ExternalGenericStorage,
                                                                   dret::Alphabet<>::int_width,
-                                                                  sdsl::bit_vector,
+                                                                  sdsl::sd_vector<>,
                                                                   sdsl::rmq_succinct_sct<true>,
                                                                   sdsl::sd_vector<>,
                                                                   GetDocSLP>>;
@@ -180,7 +180,7 @@ class Factory {
                                                TCountIdx,
                                                dret::rmq::CilcpCore<ExternalGenericStorage,
                                                                     dret::Alphabet<>::int_width,
-                                                                    sdsl::bit_vector,
+                                                                    sdsl::sd_vector<>,
                                                                     sdsl::rmq_succinct_sct<true>,
                                                                     sdsl::sd_vector<>,
                                                                     GetDocSLP>>;
@@ -203,7 +203,7 @@ class Factory {
                                                      TCountIdx,
                                                      dret::rmq::IlcpCore<ExternalGenericStorage,
                                                                          dret::Alphabet<>::int_width,
-                                                                         sdsl::bit_vector,
+                                                                         sdsl::sd_vector<>,
                                                                          sdsl::rmq_succinct_sct<true>,
                                                                          sdsl::sd_vector<>,
                                                                          TGetDoc>>;
@@ -213,7 +213,7 @@ class Factory {
                                                       TCountIdx,
                                                       dret::rmq::CilcpCore<ExternalGenericStorage,
                                                                            dret::Alphabet<>::int_width,
-                                                                           sdsl::bit_vector,
+                                                                           sdsl::sd_vector<>,
                                                                            sdsl::rmq_succinct_sct<true>,
                                                                            sdsl::sd_vector<>,
                                                                            TGetDoc>>;
@@ -264,7 +264,7 @@ class Factory {
                                                TCountIdx,
                                                dret::rmq::IlcpCore<ExternalGenericStorage,
                                                                    dret::Alphabet<>::int_width,
-                                                                   sdsl::bit_vector,
+                                                                   sdsl::sd_vector<>,
                                                                    sdsl::rmq_succinct_sct<true>,
                                                                    sdsl::sd_vector<>,
                                                                    GetDocDSLP>>;
@@ -273,7 +273,7 @@ class Factory {
                                                 TCountIdx,
                                                 dret::rmq::CilcpCore<ExternalGenericStorage,
                                                                      dret::Alphabet<>::int_width,
-                                                                     sdsl::bit_vector,
+                                                                     sdsl::sd_vector<>,
                                                                      sdsl::rmq_succinct_sct<true>,
                                                                      sdsl::sd_vector<>,
                                                                      GetDocDSLP>>;

@@ -436,13 +436,13 @@ int main(int argc, char** argv) {
                                           GetDoc>;
     using IlcpCore = dret::rmq::IlcpCore<dret::GenericStorage,
                                           dret::Alphabet<>::int_width,
-                                          sdsl::bit_vector,
+                                          sdsl::sd_vector<>,
                                           sdsl::rmq_succinct_sct<true>,
                                           sdsl::sd_vector<>,
                                           GetDoc>;
     using CilcpCore = dret::rmq::CilcpCore<dret::GenericStorage,
                                             dret::Alphabet<>::int_width,
-                                            sdsl::bit_vector,
+                                            sdsl::sd_vector<>,
                                             sdsl::rmq_succinct_sct<true>,
                                             sdsl::sd_vector<>,
                                             GetDoc>;
@@ -533,13 +533,13 @@ int main(int argc, char** argv) {
                                              GetDocSLP>;
     using ILCPCoreSLP = dret::rmq::IlcpCore<dret::GenericStorage,
                                              dret::Alphabet<>::int_width,
-                                             sdsl::bit_vector,
+                                             sdsl::sd_vector<>,
                                              sdsl::rmq_succinct_sct<true>,
                                              sdsl::sd_vector<>,
                                              GetDocSLP>;
     using CILCPCoreSLP = dret::rmq::CilcpCore<dret::GenericStorage,
                                                dret::Alphabet<>::int_width,
-                                               sdsl::bit_vector,
+                                               sdsl::sd_vector<>,
                                                sdsl::rmq_succinct_sct<true>,
                                                sdsl::sd_vector<>,
                                                GetDocSLP>;
@@ -579,13 +579,13 @@ int main(int argc, char** argv) {
                                               GetDocSLPVar>;
         using IlcpCore = dret::rmq::IlcpCore<dret::GenericStorage,
                                               dret::Alphabet<>::int_width,
-                                              sdsl::bit_vector,
+                                              sdsl::sd_vector<>,
                                               sdsl::rmq_succinct_sct<true>,
                                               sdsl::sd_vector<>,
                                               GetDocSLPVar>;
         using CilcpCore = dret::rmq::CilcpCore<dret::GenericStorage,
                                                 dret::Alphabet<>::int_width,
-                                                sdsl::bit_vector,
+                                                sdsl::sd_vector<>,
                                                 sdsl::rmq_succinct_sct<true>,
                                                 sdsl::sd_vector<>,
                                                 GetDocSLPVar>;
@@ -628,13 +628,13 @@ int main(int argc, char** argv) {
                                               GetDocDSLP>;
     using ILCPCoreDSLP = dret::rmq::IlcpCore<dret::GenericStorage,
                                               dret::Alphabet<>::int_width,
-                                              sdsl::bit_vector,
+                                              sdsl::sd_vector<>,
                                               sdsl::rmq_succinct_sct<true>,
                                               sdsl::sd_vector<>,
                                               GetDocDSLP>;
     using CILCPCoreDSLP = dret::rmq::CilcpCore<dret::GenericStorage,
                                                 dret::Alphabet<>::int_width,
-                                                sdsl::bit_vector,
+                                                sdsl::sd_vector<>,
                                                 sdsl::rmq_succinct_sct<true>,
                                                 sdsl::sd_vector<>,
                                                 GetDocDSLP>;
