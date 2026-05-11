@@ -18,6 +18,7 @@
 
 namespace {
 
+using dret::pdl::BCCodec;
 using dret::pdl::DummyCodec;
 using dret::pdl::ExpandAllDoc;
 using dret::pdl::PlainCodec;
@@ -302,6 +303,124 @@ TEST(PDLRPCodec, GetSizeReportNonzero) {
   for (const auto& f : report) {
     EXPECT_GT(f.bytes, 0u) << "field " << f.name;
   }
+}
+
+// BCCodec tests (Tasks 17.B, 17.C, 17a). Acceptance: expansion matches
+// PlainCodec for the same selected sets, including the all-doc sentinel
+// and inputs where vnmextract finds bicliques to compress.
+
+static_assert(SetCodec<BCCodec<>>);
+
+std::vector<std::size_t> BCExpandAt(const BCCodec<>& codec, std::size_t slot,
+                                    std::size_t n_doc) {
+  std::vector<std::size_t> out;
+  codec.Expand(slot, n_doc, [&out](std::size_t d) { out.push_back(d); });
+  std::sort(out.begin(), out.end());
+  out.erase(std::unique(out.begin(), out.end()), out.end());
+  return out;
+}
+
+// Compare per-slot Expand of PlainCodec and BCCodec (both deduped + sorted).
+void ExpectPlainBCParity(const std::vector<StoredSet>& sets, std::size_t n_doc) {
+  PlainCodec<> plain;
+  BCCodec<> bc;
+  plain.Build(sets.size(), SetSource(sets), n_doc);
+  bc.Build(sets.size(), SetSource(sets), n_doc);
+
+  ASSERT_EQ(plain.n_slots(), bc.n_slots());
+  for (std::size_t s = 0; s < sets.size(); ++s) {
+    SCOPED_TRACE(testing::Message() << "slot " << s);
+    auto plain_out = ExpandAt(plain, s, n_doc);
+    std::sort(plain_out.begin(), plain_out.end());
+    plain_out.erase(std::unique(plain_out.begin(), plain_out.end()), plain_out.end());
+    EXPECT_EQ(BCExpandAt(bc, s, n_doc), plain_out);
+  }
+}
+
+TEST(PDLBCCodec, ExpandSingletonSet) {
+  ExpectPlainBCParity({{false, {7}}}, /*n_doc=*/10);
+}
+
+TEST(PDLBCCodec, ExpandMultiDocSet) {
+  ExpectPlainBCParity({{false, {0, 2, 4, 9}}}, /*n_doc=*/10);
+}
+
+TEST(PDLBCCodec, ExpandEmptySetEmitsNothing) {
+  std::vector<StoredSet> sets = {{false, {}}};
+  BCCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), /*n_doc=*/10);
+  EXPECT_THAT(BCExpandAt(codec, 0, 10), testing::IsEmpty());
+}
+
+TEST(PDLBCCodec, ExpandAllDocSentinel) {
+  ExpectPlainBCParity({{false, {0, 1}}, {true, {}}, {false, {2}}}, /*n_doc=*/4);
+}
+
+TEST(PDLBCCodec, ExpandLargestLegalSingleDocIsNotSentinel) {
+  ExpectPlainBCParity({{false, {9}}}, /*n_doc=*/10);
+}
+
+// Repeated-pattern fixture so vnmextract has dense subsets to find. The
+// parity check works whether or not bicliques are extracted — Expand
+// must always agree with PlainCodec.
+TEST(PDLBCCodec, ExpandRepeatedPatternsExerciseRules) {
+  std::vector<StoredSet> sets = {
+      {false, {0, 1, 2, 3}},
+      {false, {0, 1, 2, 3}},
+      {false, {0, 1, 2, 3}},
+      {false, {0, 1, 2, 3}},
+      {false, {0, 1, 2, 3}},
+      {false, {0, 1}},
+      {false, {2, 3}},
+      {false, {1, 2}},
+      {false, {0, 3}},
+  };
+  ExpectPlainBCParity(sets, /*n_doc=*/4);
+}
+
+TEST(PDLBCCodec, ExpandMixedFixtureMatchesPlain) {
+  std::vector<StoredSet> sets = {
+      {false, {0}},
+      {false, {1, 2, 3}},
+      {true,  {}},
+      {false, {3}},
+      {false, {0, 1, 2, 3}},
+  };
+  ExpectPlainBCParity(sets, /*n_doc=*/4);
+}
+
+TEST(PDLBCCodec, SerializeLoadRoundTripPreservesExpansions) {
+  std::vector<StoredSet> sets = {
+      {false, {0, 4}},
+      {true,  {}},
+      {false, {2}},
+      {false, {0, 1, 2, 3, 4}},
+  };
+  BCCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), /*n_doc=*/5);
+
+  std::stringstream ss;
+  std::size_t bytes = codec.serialize(ss);
+  EXPECT_GT(bytes, 0u);
+
+  BCCodec<> reloaded;
+  reloaded.load(ss);
+
+  EXPECT_EQ(reloaded.n_slots(), codec.n_slots());
+  EXPECT_EQ(reloaded.n_rules(), codec.n_rules());
+  for (std::size_t s = 0; s < sets.size(); ++s) {
+    SCOPED_TRACE(testing::Message() << "slot " << s);
+    EXPECT_EQ(BCExpandAt(reloaded, s, 5), BCExpandAt(codec, s, 5));
+  }
+}
+
+TEST(PDLBCCodec, GetSizeReportNonzero) {
+  std::vector<StoredSet> sets = {{false, {1, 2, 3}}, {true, {}}};
+  BCCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), /*n_doc=*/5);
+
+  auto report = codec.GetSizeReport();
+  ASSERT_FALSE(report.empty());
 }
 
 }  // namespace
