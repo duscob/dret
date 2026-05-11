@@ -1,0 +1,51 @@
+Code for finding dense subgraphs of the type of the paper in Spire2012 
+"Compression of Web and Social graphs via dense subgraphs":
+
+The code uses boost_1_40_0 (accesible at http://www.boost.org/doc/libs/1_40_0/more/getting_started/unix-variants.html)
+I mainly use it for getting hashes. 
+
+1. First download boost and install it on a directory build it according the information on the same page you download it.
+
+2. Compile and use dense subgraph discovery on dsextract directory
+
+	- Modify the Makefile to set the boost directory
+        - compile: make
+	- executable: vnmextract: contains code to extract dense subgraphs and store them on disk
+        Parameters: graph_bin_format format(1) shingles_size(1) threshold bcsize(separated by ,) output_dir/outfileprefix num_shingles
+	- format 1 is a binary file of the type given in the example
+	- shingle_size is the number of edges considered for hashing (I used 1 for web graph, a higher number could be better for text)
+	- threshold (below this number vnmextract starts getting graph of the next smaller bcsize)
+	- bcsize. Dense subgraph size considered for extraction. On web graphs I used 500,100,50,30,15,6.
+	- output_dir/outfileprefix is the output and file directory (directory must exist)
+	- num_shingles. Number of hashes considered (P) to make a matrix of hashes of P*|V|. I used 4.
+	input: the input graph in binary (built with txtToBin) 
+	output: dense subgraphs for each iteration there is a file with dense subgraph of the complete bipartite graph in text 
+		format. Each line has the left and right set separated by a "-". It also saves a remaining graph each time it
+		changes from one bcsize to the next.
+	
+	- scripts
+        	- txtToBin: takes a graph in txt format (eu-2005-adj.txt), with node: <ordered outlinks separated by spaces>,
+                 nodes without outlinks not included. It generates a binary graph eu-2005-adj.txt.bin
+		- compile: g++ -o txtToBin txtToBin.cpp
+
+3. Test it 
+	- data directory contains a text.txt graph and eu-2005
+
+4. Examples
+
+   Considering an input graph in text format with node: ordered outlinks (without nodes with no outlinks). Nodes starts at 1.
+   example on test.txt and eu-2005-adj.txt:
+
+example 1.	- txtToBin test.txt 13 49
+		- vnmextract test.txt.bin 1 1 2 4 out/test 4
+
+example 2.	- txtToBin eu-2005-adj.txt 790989 19235140
+		- vnmextract eu-2005-adj.txt.bin 1 1 10 500,100,50,30,15,6 out/eu-2005-adj 4
+
+   Dense subgraphs in out/ directory with names test-biclique-it-iternumber
+        remainder at bcsizes are in test-it-iternumber in the case of the test.txt.bin graph
+
+5. Results.
+   - As as described in the paper, we add self-loops ( edges (u,u)) on each adjacency list and then look for dense subgraphs.
+   - The discovery algorithm is based on heuristics.
+

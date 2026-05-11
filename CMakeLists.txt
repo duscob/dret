@@ -95,6 +95,10 @@ include(ConfigRePair)
 set(REPAIR_EXE "\"${${ExternalProjectName}_SOURCE_DIR}/bal/irepair\"")
 target_compile_definitions(dret INTERFACE REPAIR_EXE=${REPAIR_EXE})
 
+include(ConfigDSExtract)
+set(VNMEXTRACT_EXE "\"${${ExternalProjectName}_VNMEXTRACT}\"")
+target_compile_definitions(dret INTERFACE VNMEXTRACT_EXE=${VNMEXTRACT_EXE})
+
 
 # TODO use find_package(gflags) instead find_library(...)
 find_library(GFLAGS_LIB gflags)
