@@ -77,6 +77,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/set_codecs.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/get_docs.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/doc_list_pdl_plain.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/doc_list_pdl_rp.h
 )
 
 add_library(dret INTERFACE)

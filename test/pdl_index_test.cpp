@@ -19,6 +19,7 @@
 
 #include "dret/doc_list_index_brute.h"
 #include "dret/pdl/doc_list_pdl_plain.h"
+#include "dret/pdl/doc_list_pdl_rp.h"
 
 #include "base_test.h"
 
@@ -118,6 +119,69 @@ TEST_F(DocListIdxPDLPlainSmokeTest, MatchesBruteForce) {
   construct(pdl, this->config_);
 
   // Brute force uses its own storage to keep independent caches.
+  sri::GenericStorage brute_storage;
+  BruteIndex brute(std::ref(brute_storage));
+  construct(brute, this->config_);
+
+  for (const auto& [pattern, _] : this->search_data_) {
+    DocListResultVector pdl_result;
+    pdl.Search(pattern, std::ref(pdl_result));
+    pdl_result();
+
+    DocListResultVector brute_result;
+    brute.Search(pattern, std::ref(brute_result));
+    brute_result();
+
+    EXPECT_THAT(pdl_result, testing::ElementsAreArray(brute_result)) << pattern;
+  }
+}
+
+// Task 24 acceptance: same fixture and patterns, but the RPCodec
+// (RePair-compressed slots) variant must produce identical output.
+class DocListIdxPDLRPSmokeTest : public DocListIdxPDLPlainSmokeTest {};
+
+TEST_F(DocListIdxPDLRPSmokeTest, SearchMatchesExpected) {
+  using Index = dret::pdl::DocListIdxPDLRP<ExternalGenericStorage>;
+  Index index(std::ref(storage_));
+  construct(index, this->config_);
+
+  for (const auto& [pattern, docs] : this->search_data_) {
+    DocListResultVector result;
+    index.Search(pattern, std::ref(result));
+    result();
+
+    EXPECT_EQ(result.size(), docs.size()) << pattern;
+    EXPECT_THAT(result, testing::ElementsAreArray(docs)) << pattern;
+  }
+}
+
+TEST_F(DocListIdxPDLRPSmokeTest, SerializeLoadRoundTripPreservesSearch) {
+  using Index = dret::pdl::DocListIdxPDLRP<ExternalGenericStorage>;
+
+  Index original(std::ref(storage_));
+  construct(original, this->config_);
+
+  sri::GenericStorage fresh_storage;
+  Index reloaded(std::ref(fresh_storage));
+  reloaded.load(this->config_);
+
+  for (const auto& [pattern, docs] : this->search_data_) {
+    DocListResultVector result;
+    reloaded.Search(pattern, std::ref(result));
+    result();
+
+    EXPECT_EQ(result.size(), docs.size()) << pattern;
+    EXPECT_THAT(result, testing::ElementsAreArray(docs)) << pattern;
+  }
+}
+
+TEST_F(DocListIdxPDLRPSmokeTest, MatchesBruteForce) {
+  using PDLIndex = dret::pdl::DocListIdxPDLRP<ExternalGenericStorage>;
+  using BruteIndex = dret::DocListIdxBrute<ExternalGenericStorage>;
+
+  PDLIndex pdl(std::ref(storage_));
+  construct(pdl, this->config_);
+
   sri::GenericStorage brute_storage;
   BruteIndex brute(std::ref(brute_storage));
   construct(brute, this->config_);
