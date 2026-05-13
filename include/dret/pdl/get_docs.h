@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <utility>
 
+#include "../config.h"
 #include "../rmq_get_doc_policies.h"
 
 namespace dret::pdl {
@@ -79,5 +80,15 @@ template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TDSLP = DifferentialLightSLP<>>
 using PDLGetDocsDSLP = PDLRawRangePolicy<rmq::GetDocDSLP<TStorage, t_width, TDSLP>>;
+
+// Free-function construct() that forwards to the inner rmq::GetDoc*
+// construct() so PDL indexes can build their raw get-doc cache through
+// the project's normal construction API. DA-backed is a no-op (the DA
+// is already built upstream); SLP / DSLP-backed builds the
+// corresponding LightSLP / DifferentialLightSLP cache entries.
+template <typename TInner>
+void construct(PDLRawRangePolicy<TInner>& t_policy, Config& t_config) {
+  construct(t_policy.inner(), t_config);
+}
 
 }  // namespace dret::pdl

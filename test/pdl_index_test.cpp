@@ -266,4 +266,33 @@ TEST_F(DocListIdxPDLBCSmokeTest, MatchesBruteForce) {
   }
 }
 
+// Task 28 acceptance: construct() must skip cache items that already
+// exist. The first construct() build populates everything; a second
+// construct() into a fresh Index instance against the same Config must
+// reuse the on-disk caches (so cache_file_exists checks short-circuit
+// the build) and still produce correct search output.
+TEST_F(DocListIdxPDLPlainSmokeTest, ConstructIsIdempotent) {
+  using Index = dret::pdl::DocListIdxPDLPlain<ExternalGenericStorage>;
+
+  {
+    Index first(std::ref(storage_));
+    construct(first, this->config_);
+  }
+
+  // The cache files are already on disk under tmp_dir_; the second
+  // construct() should detect them and skip rebuilding. We can't easily
+  // assert "no work happened" without instrumenting the build, but we
+  // can assert that the result is still correct end-to-end.
+  Index second(std::ref(storage_));
+  construct(second, this->config_);
+
+  for (const auto& [pattern, docs] : this->search_data_) {
+    DocListResultVector result;
+    second.Search(pattern, std::ref(result));
+    result();
+
+    EXPECT_THAT(result, testing::ElementsAreArray(docs)) << pattern;
+  }
+}
+
 }  // namespace

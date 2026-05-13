@@ -119,6 +119,7 @@ class DocListIdxPDLRP
   }
 
   const TCountIdx& count_idx() const { return count_idx_; }
+  const TGetDocs& get_docs() const { return get_docs_; }
   uint32_t block_size() const { return block_size_; }
   float storing_factor() const { return storing_factor_; }
   StoragePolicy policy() const { return policy_; }
@@ -252,6 +253,9 @@ void construct(DocListIdxPDLRP<TStorage, TAlphabet, TCountIdx, TGetDocs,
                                 t_index.policy());
     sdsl::store_to_cache(core, key_core, t_config, true);
   }
+
+  auto get_docs = t_index.get_docs();
+  construct(get_docs, t_config);
 
   auto count_idx = t_index.count_idx();
   construct(count_idx, t_config.data_path, t_config);

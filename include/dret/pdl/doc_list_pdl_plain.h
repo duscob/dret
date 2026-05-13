@@ -127,6 +127,7 @@ class DocListIdxPDLPlain
   }
 
   const TCountIdx& count_idx() const { return count_idx_; }
+  const TGetDocs& get_docs() const { return get_docs_; }
   uint32_t block_size() const { return block_size_; }
   float storing_factor() const { return storing_factor_; }
   StoragePolicy policy() const { return policy_; }
@@ -287,6 +288,15 @@ void construct(DocListIdxPDLPlain<TStorage, TAlphabet, TCountIdx, TGetDocs,
                                 t_index.policy());
     sdsl::store_to_cache(core, key_core, t_config, true);
   }
+
+  // Raw get-doc backing cache. DA-backed is a no-op (DA was built
+  // above); SLP / DSLP variants build their own LightSLP / DSLP cache
+  // entries via construct() in rmq_get_doc_policies.h. Copy the
+  // index's get_docs so we don't need a default-constructible
+  // TGetDocs (which would be ill-formed when TStorage is
+  // std::reference_wrapper).
+  auto get_docs = t_index.get_docs();
+  construct(get_docs, t_config);
 
   // Count sub-index — same delegation pattern as GCDA.
   auto count_idx = t_index.count_idx();
