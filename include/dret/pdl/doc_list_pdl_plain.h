@@ -87,6 +87,22 @@ class DocListIdxPDLPlain
         storing_factor_(t_storing_factor),
         policy_(t_policy) {}
 
+  // Externally-supplied count_idx variant, mirroring the GCDA pattern at
+  // doc_list_sampled_tree_gcda.h:54. Useful when the count sub-index is
+  // shared across multiple indexes pointing at the same storage.
+  DocListIdxPDLPlain(const TStorage& t_storage,
+                     const TCountIdx& t_count_idx,
+                     uint32_t t_block_size = 512,
+                     float t_storing_factor = 4.0f,
+                     StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
+      : SchemeBase(TMergeSets()),
+        StorageBase(t_storage),
+        count_idx_(t_count_idx),
+        get_docs_(typename TGetDocs::Inner{t_storage}),
+        block_size_(t_block_size),
+        storing_factor_(t_storing_factor),
+        policy_(t_policy) {}
+
   size_type serialize(std::ostream& out,
                       sdsl::structure_tree_node* v,
                       const std::string& name) const override {
