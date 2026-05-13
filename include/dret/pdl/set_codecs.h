@@ -657,4 +657,29 @@ class BCCodec {
 static_assert(SetCodec<BCCodec<>>,
               "BCCodec<> must satisfy the SetCodec concept");
 
+// collectSizes overloads — declared before any class-template that calls
+// them unqualified (per the two-phase-lookup discipline established for
+// grammar::CompactBPSLP etc. in include/dret/compact_bp_slp.h). Each
+// delegates to the codec's own GetSizeReport() and prepends the prefix.
+template <typename TObjContainer, typename TPosContainer>
+void collectSizes(SizeReport& out,
+                  const PlainCodec<TObjContainer, TPosContainer>& codec,
+                  const std::string& prefix = "") {
+  for (const auto& f : codec.GetSizeReport()) append(out, prefix + f.name, f.bytes);
+}
+
+template <typename TSLP, typename TChunks>
+void collectSizes(SizeReport& out,
+                  const RPCodec<TSLP, TChunks>& codec,
+                  const std::string& prefix = "") {
+  for (const auto& f : codec.GetSizeReport()) append(out, prefix + f.name, f.bytes);
+}
+
+template <typename TBitvector, typename TIntVector>
+void collectSizes(SizeReport& out,
+                  const BCCodec<TBitvector, TIntVector>& codec,
+                  const std::string& prefix = "") {
+  for (const auto& f : codec.GetSizeReport()) append(out, prefix + f.name, f.bytes);
+}
+
 }  // namespace dret::pdl

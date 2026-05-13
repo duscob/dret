@@ -51,6 +51,8 @@ struct NullCodec {
     return 0;
   }
   void load(std::istream& /*in*/) {}
+
+  SizeReport GetSizeReport() const { return {}; }
 };
 
 template <typename TBitvector = sdsl::sd_vector<>,
@@ -200,6 +202,8 @@ class PDLTreeCore {
     append(r, "node_ends", sdsl::size_in_bytes(node_ends_));
     append(r, "first_child", sdsl::size_in_bytes(first_child_));
     append(r, "next_sibling", sdsl::size_in_bytes(next_sibling_));
+    auto stored = stored_sets_.GetSizeReport();
+    for (const auto& f : stored) append(r, "stored_sets_" + f.name, f.bytes);
     return r;
   }
 
@@ -237,5 +241,14 @@ class PDLTreeCore {
   float storing_factor_ = 4.0f;
   StoragePolicy policy_ = StoragePolicy::OccurrenceWeighted;
 };
+
+template <typename TBitvector, typename TBvRank, typename TBvSelect,
+          typename TIntVector, typename TStoredSetCodec>
+void collectSizes(SizeReport& out,
+                  const PDLTreeCore<TBitvector, TBvRank, TBvSelect,
+                                    TIntVector, TStoredSetCodec>& core,
+                  const std::string& prefix = "") {
+  for (const auto& f : core.GetSizeReport()) append(out, prefix + f.name, f.bytes);
+}
 
 }  // namespace dret::pdl
