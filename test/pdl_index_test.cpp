@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "dret/doc_list_index_brute.h"
+#include "dret/pdl/doc_list_pdl_bc.h"
 #include "dret/pdl/doc_list_pdl_plain.h"
 #include "dret/pdl/doc_list_pdl_rp.h"
 
@@ -177,6 +178,72 @@ TEST_F(DocListIdxPDLRPSmokeTest, SerializeLoadRoundTripPreservesSearch) {
 
 TEST_F(DocListIdxPDLRPSmokeTest, MatchesBruteForce) {
   using PDLIndex = dret::pdl::DocListIdxPDLRP<ExternalGenericStorage>;
+  using BruteIndex = dret::DocListIdxBrute<ExternalGenericStorage>;
+
+  PDLIndex pdl(std::ref(storage_));
+  construct(pdl, this->config_);
+
+  sri::GenericStorage brute_storage;
+  BruteIndex brute(std::ref(brute_storage));
+  construct(brute, this->config_);
+
+  for (const auto& [pattern, _] : this->search_data_) {
+    DocListResultVector pdl_result;
+    pdl.Search(pattern, std::ref(pdl_result));
+    pdl_result();
+
+    DocListResultVector brute_result;
+    brute.Search(pattern, std::ref(brute_result));
+    brute_result();
+
+    EXPECT_THAT(pdl_result, testing::ElementsAreArray(brute_result)) << pattern;
+  }
+}
+
+// Task 25 acceptance: same fixture and patterns, but the BCCodec
+// (biClique-coded slots via vnmextract) variant must produce identical
+// output. On a fixture this small vnmextract typically finds no
+// bicliques, so the codec falls back to verbatim-doc emission — which
+// still exercises the full Build → serialize → load → Expand path.
+class DocListIdxPDLBCSmokeTest : public DocListIdxPDLPlainSmokeTest {};
+
+TEST_F(DocListIdxPDLBCSmokeTest, SearchMatchesExpected) {
+  using Index = dret::pdl::DocListIdxPDLBC<ExternalGenericStorage>;
+  Index index(std::ref(storage_));
+  construct(index, this->config_);
+
+  for (const auto& [pattern, docs] : this->search_data_) {
+    DocListResultVector result;
+    index.Search(pattern, std::ref(result));
+    result();
+
+    EXPECT_EQ(result.size(), docs.size()) << pattern;
+    EXPECT_THAT(result, testing::ElementsAreArray(docs)) << pattern;
+  }
+}
+
+TEST_F(DocListIdxPDLBCSmokeTest, SerializeLoadRoundTripPreservesSearch) {
+  using Index = dret::pdl::DocListIdxPDLBC<ExternalGenericStorage>;
+
+  Index original(std::ref(storage_));
+  construct(original, this->config_);
+
+  sri::GenericStorage fresh_storage;
+  Index reloaded(std::ref(fresh_storage));
+  reloaded.load(this->config_);
+
+  for (const auto& [pattern, docs] : this->search_data_) {
+    DocListResultVector result;
+    reloaded.Search(pattern, std::ref(result));
+    result();
+
+    EXPECT_EQ(result.size(), docs.size()) << pattern;
+    EXPECT_THAT(result, testing::ElementsAreArray(docs)) << pattern;
+  }
+}
+
+TEST_F(DocListIdxPDLBCSmokeTest, MatchesBruteForce) {
+  using PDLIndex = dret::pdl::DocListIdxPDLBC<ExternalGenericStorage>;
   using BruteIndex = dret::DocListIdxBrute<ExternalGenericStorage>;
 
   PDLIndex pdl(std::ref(storage_));
