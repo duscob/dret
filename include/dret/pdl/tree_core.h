@@ -31,8 +31,18 @@
 namespace dret::pdl {
 
 // Placeholder codec satisfying the minimum API used by PDLTreeCore. Replaced
-// by Plain / RP / BC codecs in Tasks 15–17.
+// by Plain / RP / BC codecs (set_codecs.h, Tasks 15–17). Includes a no-op
+// Expand so PDLTreeCore::getDocSet still instantiates against this default
+// codec — querying then yields no documents per slot, which matches the
+// "skeleton, no real data" semantics.
 struct NullCodec {
+  template <typename TGetSetAt>
+  void Build(std::size_t /*t_n_slots*/, TGetSetAt&& /*t_get_set_at*/,
+             std::size_t /*t_n_doc*/) {}
+
+  template <typename TReport>
+  void Expand(std::size_t /*t_slot*/, std::size_t /*t_n_doc*/, TReport&& /*t_report*/) const {}
+
   std::size_t serialize(std::ostream& out,
                         sdsl::structure_tree_node* v = nullptr,
                         const std::string& name = "") const {
@@ -51,6 +61,7 @@ template <typename TBitvector = sdsl::sd_vector<>,
 class PDLTreeCore {
  public:
   using TDocId = std::size_t;
+  using size_type = std::size_t;
 
   PDLTreeCore() = default;
 
@@ -108,9 +119,12 @@ class PDLTreeCore {
     }
   }
 
-  std::vector<TDocId> getDocSet(std::size_t /*t_codec_slot*/) const {
-    // Real expansion lands once a non-NullCodec is wired in (Tasks 15-17).
-    return {};
+  std::vector<TDocId> getDocSet(std::size_t t_codec_slot) const {
+    std::vector<TDocId> out;
+    out.reserve(n_doc_);
+    stored_sets_.Expand(t_codec_slot, n_doc_,
+                        [&out](std::size_t d) { out.push_back(d); });
+    return out;
   }
 
   // Internal — populate the compact representation in one shot. Used by

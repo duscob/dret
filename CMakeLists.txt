@@ -76,6 +76,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/build_pdl_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/set_codecs.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/get_docs.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/doc_list_pdl_plain.h
 )
 
 add_library(dret INTERFACE)
@@ -127,6 +128,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(pdl_template_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_template_test.cpp)
     add_dependencies(pdl_template_test dsextract)
     cxx_test_with_flags_and_args(pdl_get_docs_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_get_docs_test.cpp)
+    cxx_test_with_flags_and_args(pdl_index_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_index_test.cpp)
 endif ()
 
 

@@ -17,6 +17,7 @@
 #include <sdsl/bit_vectors.hpp>
 #include <sdsl/util.hpp>
 
+#include "set_codecs.h"
 #include "storage_policy.h"
 #include "tree_builder.h"
 #include "tree_core.h"
@@ -50,12 +51,17 @@ void BuildPDLTreeCoreFromBuilder(
   TIntVector first_child(t_n_nodes, t_n_nodes);
   TIntVector next_sibling(t_n_nodes, t_n_nodes);
   sdsl::bit_vector selected_bv(t_n_nodes, 0);
+  // Index nodes by id so we can iterate them in codec-slot order (the
+  // rank-1 over selected_marker, which equals ascending id) when
+  // building the codec.
+  std::vector<const BuilderNode*> nodes_by_id(t_n_nodes, nullptr);
 
   std::vector<const BuilderNode*> stack{t_root};
   while (!stack.empty()) {
     const auto* n = stack.back();
     stack.pop_back();
     const std::size_t id = n->node_id;
+    nodes_by_id[id] = n;
     node_starts[id] = n->sp;
     node_ends[id] = n->ep;
     first_child[id] = n->first_child ? n->first_child->node_id : t_n_nodes;
@@ -73,9 +79,26 @@ void BuildPDLTreeCoreFromBuilder(
 
   TBitvector selected_marker(selected_bv);
 
+  // Collect selected nodes' StoredSets in codec-slot order (ascending
+  // node id, since rank-1 over selected_marker preserves that order).
+  std::vector<StoredSet> selected_sets;
+  for (std::size_t id = 0; id < t_n_nodes; ++id) {
+    const auto* n = nodes_by_id[id];
+    if (!n || !n->selected) continue;
+    StoredSet s;
+    s.contains_all = n->contains_all;
+    if (!s.contains_all) s.docs = n->docs;
+    selected_sets.push_back(std::move(s));
+  }
+
+  TStoredSetCodec codec;
+  codec.Build(selected_sets.size(),
+              [&selected_sets](std::size_t i) { return selected_sets[i]; },
+              t_n_doc);
+
   t_core.Assemble(std::move(node_starts), std::move(node_ends),
                   std::move(first_child), std::move(next_sibling),
-                  std::move(selected_marker), TStoredSetCodec{},
+                  std::move(selected_marker), std::move(codec),
                   t_n_doc, t_block_size, t_storing_factor, t_policy);
 }
 
