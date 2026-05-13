@@ -45,6 +45,17 @@ DEFINE_string(bare_slp_variants,
               "default,raw,dv,vv",
               "Bare-SLP container variants for SLP-NS family: comma-separated default,raw,dv,vv.");
 
+DEFINE_string(pdl_variants,
+              "",
+              "PDL stored-set codec variants: comma-separated plain,rp,bc. Empty disables PDL.");
+DEFINE_string(pdl_get_doc_variants,
+              "da",
+              "PDL raw-range get-doc variants: comma-separated da,slp,dslp.");
+DEFINE_string(pdl_storage_policy,
+              "occurrence_weighted",
+              "PDL storage policy: comma-separated "
+              "occurrence_weighted,all_internal,leaves_only.");
+
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
 DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");
 DEFINE_double(min_time, 0, "Minimum time (seconds) for the locate query micro benchmark.");
@@ -157,6 +168,89 @@ const char* BareSLPVariantName(Factory<>::BareSLPVariant variant) {
       return "DV";
     case Factory<>::BareSLPVariant::VV:
       return "VV";
+  }
+  return "UNKNOWN";
+}
+
+std::vector<Factory<>::PDLVariant> ParsePDLVariants(const std::string& value) {
+  std::vector<Factory<>::PDLVariant> variants;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "plain") {
+      variants.push_back(Factory<>::PDLVariant::Plain);
+    } else if (item == "rp") {
+      variants.push_back(Factory<>::PDLVariant::RP);
+    } else if (item == "bc") {
+      variants.push_back(Factory<>::PDLVariant::BC);
+    } else if (!item.empty()) {
+      throw std::invalid_argument("Unknown --pdl_variants item: " + item);
+    }
+  }
+  return variants;
+}
+
+const char* PDLVariantName(Factory<>::PDLVariant variant) {
+  switch (variant) {
+    case Factory<>::PDLVariant::Plain:
+      return "Plain";
+    case Factory<>::PDLVariant::RP:
+      return "RP";
+    case Factory<>::PDLVariant::BC:
+      return "BC";
+  }
+  return "UNKNOWN";
+}
+
+// PDL accepts only the DA/SLP/DSLP get-doc backings (no SLP_NS).
+std::vector<Factory<>::GetDocEnum> ParsePDLGetDocVariants(const std::string& value) {
+  std::vector<Factory<>::GetDocEnum> variants;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "da") {
+      variants.push_back(Factory<>::GetDocEnum::DA);
+    } else if (item == "slp") {
+      variants.push_back(Factory<>::GetDocEnum::SLP);
+    } else if (item == "dslp") {
+      variants.push_back(Factory<>::GetDocEnum::DSLP);
+    } else if (!item.empty()) {
+      throw std::invalid_argument("Unknown --pdl_get_doc_variants item: " + item);
+    }
+  }
+  if (variants.empty())
+    variants.push_back(Factory<>::GetDocEnum::DA);
+  return variants;
+}
+
+std::vector<Factory<>::PDLStoragePolicy> ParsePDLStoragePolicies(const std::string& value) {
+  std::vector<Factory<>::PDLStoragePolicy> policies;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "occurrence_weighted") {
+      policies.push_back(Factory<>::PDLStoragePolicy::OccurrenceWeighted);
+    } else if (item == "all_internal") {
+      policies.push_back(Factory<>::PDLStoragePolicy::StoreAllInternal);
+    } else if (item == "leaves_only") {
+      policies.push_back(Factory<>::PDLStoragePolicy::LeavesOnly);
+    } else if (!item.empty()) {
+      throw std::invalid_argument("Unknown --pdl_storage_policy item: " + item);
+    }
+  }
+  if (policies.empty())
+    policies.push_back(Factory<>::PDLStoragePolicy::OccurrenceWeighted);
+  return policies;
+}
+
+const char* PDLStoragePolicyName(Factory<>::PDLStoragePolicy policy) {
+  switch (policy) {
+    case Factory<>::PDLStoragePolicy::OccurrenceWeighted:
+      return "OccurrenceWeighted";
+    case Factory<>::PDLStoragePolicy::StoreAllInternal:
+      return "StoreAllInternal";
+    case Factory<>::PDLStoragePolicy::LeavesOnly:
+      return "LeavesOnly";
   }
   return "UNKNOWN";
 }
@@ -336,10 +430,16 @@ int main(int argc, char* argv[]) {
   std::vector<Factory<>::GetDocEnum> rmq_get_doc_variants;
   std::vector<Factory<>::GCDASLPVariant> gcda_slp_variants;
   std::vector<Factory<>::BareSLPVariant> bare_slp_variants;
+  std::vector<Factory<>::PDLVariant> pdl_variants;
+  std::vector<Factory<>::GetDocEnum> pdl_get_doc_variants;
+  std::vector<Factory<>::PDLStoragePolicy> pdl_storage_policies;
   try {
     rmq_get_doc_variants = ParseGetDocVariants(FLAGS_rmq_get_doc_variants);
     gcda_slp_variants = ParseGCDASLPVariants(FLAGS_gcda_slp_variants);
     bare_slp_variants = ParseBareSLPVariants(FLAGS_bare_slp_variants);
+    pdl_variants = ParsePDLVariants(FLAGS_pdl_variants);
+    pdl_get_doc_variants = ParsePDLGetDocVariants(FLAGS_pdl_get_doc_variants);
+    pdl_storage_policies = ParsePDLStoragePolicies(FLAGS_pdl_storage_policy);
   } catch (const std::invalid_argument& e) {
     std::cerr << e.what() << std::endl;
     return 1;
@@ -477,6 +577,30 @@ int main(int argc, char* argv[]) {
       Factory<>::Config dgcda_vv_cfg{
           Factory<>::IndexEnum::DGCDA_VV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
       idx_configs.push_back({dgcda_vv_name, dgcda_vv_cfg, false});
+
+      // PDL: codec variant × get-doc backing × storage policy at the
+      // current (bs, sf). Only registered when --pdl_variants is set.
+      for (const auto pdl_v : pdl_variants) {
+        for (const auto pdl_gd : pdl_get_doc_variants) {
+          for (const auto pdl_sp : pdl_storage_policies) {
+            std::string name = std::string("DocListPDL-") + PDLVariantName(pdl_v) +
+                               "-" + GetDocName(pdl_gd) +
+                               "-" + PDLStoragePolicyName(pdl_sp) +
+                               "-bs" + std::to_string(bs) +
+                               "-sf" + std::to_string(sf);
+            Factory<>::Config cfg{Factory<>::IndexEnum::PDL,
+                                  0,
+                                  static_cast<uint32_t>(bs),
+                                  static_cast<float>(sf),
+                                  pdl_gd,
+                                  Factory<>::GCDASLPVariant::Default,
+                                  Factory<>::BareSLPVariant::Default,
+                                  pdl_v,
+                                  pdl_sp};
+            idx_configs.push_back({name, cfg, false});
+          }
+        }
+      }
 
       for (const auto get_doc : rmq_get_doc_variants) {
         if (get_doc != Factory<>::GetDocEnum::SLP && get_doc != Factory<>::GetDocEnum::DSLP)
