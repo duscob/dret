@@ -139,6 +139,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(pdl_tree_cover_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_tree_cover_test.cpp)
     cxx_test_with_flags_and_args(pdl_template_instantiation_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_template_instantiation_test.cpp)
     add_dependencies(pdl_template_instantiation_test dsextract)
+    cxx_test_with_flags_and_args(pdl_get_docs_policy_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_get_docs_policy_test.cpp)
 endif ()
 
 
