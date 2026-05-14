@@ -134,6 +134,8 @@ if (dret_build_tests)
     add_dependencies(pdl_index_test dsextract)
     cxx_test_with_flags_and_args(pdl_construct_load_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_construct_load_test.cpp)
     add_dependencies(pdl_construct_load_test dsextract)
+    cxx_test_with_flags_and_args(pdl_search_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_search_test.cpp)
+    add_dependencies(pdl_search_test dsextract)
 endif ()
 
 
