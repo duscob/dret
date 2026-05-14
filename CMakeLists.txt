@@ -142,6 +142,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(pdl_get_docs_policy_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_get_docs_policy_test.cpp)
     cxx_test_with_flags_and_args(pdl_sample_dataset_parity_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_sample_dataset_parity_test.cpp)
     add_dependencies(pdl_sample_dataset_parity_test dsextract)
+    cxx_test_with_flags_and_args(pdl_storage_policy_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_storage_policy_test.cpp)
 endif ()
 
 
