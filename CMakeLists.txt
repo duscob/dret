@@ -144,6 +144,7 @@ if (dret_build_tests)
     add_dependencies(pdl_sample_dataset_parity_test dsextract)
     cxx_test_with_flags_and_args(pdl_storage_policy_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_storage_policy_test.cpp)
     cxx_test_with_flags_and_args(pdl_cache_collision_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_cache_collision_test.cpp)
+    cxx_test_with_flags_and_args(pdl_header_inclusion_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_header_inclusion_test.cpp)
 endif ()
 
 
