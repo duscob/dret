@@ -340,11 +340,13 @@ class Factory {
     sdsl::int_vector_buffer<t_width> buf(sdsl::cache_file_name(sdsl::key_bwt_trait<t_width>::KEY_BWT, config_));
     seq_size_ = buf.size();
 
-    r_index_ = std::make_shared<sri::RIndex<ExternalGenericStorage>>(std::ref(storage_));
-    r_index_->load(config_);
-
-    sr_index_ = std::make_shared<sri::SrIndexValidArea<ExternalGenericStorage>>(std::ref(storage_), 8);
-    sr_index_->load(config_);
+    // r_index_ / sr_index_ are NOT loaded eagerly: they back only the
+    // BRUTE_R_INDEX / BRUTE_SR_INDEX paths in MakeInner and require
+    // the full sr-index sample / mark cache files (typed
+    // bwt_run_first_text_pos_<HASH> etc.). Loading them in the ctor
+    // would force every Factory user — including PDL-only or
+    // GCDA-only benchmark runs that never touch the r-index — to
+    // pre-build those artifacts. Deferred to rIndex() / srIndex().
 
     load(doc_endings_);
     load(doc_endings_rank_, [this]() {
@@ -352,6 +354,28 @@ class Factory {
     });
     n_doc_ = doc_endings_rank_.item(doc_endings_.item.size());
   }
+
+ private:
+  // Lazy accessors for the brute baselines' shared r-index / sr-index
+  // instances. First call constructs + loads from the cache; later
+  // calls return the cached shared_ptr.
+  sri::RIndex<ExternalGenericStorage>& rIndex() {
+    if (!r_index_) {
+      r_index_ = std::make_shared<sri::RIndex<ExternalGenericStorage>>(std::ref(storage_));
+      r_index_->load(config_);
+    }
+    return *r_index_;
+  }
+
+  sri::SrIndexValidArea<ExternalGenericStorage>& srIndex() {
+    if (!sr_index_) {
+      sr_index_ = std::make_shared<sri::SrIndexValidArea<ExternalGenericStorage>>(std::ref(storage_), 8);
+      sr_index_->load(config_);
+    }
+    return *sr_index_;
+  }
+
+ public:
 
   std::pair<dret::DocListIndex<>*, std::size_t> Make(const Config& t_config) {
     return MakeInner(t_config);
@@ -916,6 +940,7 @@ class Factory {
 
     switch (t_config.index_t) {
       case IndexEnum::BRUTE_R_INDEX: {
+        rIndex();  // trigger lazy load of r_index_ before capturing this.
         auto locate = [this](const auto& tt_pattern) {
           return this->r_index_->Locate(tt_pattern);
         };
@@ -926,6 +951,7 @@ class Factory {
       }
 
       case IndexEnum::BRUTE_SR_INDEX: {
+        srIndex();  // trigger lazy load of sr_index_ before capturing this.
         auto locate = [this](const auto& tt_pattern) {
           return this->sr_index_->Locate(tt_pattern);
         };
