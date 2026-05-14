@@ -160,6 +160,7 @@ if (dret_build_tools)
     cxx_executable_with_flags(build_items_sada "" "${tool_LIBS}" tool/build_items_sada.cpp tool/definitions.h)
     cxx_executable_with_flags(build_items_ilcp "" "${tool_LIBS}" tool/build_items_ilcp.cpp tool/definitions.h)
     cxx_executable_with_flags(build_items_gcda "" "${tool_LIBS}" tool/build_items_gcda.cpp tool/definitions.h)
+    cxx_executable_with_flags(dump_pdl_doclists "" "${tool_LIBS}" tool/dump_pdl_doclists.cpp)
     #    cxx_executable_with_flags(build_dslp "" "${tool_LIBS}" tool/build_dslp.cpp)
 endif ()
 
