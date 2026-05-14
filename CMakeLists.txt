@@ -137,6 +137,8 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(pdl_search_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_search_test.cpp)
     add_dependencies(pdl_search_test dsextract)
     cxx_test_with_flags_and_args(pdl_tree_cover_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_tree_cover_test.cpp)
+    cxx_test_with_flags_and_args(pdl_template_instantiation_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_template_instantiation_test.cpp)
+    add_dependencies(pdl_template_instantiation_test dsextract)
 endif ()
 
 
