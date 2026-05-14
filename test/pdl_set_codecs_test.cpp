@@ -423,4 +423,170 @@ TEST(PDLBCCodec, GetSizeReportNonzero) {
   ASSERT_FALSE(report.empty());
 }
 
+// Task 36 additions — fill the empty/repeated/large gaps and pin the
+// "expand never reports sentinel n_doc" invariant for every codec.
+
+// --- expansion invariants helper ---
+//
+// Calls Expand(slot) directly (no sort/dedup) so we observe the raw
+// stream the codec produces, then asserts every emitted value is
+// strictly less than n_doc. This is the load-bearing acceptance
+// criterion of Task 36: the all-doc sentinel must be expanded into
+// 0..n_doc-1, never leaked verbatim.
+template <typename TCodec>
+void ExpectNoSentinelEverEmitted(const TCodec& codec, std::size_t n_slots,
+                                 std::size_t n_doc) {
+  for (std::size_t s = 0; s < n_slots; ++s) {
+    SCOPED_TRACE(testing::Message() << "slot " << s);
+    codec.Expand(s, n_doc, [n_doc](std::size_t d) {
+      EXPECT_LT(d, n_doc);
+    });
+  }
+}
+
+// --- repeated-set fixture for Plain (parity-style smoke for the
+// pattern that already has explicit RP/BC equivalents) ---
+TEST(PDLPlainCodec, ExpandRepeatedSetsAreIndependent) {
+  std::vector<StoredSet> sets = {
+      {false, {0, 1, 2, 3}},
+      {false, {0, 1, 2, 3}},
+      {false, {0, 1, 2, 3}},
+  };
+  PlainCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), /*n_doc=*/4);
+
+  for (std::size_t s = 0; s < sets.size(); ++s) {
+    SCOPED_TRACE(testing::Message() << "slot " << s);
+    EXPECT_THAT(ExpandAt(codec, s, 4), testing::ElementsAre(0u, 1u, 2u, 3u));
+  }
+}
+
+// --- empty-slot test for RP (gap; PlainCodec / BCCodec already have
+// this). RePair upstream cannot encode a fully empty input stream, so
+// the empty slot is exercised within a mixed fixture (one empty + one
+// non-empty slot). The non-empty slot gives RePair material to build a
+// minimal grammar; the empty slot's Expand must still emit nothing.
+TEST(PDLRPCodec, ExpandEmptySlotInMixedFixtureEmitsNothing) {
+  std::vector<StoredSet> sets = {
+      {false, {}},          // slot 0: empty
+      {false, {2, 5, 7}},   // slot 1: non-empty so RePair has input
+  };
+  RPCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), /*n_doc=*/10);
+
+  EXPECT_THAT(RPExpandAt(codec, 0, 10), testing::IsEmpty());
+  EXPECT_THAT(RPExpandAt(codec, 1, 10), testing::ElementsAre(2u, 5u, 7u));
+}
+
+// --- large-set expansion across all three codecs ---
+TEST(PDLPlainCodec, ExpandLargeSet) {
+  constexpr std::size_t kNDoc = 64;
+  std::vector<std::size_t> docs;
+  for (std::size_t i = 0; i < kNDoc; ++i) docs.push_back(i);
+  std::vector<StoredSet> sets = {{false, docs}};
+  PlainCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), kNDoc);
+
+  auto out = ExpandAt(codec, 0, kNDoc);
+  ASSERT_EQ(out.size(), kNDoc);
+  for (std::size_t i = 0; i < kNDoc; ++i) EXPECT_EQ(out[i], i);
+  ExpectNoSentinelEverEmitted(codec, sets.size(), kNDoc);
+}
+
+TEST(PDLRPCodec, ExpandLargeSet) {
+  constexpr std::size_t kNDoc = 64;
+  std::vector<std::size_t> docs;
+  for (std::size_t i = 0; i < kNDoc; ++i) docs.push_back(i);
+  ExpectPlainRPParity({{false, docs}}, kNDoc);
+
+  RPCodec<> rp;
+  std::vector<StoredSet> sets = {{false, docs}};
+  rp.Build(sets.size(), SetSource(sets), kNDoc);
+  ExpectNoSentinelEverEmitted(rp, sets.size(), kNDoc);
+}
+
+TEST(PDLBCCodec, ExpandLargeSet) {
+  constexpr std::size_t kNDoc = 64;
+  std::vector<std::size_t> docs;
+  for (std::size_t i = 0; i < kNDoc; ++i) docs.push_back(i);
+  ExpectPlainBCParity({{false, docs}}, kNDoc);
+
+  BCCodec<> bc;
+  std::vector<StoredSet> sets = {{false, docs}};
+  bc.Build(sets.size(), SetSource(sets), kNDoc);
+  ExpectNoSentinelEverEmitted(bc, sets.size(), kNDoc);
+}
+
+// --- "no sentinel emitted" across the all-doc-sentinel fixtures ---
+TEST(PDLPlainCodec, AllDocSentinelExpandsBelowNDoc) {
+  std::vector<StoredSet> sets = {{true, {}}, {false, {0, 1}}, {true, {}}};
+  PlainCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), /*n_doc=*/8);
+  ExpectNoSentinelEverEmitted(codec, sets.size(), 8);
+}
+
+TEST(PDLRPCodec, AllDocSentinelExpandsBelowNDoc) {
+  std::vector<StoredSet> sets = {{true, {}}, {false, {0, 1}}, {true, {}}};
+  RPCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), /*n_doc=*/8);
+  ExpectNoSentinelEverEmitted(codec, sets.size(), 8);
+}
+
+TEST(PDLBCCodec, AllDocSentinelExpandsBelowNDoc) {
+  std::vector<StoredSet> sets = {{true, {}}, {false, {0, 1}}, {true, {}}};
+  BCCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), /*n_doc=*/8);
+  ExpectNoSentinelEverEmitted(codec, sets.size(), 8);
+}
+
+// --- BC-specific: dictionary (rules), codewords (blocks), borders
+// must populate when vnmextract finds bicliques, and round-trip
+// cleanly through serialize/load.
+//
+// 12 slots that all share the same 8-element doc set is dense enough
+// for vnmextract to extract at least one biclique under the codec's
+// configured (bcsizes=10,5,2) — n_rules > 0 is therefore expected. If
+// it ever ceases to hold (e.g., new vnmextract version), the test
+// still validates the round-trip; only the >0 guard becomes a soft
+// signal.
+TEST(PDLBCCodec, RulesAndBlocksRoundTripWhenBicliquesExtracted) {
+  constexpr std::size_t kNDoc = 16;
+  std::vector<StoredSet> sets;
+  for (std::size_t i = 0; i < 12; ++i) {
+    sets.push_back({false, {0, 1, 2, 3, 4, 5, 6, 7}});
+  }
+  BCCodec<> codec;
+  codec.Build(sets.size(), SetSource(sets), kNDoc);
+
+  EXPECT_GT(codec.n_rules(), 0u)
+      << "fixture intended to make vnmextract emit at least one biclique";
+
+  std::stringstream ss;
+  std::size_t bytes = codec.serialize(ss);
+  EXPECT_GT(bytes, 0u);
+
+  BCCodec<> reloaded;
+  reloaded.load(ss);
+
+  EXPECT_EQ(reloaded.n_rules(), codec.n_rules());
+  EXPECT_EQ(reloaded.n_slots(), codec.n_slots());
+
+  // Per-slot expansion must round-trip; size-report must remain
+  // non-empty after load (so dictionary/codeword/border vectors made
+  // it through serialize).
+  for (std::size_t s = 0; s < sets.size(); ++s) {
+    SCOPED_TRACE(testing::Message() << "slot " << s);
+    EXPECT_EQ(BCExpandAt(reloaded, s, kNDoc), BCExpandAt(codec, s, kNDoc));
+  }
+  ExpectNoSentinelEverEmitted(reloaded, sets.size(), kNDoc);
+
+  auto report_after = reloaded.GetSizeReport();
+  for (const auto& f : report_after) {
+    if (f.name == "blocks" || f.name == "block_borders" ||
+        f.name == "rules" || f.name == "rule_borders") {
+      EXPECT_GT(f.bytes, 0u) << "field " << f.name;
+    }
+  }
+}
+
 }  // namespace
