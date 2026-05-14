@@ -22,6 +22,9 @@
 #include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_idx_slp.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
+#include "dret/pdl/doc_list_pdl_bc.h"
+#include "dret/pdl/doc_list_pdl_plain.h"
+#include "dret/pdl/doc_list_pdl_rp.h"
 
 #include "base_test.h"
 
@@ -341,7 +344,10 @@ using DocListIndexConstructTypes = ::testing::Types<
     RMQCilcpSLPNSVVIndex<dret::GenericStorage>,
     RMQSadaDSLPIndex<dret::GenericStorage>,
     RMQIlcpDSLPIndex<dret::GenericStorage>,
-    RMQCilcpDSLPIndex<dret::GenericStorage>>;
+    RMQCilcpDSLPIndex<dret::GenericStorage>,
+    dret::pdl::DocListIdxPDLPlain<dret::GenericStorage>,
+    dret::pdl::DocListIdxPDLRP<dret::GenericStorage>,
+    dret::pdl::DocListIdxPDLBC<dret::GenericStorage>>;
 
 TYPED_TEST_SUITE(DocListIndexConstructTypedTests, DocListIndexConstructTypes);
 
@@ -455,7 +461,10 @@ using DocListIndexSearchTypes = ::testing::Types<
     RMQCilcpSLPNSVVIndex<ExternalGenericStorage>,
     RMQSadaDSLPIndex<ExternalGenericStorage>,
     RMQIlcpDSLPIndex<ExternalGenericStorage>,
-    RMQCilcpDSLPIndex<ExternalGenericStorage>>;
+    RMQCilcpDSLPIndex<ExternalGenericStorage>,
+    dret::pdl::DocListIdxPDLPlain<ExternalGenericStorage>,
+    dret::pdl::DocListIdxPDLRP<ExternalGenericStorage>,
+    dret::pdl::DocListIdxPDLBC<ExternalGenericStorage>>;
 
 TYPED_TEST_SUITE(DocListIndexSearchTypedTests, DocListIndexSearchTypes);
 
