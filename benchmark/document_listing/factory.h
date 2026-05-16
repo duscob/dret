@@ -28,6 +28,11 @@
 #include "dret/doc_list_index_rmq.h"
 #include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
+#include "dret/pdl/doc_list_pdl_bc.h"
+#include "dret/pdl/doc_list_pdl_plain.h"
+#include "dret/pdl/doc_list_pdl_rp.h"
+#include "dret/pdl/get_docs.h"
+#include "dret/pdl/storage_policy.h"
 
 
 using ExternalGenericStorage = std::reference_wrapper<sri::GenericStorage>;
@@ -49,6 +54,26 @@ class Factory {
     ILCP,       // RMinQ on backward-ILCP runs
     CILCP,      // RMinQ on doc-aware compressed backward-ILCP runs
     SLP_NS,     // Phase C: dret::DocListIdxSLP — non-sampled grammar::SLP<>
+    PDL,        // Precomputed Document Listing — variant axis selects Plain/RP/BC
+  };
+
+  // PDL stored-set codec axis. The class template differs per value
+  // (DocListIdxPDLPlain / DocListIdxPDLRP / DocListIdxPDLBC), so MakeIndex
+  // dispatches at compile time on this enum.
+  enum class PDLVariant {
+    Plain,
+    RP,
+    BC,
+  };
+
+  // PDL tree-construction storage policy. Affects which nodes carry a
+  // precomputed doc set but does NOT change the index's template type —
+  // it's threaded into the index constructor as a runtime argument and
+  // baked into the cache-key prefix.
+  enum class PDLStoragePolicy {
+    OccurrenceWeighted,
+    StoreAllInternal,
+    LeavesOnly,
   };
 
   enum class GetDocEnum {
@@ -286,6 +311,8 @@ class Factory {
     GetDocEnum get_doc = GetDocEnum::DA;
     GCDASLPVariant gcda_slp = GCDASLPVariant::Default;
     BareSLPVariant bare_slp = BareSLPVariant::Default;
+    PDLVariant pdl_variant = PDLVariant::Plain;
+    PDLStoragePolicy pdl_storage_policy = PDLStoragePolicy::OccurrenceWeighted;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -300,7 +327,11 @@ class Factory {
         return get_doc < t_c.get_doc;
       if (gcda_slp != t_c.gcda_slp)
         return gcda_slp < t_c.gcda_slp;
-      return bare_slp < t_c.bare_slp;
+      if (bare_slp != t_c.bare_slp)
+        return bare_slp < t_c.bare_slp;
+      if (pdl_variant != t_c.pdl_variant)
+        return pdl_variant < t_c.pdl_variant;
+      return pdl_storage_policy < t_c.pdl_storage_policy;
     }
   };
 
@@ -309,11 +340,13 @@ class Factory {
     sdsl::int_vector_buffer<t_width> buf(sdsl::cache_file_name(sdsl::key_bwt_trait<t_width>::KEY_BWT, config_));
     seq_size_ = buf.size();
 
-    r_index_ = std::make_shared<sri::RIndex<ExternalGenericStorage>>(std::ref(storage_));
-    r_index_->load(config_);
-
-    sr_index_ = std::make_shared<sri::SrIndexValidArea<ExternalGenericStorage>>(std::ref(storage_), 8);
-    sr_index_->load(config_);
+    // r_index_ / sr_index_ are NOT loaded eagerly: they back only the
+    // BRUTE_R_INDEX / BRUTE_SR_INDEX paths in MakeInner and require
+    // the full sr-index sample / mark cache files (typed
+    // bwt_run_first_text_pos_<HASH> etc.). Loading them in the ctor
+    // would force every Factory user — including PDL-only or
+    // GCDA-only benchmark runs that never touch the r-index — to
+    // pre-build those artifacts. Deferred to rIndex() / srIndex().
 
     load(doc_endings_);
     load(doc_endings_rank_, [this]() {
@@ -321,6 +354,28 @@ class Factory {
     });
     n_doc_ = doc_endings_rank_.item(doc_endings_.item.size());
   }
+
+ private:
+  // Lazy accessors for the brute baselines' shared r-index / sr-index
+  // instances. First call constructs + loads from the cache; later
+  // calls return the cached shared_ptr.
+  sri::RIndex<ExternalGenericStorage>& rIndex() {
+    if (!r_index_) {
+      r_index_ = std::make_shared<sri::RIndex<ExternalGenericStorage>>(std::ref(storage_));
+      r_index_->load(config_);
+    }
+    return *r_index_;
+  }
+
+  sri::SrIndexValidArea<ExternalGenericStorage>& srIndex() {
+    if (!sr_index_) {
+      sr_index_ = std::make_shared<sri::SrIndexValidArea<ExternalGenericStorage>>(std::ref(storage_), 8);
+      sr_index_->load(config_);
+    }
+    return *sr_index_;
+  }
+
+ public:
 
   std::pair<dret::DocListIndex<>*, std::size_t> Make(const Config& t_config) {
     return MakeInner(t_config);
@@ -338,6 +393,21 @@ class Factory {
     std::shared_ptr<dret::DocListIndex<>> idx;
     std::size_t size = 0;
   };
+
+  // Map the factory-side PDLStoragePolicy enum to the library-side
+  // dret::pdl::StoragePolicy. Kept as a static so callers (e.g. CLI
+  // parsing in Task 30) can use the same mapping.
+  static dret::pdl::StoragePolicy toPDLStoragePolicy(PDLStoragePolicy t_p) {
+    switch (t_p) {
+      case PDLStoragePolicy::StoreAllInternal:
+        return dret::pdl::StoragePolicy::StoreAllInternal;
+      case PDLStoragePolicy::LeavesOnly:
+        return dret::pdl::StoragePolicy::LeavesOnly;
+      case PDLStoragePolicy::OccurrenceWeighted:
+      default:
+        return dret::pdl::StoragePolicy::OccurrenceWeighted;
+    }
+  }
 
   Index MakeIndex(const Config& t_config) {
     auto it = indexes_.find(t_config);
@@ -621,6 +691,77 @@ class Factory {
         break;
       }
 
+      case IndexEnum::PDL: {
+        auto policy = toPDLStoragePolicy(t_config.pdl_storage_policy);
+        // Lambda: given the concrete TIndex, instantiate & load.
+        auto build = [this, &t_config, policy, &index](auto type_tag) {
+          using TIndex = typename decltype(type_tag)::type;
+          auto idx = std::make_shared<TIndex>(
+              std::ref(storage_),
+              t_config.block_size,
+              t_config.storing_factor,
+              policy);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+        };
+        // Tag helper so the lambda can deduce a concrete type.
+        struct Plain_DA   { using type = dret::pdl::DocListIdxPDLPlain<ExternalGenericStorage>; };
+        struct Plain_SLP  { using type = dret::pdl::DocListIdxPDLPlain<ExternalGenericStorage,
+                                                                       dret::Alphabet<>,
+                                                                       TCountIdx,
+                                                                       dret::pdl::PDLGetDocsSLP<ExternalGenericStorage>>; };
+        struct Plain_DSLP { using type = dret::pdl::DocListIdxPDLPlain<ExternalGenericStorage,
+                                                                       dret::Alphabet<>,
+                                                                       TCountIdx,
+                                                                       dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>>; };
+        struct RP_DA      { using type = dret::pdl::DocListIdxPDLRP<ExternalGenericStorage>; };
+        struct RP_SLP     { using type = dret::pdl::DocListIdxPDLRP<ExternalGenericStorage,
+                                                                    dret::Alphabet<>,
+                                                                    TCountIdx,
+                                                                    dret::pdl::PDLGetDocsSLP<ExternalGenericStorage>>; };
+        struct RP_DSLP    { using type = dret::pdl::DocListIdxPDLRP<ExternalGenericStorage,
+                                                                    dret::Alphabet<>,
+                                                                    TCountIdx,
+                                                                    dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>>; };
+        struct BC_DA      { using type = dret::pdl::DocListIdxPDLBC<ExternalGenericStorage>; };
+        struct BC_SLP     { using type = dret::pdl::DocListIdxPDLBC<ExternalGenericStorage,
+                                                                    dret::Alphabet<>,
+                                                                    TCountIdx,
+                                                                    dret::pdl::PDLGetDocsSLP<ExternalGenericStorage>>; };
+        struct BC_DSLP    { using type = dret::pdl::DocListIdxPDLBC<ExternalGenericStorage,
+                                                                    dret::Alphabet<>,
+                                                                    TCountIdx,
+                                                                    dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>>; };
+
+        switch (t_config.pdl_variant) {
+          case PDLVariant::Plain:
+            switch (t_config.get_doc) {
+              case GetDocEnum::SLP:  build(Plain_SLP{});  break;
+              case GetDocEnum::DSLP: build(Plain_DSLP{}); break;
+              case GetDocEnum::DA:
+              default:               build(Plain_DA{});   break;
+            }
+            break;
+          case PDLVariant::RP:
+            switch (t_config.get_doc) {
+              case GetDocEnum::SLP:  build(RP_SLP{});  break;
+              case GetDocEnum::DSLP: build(RP_DSLP{}); break;
+              case GetDocEnum::DA:
+              default:               build(RP_DA{});   break;
+            }
+            break;
+          case PDLVariant::BC:
+            switch (t_config.get_doc) {
+              case GetDocEnum::SLP:  build(BC_SLP{});  break;
+              case GetDocEnum::DSLP: build(BC_DSLP{}); break;
+              case GetDocEnum::DA:
+              default:               build(BC_DA{});   break;
+            }
+            break;
+        }
+        break;
+      }
+
       case IndexEnum::SLP_NS: {
         switch (t_config.bare_slp) {
           case BareSLPVariant::Raw: {
@@ -799,6 +940,7 @@ class Factory {
 
     switch (t_config.index_t) {
       case IndexEnum::BRUTE_R_INDEX: {
+        rIndex();  // trigger lazy load of r_index_ before capturing this.
         auto locate = [this](const auto& tt_pattern) {
           return this->r_index_->Locate(tt_pattern);
         };
@@ -809,6 +951,7 @@ class Factory {
       }
 
       case IndexEnum::BRUTE_SR_INDEX: {
+        srIndex();  // trigger lazy load of sr_index_ before capturing this.
         auto locate = [this](const auto& tt_pattern) {
           return this->sr_index_->Locate(tt_pattern);
         };

@@ -10,5 +10,11 @@
     "cmd": "benchmark/bm_build_items",
     "benchmark_args": true,
     "args": "--data=data"
+  },
+  "pdl-smoke": {
+    "subdir": "dret",
+    "cmd": "benchmark/bm_build_items --pdl_variants=plain,rp,bc --pdl_get_doc_variants=da --pdl_storage_policy=occurrence_weighted,all_internal,leaves_only --rmq_get_doc_variants=da --gcda_slp_variants=default --bare_slp_variants=default",
+    "benchmark_args": true,
+    "args": "--data=data"
   }
 }

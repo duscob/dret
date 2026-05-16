@@ -29,6 +29,11 @@
 #include "dret/doc_list_sampled_tree_dgcda.h"
 #include "dret/doc_list_sampled_tree_gcda.h"
 #include "dret/index_base.h"
+#include "dret/pdl/doc_list_pdl_bc.h"
+#include "dret/pdl/doc_list_pdl_plain.h"
+#include "dret/pdl/doc_list_pdl_rp.h"
+#include "dret/pdl/get_docs.h"
+#include "dret/pdl/storage_policy.h"
 #include "dret/size_report.h"
 
 
@@ -50,6 +55,17 @@ DEFINE_string(gcda_slp_variants,
 DEFINE_string(bare_slp_variants,
               "default,raw,dv,vv",
               "Bare-SLP container variants for SLP-NS family: comma-separated default,raw,dv,vv.");
+
+DEFINE_string(pdl_variants,
+              "",
+              "PDL stored-set codec variants: comma-separated plain,rp,bc. Empty disables PDL.");
+DEFINE_string(pdl_get_doc_variants,
+              "da",
+              "PDL raw-range get-doc variants: comma-separated da,slp,dslp.");
+DEFINE_string(pdl_storage_policy,
+              "occurrence_weighted",
+              "PDL storage policy: comma-separated "
+              "occurrence_weighted,all_internal,leaves_only.");
 
 //~~~~~~~
 
@@ -150,6 +166,91 @@ bool HasVariant(const std::vector<RMQGetDocVariant>& variants, RMQGetDocVariant 
 
 bool HasVariant(const std::vector<BareSLPVariant>& variants, BareSLPVariant variant) {
   return std::find(variants.begin(), variants.end(), variant) != variants.end();
+}
+
+enum class PDLCodecVariant { Plain, RP, BC };
+enum class PDLGetDocVariant { DA, SLP, DSLP };
+
+std::vector<PDLCodecVariant> ParsePDLVariants(const std::string& value) {
+  std::vector<PDLCodecVariant> variants;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "plain")
+      variants.push_back(PDLCodecVariant::Plain);
+    else if (item == "rp")
+      variants.push_back(PDLCodecVariant::RP);
+    else if (item == "bc")
+      variants.push_back(PDLCodecVariant::BC);
+    else if (!item.empty())
+      throw std::invalid_argument("Unknown --pdl_variants item: " + item);
+  }
+  return variants;
+}
+
+std::vector<PDLGetDocVariant> ParsePDLGetDocVariants(const std::string& value) {
+  std::vector<PDLGetDocVariant> variants;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "da")
+      variants.push_back(PDLGetDocVariant::DA);
+    else if (item == "slp")
+      variants.push_back(PDLGetDocVariant::SLP);
+    else if (item == "dslp")
+      variants.push_back(PDLGetDocVariant::DSLP);
+    else if (!item.empty())
+      throw std::invalid_argument("Unknown --pdl_get_doc_variants item: " + item);
+  }
+  if (variants.empty())
+    variants.push_back(PDLGetDocVariant::DA);
+  return variants;
+}
+
+std::vector<dret::pdl::StoragePolicy> ParsePDLStoragePolicies(const std::string& value) {
+  std::vector<dret::pdl::StoragePolicy> policies;
+  std::stringstream ss(value);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    if (item == "occurrence_weighted")
+      policies.push_back(dret::pdl::StoragePolicy::OccurrenceWeighted);
+    else if (item == "all_internal")
+      policies.push_back(dret::pdl::StoragePolicy::StoreAllInternal);
+    else if (item == "leaves_only")
+      policies.push_back(dret::pdl::StoragePolicy::LeavesOnly);
+    else if (!item.empty())
+      throw std::invalid_argument("Unknown --pdl_storage_policy item: " + item);
+  }
+  if (policies.empty())
+    policies.push_back(dret::pdl::StoragePolicy::OccurrenceWeighted);
+  return policies;
+}
+
+const char* PDLCodecVariantName(PDLCodecVariant v) {
+  switch (v) {
+    case PDLCodecVariant::Plain: return "Plain";
+    case PDLCodecVariant::RP:    return "RP";
+    case PDLCodecVariant::BC:    return "BC";
+  }
+  return "UNKNOWN";
+}
+
+const char* PDLGetDocVariantName(PDLGetDocVariant v) {
+  switch (v) {
+    case PDLGetDocVariant::DA:   return "DA";
+    case PDLGetDocVariant::SLP:  return "SLP";
+    case PDLGetDocVariant::DSLP: return "DSLP";
+  }
+  return "UNKNOWN";
+}
+
+const char* PDLStoragePolicyName(dret::pdl::StoragePolicy p) {
+  switch (p) {
+    case dret::pdl::StoragePolicy::OccurrenceWeighted: return "OccurrenceWeighted";
+    case dret::pdl::StoragePolicy::StoreAllInternal:   return "StoreAllInternal";
+    case dret::pdl::StoragePolicy::LeavesOnly:         return "LeavesOnly";
+  }
+  return "UNKNOWN";
 }
 
 //~~~~~~~
@@ -356,6 +457,56 @@ void BM_ConstructDocListIdxRMQCompressed(benchmark::State& t_state, dret::Config
 //~~~~~~~
 
 
+// PDL takes a storage_policy argument in addition to block_size /
+// storing_factor, and is parameterized on a (codec, get-doc) pair at
+// the type level. This template instantiates one such pair.
+template <typename TIndex>
+void BM_ConstructDocListIdxPDL(benchmark::State& t_state,
+                                dret::Config t_config,
+                                dret::pdl::StoragePolicy t_policy) {
+  uint32_t block_size = static_cast<uint32_t>(t_state.range(0));
+  float storing_factor = static_cast<float>(t_state.range(1));
+
+  dret::GenericStorage storage;
+  TIndex index(storage, block_size, storing_factor, t_policy);
+
+  for (auto _ : t_state) {
+    sdsl::memory_monitor::start();
+    construct(index, t_config);
+    sdsl::memory_monitor::stop();
+  }
+
+  auto suffix = "-bs" + std::to_string(block_size) + "-sf" + std::to_string(static_cast<int>(storing_factor));
+  auto bm_name = t_state.name();
+  std::string idx_name = bm_name.substr(0, bm_name.find('/'));
+  {
+    std::ofstream ofs("construction-" + idx_name + suffix + ".html");
+    sdsl::memory_monitor::write_memory_log<sdsl::HTML_FORMAT>(ofs);
+  }
+  {
+    std::ofstream ofs("construction-" + idx_name + suffix + ".json");
+    sdsl::memory_monitor::write_memory_log<sdsl::JSON_FORMAT>(ofs);
+  }
+
+  SetupCommonCounters(t_state);
+  t_state.counters["bs"] = block_size;
+  t_state.counters["sf"] = storing_factor;
+  {
+    using namespace sri::conf;
+    sdsl::int_vector_buffer<> buf(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
+    t_state.counters["n"] = buf.size();
+  }
+
+  index.load(t_config);
+  const auto sizes = index.GetSizeReport();
+  appendCounters(t_state, sizes);
+  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
+  dret::writeSizesJson("sizes-" + idx_name + suffix + ".json", sizes);
+}
+
+//~~~~~~~
+
+
 static std::vector<int64_t> powersOfTwo(int32_t t_min, int32_t t_max) {
   std::vector<int64_t> result;
   for (int64_t v = t_min; v <= t_max; v *= 2)
@@ -380,10 +531,16 @@ int main(int argc, char** argv) {
   std::vector<RMQGetDocVariant> rmq_get_doc_variants;
   std::vector<GCDASLPVariant> gcda_slp_variants;
   std::vector<BareSLPVariant> bare_slp_variants;
+  std::vector<PDLCodecVariant> pdl_variants;
+  std::vector<PDLGetDocVariant> pdl_get_doc_variants;
+  std::vector<dret::pdl::StoragePolicy> pdl_storage_policies;
   try {
     rmq_get_doc_variants = ParseRMQGetDocVariants(FLAGS_rmq_get_doc_variants);
     gcda_slp_variants = ParseGCDASLPVariants(FLAGS_gcda_slp_variants);
     bare_slp_variants = ParseBareSLPVariants(FLAGS_bare_slp_variants);
+    pdl_variants = ParsePDLVariants(FLAGS_pdl_variants);
+    pdl_get_doc_variants = ParsePDLGetDocVariants(FLAGS_pdl_get_doc_variants);
+    pdl_storage_policies = ParsePDLStoragePolicies(FLAGS_pdl_storage_policy);
   } catch (const std::invalid_argument& e) {
     std::cerr << e.what() << std::endl;
     return 1;
@@ -717,6 +874,83 @@ int main(int argc, char** argv) {
     benchmark::RegisterBenchmark(
         "DocListDGCDA-VV", BM_ConstructDocListIdxGCDA<DGCDA_VV>, config)
         ->ArgsProduct({block_sizes, storing_factors});
+
+    // PDL build benchmarks. The (codec, get-doc) pair is a type-level
+    // axis (9 template instantiations); storage policy is a runtime
+    // arg threaded into the index constructor. Skipped entirely when
+    // --pdl_variants is empty.
+    auto register_pdl = [&]<typename TIndex>(const std::string& base) {
+      for (const auto sp : pdl_storage_policies) {
+        std::string name = "DocListPDL-" + base + "-" + PDLStoragePolicyName(sp);
+        benchmark::RegisterBenchmark(
+            name, BM_ConstructDocListIdxPDL<TIndex>, config, sp)
+            ->ArgsProduct({block_sizes, storing_factors});
+      }
+    };
+
+    for (const auto pdl_v : pdl_variants) {
+      for (const auto pdl_gd : pdl_get_doc_variants) {
+        std::string pair = std::string(PDLCodecVariantName(pdl_v)) + "-" +
+                           std::string(PDLGetDocVariantName(pdl_gd));
+        using TCountIdx = sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>;
+        switch (pdl_v) {
+          case PDLCodecVariant::Plain:
+            switch (pdl_gd) {
+              case PDLGetDocVariant::DA:
+                register_pdl.template operator()<
+                    dret::pdl::DocListIdxPDLPlain<dret::GenericStorage>>(pair);
+                break;
+              case PDLGetDocVariant::SLP:
+                register_pdl.template operator()<
+                    dret::pdl::DocListIdxPDLPlain<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
+                                                  dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>>(pair);
+                break;
+              case PDLGetDocVariant::DSLP:
+                register_pdl.template operator()<
+                    dret::pdl::DocListIdxPDLPlain<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
+                                                  dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>(pair);
+                break;
+            }
+            break;
+          case PDLCodecVariant::RP:
+            switch (pdl_gd) {
+              case PDLGetDocVariant::DA:
+                register_pdl.template operator()<
+                    dret::pdl::DocListIdxPDLRP<dret::GenericStorage>>(pair);
+                break;
+              case PDLGetDocVariant::SLP:
+                register_pdl.template operator()<
+                    dret::pdl::DocListIdxPDLRP<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
+                                               dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>>(pair);
+                break;
+              case PDLGetDocVariant::DSLP:
+                register_pdl.template operator()<
+                    dret::pdl::DocListIdxPDLRP<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
+                                               dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>(pair);
+                break;
+            }
+            break;
+          case PDLCodecVariant::BC:
+            switch (pdl_gd) {
+              case PDLGetDocVariant::DA:
+                register_pdl.template operator()<
+                    dret::pdl::DocListIdxPDLBC<dret::GenericStorage>>(pair);
+                break;
+              case PDLGetDocVariant::SLP:
+                register_pdl.template operator()<
+                    dret::pdl::DocListIdxPDLBC<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
+                                               dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>>(pair);
+                break;
+              case PDLGetDocVariant::DSLP:
+                register_pdl.template operator()<
+                    dret::pdl::DocListIdxPDLBC<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
+                                               dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>(pair);
+                break;
+            }
+            break;
+        }
+      }
+    }
   }
 
   benchmark::Initialize(&argc, argv);

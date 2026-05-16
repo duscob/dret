@@ -1,0 +1,414 @@
+//
+// Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/10/26.
+//
+// Throwaway construction data for the PDL sparse suffix tree. These structs
+// only exist while the tree is being built (Tasks 6-11); after that the
+// tree is compacted into PDLTreeCore's serialized form and the builder is
+// discarded. They must not appear in query-time headers.
+//
+// The linked-list shape (first_child / next_sibling) mirrors drl's
+// PDLTreeNode (drl/include/drl/pdltree.h:192-238) so the stack/LCP port in
+// Task 6 stays close to the reference implementation. Differences from drl:
+// SA ranges are half-open [sp, ep) (drl uses inclusive); the explicit
+// `selected` flag captures the storage-policy decision from Task 10.
+//
+
+#pragma once
+
+#include <algorithm>
+#include <cstddef>
+#include <limits>
+#include <memory>
+#include <utility>
+#include <vector>
+
+#include "storage_policy.h"
+
+namespace dret::pdl {
+
+struct BuilderNode {
+  static constexpr std::size_t kInvalidId = std::numeric_limits<std::size_t>::max();
+
+  // Half-open SA interval [sp, ep). Leaves have ep == sp + 1.
+  std::size_t sp = 0;
+  std::size_t ep = 0;
+
+  // String depth (LCP value at the open of this interval). Leaves keep the
+  // depth of the deepest internal ancestor; the algorithm in Task 6 sets it
+  // when the leaf is created.
+  std::size_t depth = 0;
+
+  // Tree links. Linked-list children (first_child + next_sibling) keep the
+  // construction algorithm allocation-light; a parent owns its first child
+  // and that child owns its sibling chain.
+  BuilderNode* parent = nullptr;
+  BuilderNode* first_child = nullptr;
+  BuilderNode* next_sibling = nullptr;
+
+  // Document set computed bottom-up in Task 9. Empty when contains_all is
+  // true; Task 9 also collapses full sets into the all-doc sentinel.
+  std::vector<std::size_t> docs;
+  bool contains_all = false;
+
+  // Set by the storage policy in Task 10. Selected nodes get a stable
+  // node_id (Task 11) and end up in PDLTreeCore's stored-set codec.
+  bool selected = false;
+
+  // Explicit leaves added by Task 8 to cover SA positions not represented
+  // by internal LCP nodes after collapse. Distinguishing leaves from
+  // single-position internals matters for some storage policies and for
+  // navigation later on.
+  bool is_explicit_leaf = false;
+
+  // Weighted size used by the OccurrenceWeighted selection rule in Task 10:
+  // sum of stored-set sizes from the subtree rooted here. 0 until Task 10.
+  std::size_t stored_documents = 0;
+
+  // Final id assigned in Task 11. kInvalidId until then.
+  std::size_t node_id = kInvalidId;
+
+  BuilderNode() = default;
+  BuilderNode(std::size_t t_sp, std::size_t t_ep, std::size_t t_depth)
+      : sp(t_sp), ep(t_ep), depth(t_depth) {}
+};
+
+// Arena ownership for builder nodes; pointers stay stable for the lifetime
+// of the pool. Discard the pool after compacting into PDLTreeCore.
+class BuilderPool {
+ public:
+  BuilderNode* create() {
+    auto node = std::make_unique<BuilderNode>();
+    auto* raw = node.get();
+    nodes_.push_back(std::move(node));
+    return raw;
+  }
+
+  BuilderNode* create(std::size_t t_sp, std::size_t t_ep, std::size_t t_depth) {
+    auto node = std::make_unique<BuilderNode>(t_sp, t_ep, t_depth);
+    auto* raw = node.get();
+    nodes_.push_back(std::move(node));
+    return raw;
+  }
+
+  std::size_t size() const { return nodes_.size(); }
+
+ private:
+  std::vector<std::unique_ptr<BuilderNode>> nodes_;
+};
+
+// Append child as the first child of parent (drl's addChild order). Cheap
+// and order-preserving in reverse; the construction stack will produce
+// children in left-to-right order, so callers wanting that order should
+// reverse the chain after building or use appendChild below.
+inline void prependChild(BuilderNode* parent, BuilderNode* child) {
+  child->parent = parent;
+  child->next_sibling = parent->first_child;
+  parent->first_child = child;
+}
+
+// Append child as the last child of parent. O(siblings) but keeps the
+// natural left-to-right order produced by the LCP stack algorithm.
+inline void appendChild(BuilderNode* parent, BuilderNode* child) {
+  child->parent = parent;
+  child->next_sibling = nullptr;
+  if (!parent->first_child) {
+    parent->first_child = child;
+    return;
+  }
+  auto* tail = parent->first_child;
+  while (tail->next_sibling) tail = tail->next_sibling;
+  tail->next_sibling = child;
+}
+
+// Build a sparse suffix tree from an LCP array via the classical stack
+// algorithm. Ports drl's loop at drl/src/pdltree.cpp:336-358 and converts
+// drl's inclusive [sp, ep] ranges to dret's half-open [sp, ep) at the
+// boundary (drl: range.second = i - 1; dret: ep = i).
+//
+// `t_lcp` must be indexable for i in [0, t_n] with t_lcp(0) == 0 and
+// t_lcp(t_n) == 0 (sentinel forcing the stack to flush). For i in
+// [1, t_n - 1], t_lcp(i) == LCP(SA[i-1], SA[i]).
+//
+// Returns the root node (depth 0, covering [0, t_n)) allocated from
+// t_pool. Internal nodes are added below the root. Block-size collapse
+// (Task 7) and explicit-leaf insertion (Task 8) are NOT part of this
+// function — they are applied after construction. Returns nullptr for
+// t_n == 0.
+template <typename TLCPFn>
+BuilderNode* BuildSparseSuffixTree(BuilderPool& t_pool, TLCPFn&& t_lcp, std::size_t t_n) {
+  if (t_n == 0) return nullptr;
+
+  std::vector<BuilderNode*> stack;
+  stack.reserve(64);
+  stack.push_back(t_pool.create(0, 0, 0));
+  BuilderNode* root = stack.back();
+  BuilderNode* prev = nullptr;
+
+  for (std::size_t i = 1; i <= t_n; ++i) {
+    std::size_t left = i - 1;
+    const std::size_t lcp_i = static_cast<std::size_t>(t_lcp(i));
+
+    while (lcp_i < stack.back()->depth) {
+      stack.back()->ep = i;
+      prev = stack.back();
+      stack.pop_back();
+      root = prev;
+      left = prev->sp;
+      if (lcp_i <= stack.back()->depth) {
+        appendChild(stack.back(), prev);
+        prev = nullptr;
+      }
+    }
+
+    if (lcp_i > stack.back()->depth) {
+      auto* curr = t_pool.create(left, left, lcp_i);
+      if (prev) {
+        appendChild(curr, prev);
+        prev = nullptr;
+      }
+      stack.push_back(curr);
+    }
+  }
+
+  while (root->parent) root = root->parent;
+  root->ep = t_n;
+  return root;
+}
+
+// Compute every node's document set bottom-up. Leaves and collapsed
+// "block" nodes read raw documents from t_get_doc over their [sp, ep)
+// range; internal nodes union their children's sets. Sets are kept
+// sorted-unique. Full sets (size >= t_n_doc) are collapsed to the
+// all-doc sentinel: contains_all = true, docs cleared. The
+// stored_documents counter holds the pre-dedup occurrence weight used
+// by the OccurrenceWeighted selection rule in Task 10.
+//
+// The all-doc short-circuit at internal nodes (drop the partially-built
+// docs accumulator and copy the all-doc child's stored_documents) ports
+// drl/src/pdltree.cpp:209-213 verbatim. drl's OccurrenceWeighted rule never
+// reads docs.size() when contains_all is true (pdltree.cpp:390 short-
+// circuits), so the slightly approximate stored_documents this leaves
+// is harmless.
+//
+// t_get_doc must be callable as t_get_doc(i) returning the document id
+// at SA position i. Task 28 wires DA / GCDA / DGCDA in via construct();
+// for unit testing pass any std::function-like that maps a position to
+// a doc id.
+template <typename TGetDocAt>
+void ComputeDocSetsBottomUp(BuilderNode* t_root, std::size_t t_n_doc, TGetDocAt&& t_get_doc) {
+  if (!t_root) return;
+
+  // Iterative post-order: push everything in a single forward DFS, then
+  // process in reverse. Visiting children left-to-right via the for-loop
+  // gives us the desired left-to-right order after reversal too.
+  std::vector<BuilderNode*> post_order;
+  post_order.reserve(64);
+  std::vector<BuilderNode*> stack{t_root};
+  while (!stack.empty()) {
+    auto* n = stack.back();
+    stack.pop_back();
+    post_order.push_back(n);
+    for (auto* c = n->first_child; c; c = c->next_sibling) {
+      stack.push_back(c);
+    }
+  }
+
+  for (auto it = post_order.rbegin(); it != post_order.rend(); ++it) {
+    auto* n = *it;
+    n->docs.clear();
+    n->stored_documents = 0;
+    n->contains_all = false;
+
+    if (!n->first_child) {
+      n->docs.reserve(n->ep - n->sp);
+      for (std::size_t i = n->sp; i < n->ep; ++i) {
+        n->docs.push_back(static_cast<std::size_t>(t_get_doc(i)));
+      }
+      n->stored_documents = n->docs.size();
+      std::sort(n->docs.begin(), n->docs.end());
+      n->docs.erase(std::unique(n->docs.begin(), n->docs.end()), n->docs.end());
+    } else {
+      bool short_circuit = false;
+      for (auto* c = n->first_child; c; c = c->next_sibling) {
+        if (c->contains_all) {
+          n->contains_all = true;
+          n->stored_documents = c->stored_documents;
+          n->docs.clear();
+          short_circuit = true;
+          break;
+        }
+        n->docs.insert(n->docs.end(), c->docs.begin(), c->docs.end());
+        n->stored_documents += c->stored_documents;
+      }
+      if (!short_circuit) {
+        std::sort(n->docs.begin(), n->docs.end());
+        n->docs.erase(std::unique(n->docs.begin(), n->docs.end()), n->docs.end());
+      }
+    }
+
+    if (!n->contains_all && n->docs.size() >= t_n_doc) {
+      n->contains_all = true;
+      n->docs.clear();
+    }
+  }
+}
+
+// Set t_root and every descendant's `selected` flag according to t_policy.
+// Tasks 11-12 then assign stable ids and the compact navigation
+// representation only over selected nodes.
+//
+// - StoragePolicy::OccurrenceWeighted: drl/src/pdltree.cpp:390 verbatim.
+//   Childless OR contains_all OR stored_documents > storing_factor *
+//   |distinct docs|. Where drl physically removes the failing internal
+//   nodes via PDLTreeNode::remove(), dret keeps them in the tree and
+//   relies on `selected` to filter at id-assignment / navigation time.
+// - StoragePolicy::StoreAllInternal: every node selected, regardless of
+//   weight. Diagnostic upper bound.
+// - StoragePolicy::LeavesOnly: only childless (collapsed-block + explicit-
+//   leaf) nodes selected. Internal nodes stay in the tree for navigation
+//   but contribute no stored set.
+//
+// Requires Task 9 to have populated stored_documents, docs, and
+// contains_all on every node.
+inline void ApplyStoragePolicy(BuilderNode* t_root,
+                               StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted,
+                               float t_storing_factor = 4.0f) {
+  if (!t_root) return;
+  std::vector<BuilderNode*> stack{t_root};
+  while (!stack.empty()) {
+    auto* n = stack.back();
+    stack.pop_back();
+
+    bool select = false;
+    switch (t_policy) {
+      case StoragePolicy::OccurrenceWeighted:
+        select = (n->first_child == nullptr) || n->contains_all
+                 || (static_cast<float>(n->stored_documents)
+                     > t_storing_factor * static_cast<float>(n->docs.size()));
+        break;
+      case StoragePolicy::StoreAllInternal:
+        select = true;
+        break;
+      case StoragePolicy::LeavesOnly:
+        select = (n->first_child == nullptr);
+        break;
+    }
+    n->selected = select;
+
+    for (auto* c = n->first_child; c; c = c->next_sibling) {
+      stack.push_back(c);
+    }
+  }
+}
+
+// Assign sequential ids 0, 1, 2, ... to every node reachable from t_root,
+// in post-order (children before parent, left-to-right within siblings).
+// Returns the number of ids assigned (== node count).
+//
+// Single id space across selected and navigation (unselected) nodes — the
+// codec slot for a selected node is later derived via
+// selected_rank_(node_id), see PDLTreeCore::selected_marker_. Where drl
+// uses a dual leaves/internals id range (drl/src/pdltree.cpp:410-419)
+// because it splices unselected internals out, dret keeps them and lets
+// the bitvector + rank do the filtering.
+//
+// Determinism: post-order traversal of the immutable post-Task-10 tree is
+// a pure function of the tree shape, so two construct() runs on the same
+// inputs yield identical id sequences and (downstream) identical
+// serialized layouts.
+inline std::size_t AssignNodeIds(BuilderNode* t_root) {
+  if (!t_root) return 0;
+
+  // Iterative post-order: forward DFS into a list, reverse to consume.
+  std::vector<BuilderNode*> post_order;
+  post_order.reserve(64);
+  std::vector<BuilderNode*> stack{t_root};
+  while (!stack.empty()) {
+    auto* n = stack.back();
+    stack.pop_back();
+    post_order.push_back(n);
+    for (auto* c = n->first_child; c; c = c->next_sibling) {
+      stack.push_back(c);
+    }
+  }
+
+  std::size_t id = 0;
+  for (auto it = post_order.rbegin(); it != post_order.rend(); ++it) {
+    (*it)->node_id = id++;
+  }
+  return id;
+}
+
+// Insert explicit leaves to fill SA-position gaps among each non-collapsed
+// node's children. After this pass, every internal node with children has
+// children whose [sp, ep) ranges partition the parent's range; collapsed
+// (childless) nodes are skipped because their range is handled by
+// raw-range fallback at query time. Explicit leaves carry depth = 0,
+// is_explicit_leaf = true, and length-1 ranges [pos, pos+1).
+//
+// Ports drl/src/pdltree.cpp:78-99 (PDLTreeNode::addLeaves) +
+// :101-110 (addLeaf), with inclusive->half-open boundary conversion.
+inline void InsertExplicitLeaves(BuilderPool& t_pool, BuilderNode* t_root) {
+  if (!t_root) return;
+  std::vector<BuilderNode*> stack{t_root};
+  while (!stack.empty()) {
+    auto* curr = stack.back();
+    stack.pop_back();
+    if (!curr->first_child) continue;  // collapsed block — raw-fallback covers it.
+
+    std::size_t expect = curr->sp;
+    BuilderNode* prev = nullptr;
+
+    auto insert_leaf = [&](std::size_t pos, BuilderNode* right) {
+      auto* leaf = t_pool.create(pos, pos + 1, 0);
+      leaf->parent = curr;
+      leaf->is_explicit_leaf = true;
+      leaf->next_sibling = right;
+      if (!prev) curr->first_child = leaf;
+      else prev->next_sibling = leaf;
+      prev = leaf;
+    };
+
+    for (auto* temp = curr->first_child; temp; temp = temp->next_sibling) {
+      while (expect < temp->sp) {
+        insert_leaf(expect, temp);
+        ++expect;
+      }
+      stack.push_back(temp);
+      expect = temp->ep;
+      prev = temp;
+    }
+    while (expect < curr->ep) {
+      insert_leaf(expect, nullptr);
+      ++expect;
+    }
+  }
+}
+
+// Collapse subtrees whose SA interval [sp, ep) has length <= t_block_size:
+// the node itself stays (its [sp, ep) is the boundary info needed for
+// raw-range fallback at query time) but its descendants are unlinked.
+// Orphaned descendants stay alive in their BuilderPool until the pool is
+// destroyed; we never reach them again because no live parent references
+// them. Top-down DFS — once a parent collapses, recursion stops there.
+//
+// Equivalent to drl's inline collapse at drl/src/pdltree.cpp:345
+// (`if(CSA::length(prev->range) <= this->block_size) prev->deleteChildren();`)
+// but applied as a post-pass so BuildSparseSuffixTree stays focused.
+inline void CollapseSubtreesByBlockSize(BuilderNode* t_root, std::size_t t_block_size) {
+  if (!t_root) return;
+  std::vector<BuilderNode*> stack{t_root};
+  while (!stack.empty()) {
+    auto* n = stack.back();
+    stack.pop_back();
+    if (n->ep - n->sp <= t_block_size) {
+      n->first_child = nullptr;
+      continue;
+    }
+    for (auto* c = n->first_child; c; c = c->next_sibling) {
+      stack.push_back(c);
+    }
+  }
+}
+
+}  // namespace dret::pdl

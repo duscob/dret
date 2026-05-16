@@ -68,6 +68,17 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/differential_slp.h
         ${PROJECT_SOURCE_DIR}/include/dret/differential_light_slp.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree_dgcda.h
+
+        # PDL (precomputed document listing) — append new include/dret/pdl/*.h here.
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/storage_policy.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_core.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_builder.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/build_pdl_core.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/set_codecs.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/get_docs.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/doc_list_pdl_plain.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/doc_list_pdl_rp.h
+        ${PROJECT_SOURCE_DIR}/include/dret/pdl/doc_list_pdl_bc.h
 )
 
 add_library(dret INTERFACE)
@@ -87,6 +98,10 @@ target_link_libraries(dret INTERFACE ${LIBS})
 include(ConfigRePair)
 set(REPAIR_EXE "\"${${ExternalProjectName}_SOURCE_DIR}/bal/irepair\"")
 target_compile_definitions(dret INTERFACE REPAIR_EXE=${REPAIR_EXE})
+
+include(ConfigDSExtract)
+set(VNMEXTRACT_EXE "\"${${ExternalProjectName}_VNMEXTRACT}\"")
+target_compile_definitions(dret INTERFACE VNMEXTRACT_EXE=${VNMEXTRACT_EXE})
 
 
 # TODO use find_package(gflags) instead find_library(...)
@@ -108,6 +123,28 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(tf_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/tf_test.cpp)
     cxx_test_with_flags_and_args(algorithm_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/algorithm_test.cpp)
     cxx_test_with_flags_and_args(doc_list_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_test.cpp)
+    cxx_test_with_flags_and_args(pdl_tree_builder_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_tree_builder_test.cpp)
+    cxx_test_with_flags_and_args(pdl_tree_core_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_tree_core_test.cpp)
+    cxx_test_with_flags_and_args(pdl_set_codecs_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_set_codecs_test.cpp)
+    add_dependencies(pdl_set_codecs_test dsextract)
+    cxx_test_with_flags_and_args(pdl_template_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_template_test.cpp)
+    add_dependencies(pdl_template_test dsextract)
+    cxx_test_with_flags_and_args(pdl_get_docs_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_get_docs_test.cpp)
+    cxx_test_with_flags_and_args(pdl_index_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_index_test.cpp)
+    add_dependencies(pdl_index_test dsextract)
+    cxx_test_with_flags_and_args(pdl_construct_load_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_construct_load_test.cpp)
+    add_dependencies(pdl_construct_load_test dsextract)
+    cxx_test_with_flags_and_args(pdl_search_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_search_test.cpp)
+    add_dependencies(pdl_search_test dsextract)
+    cxx_test_with_flags_and_args(pdl_tree_cover_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_tree_cover_test.cpp)
+    cxx_test_with_flags_and_args(pdl_template_instantiation_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_template_instantiation_test.cpp)
+    add_dependencies(pdl_template_instantiation_test dsextract)
+    cxx_test_with_flags_and_args(pdl_get_docs_policy_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_get_docs_policy_test.cpp)
+    cxx_test_with_flags_and_args(pdl_sample_dataset_parity_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_sample_dataset_parity_test.cpp)
+    add_dependencies(pdl_sample_dataset_parity_test dsextract)
+    cxx_test_with_flags_and_args(pdl_storage_policy_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_storage_policy_test.cpp)
+    cxx_test_with_flags_and_args(pdl_cache_collision_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_cache_collision_test.cpp)
+    cxx_test_with_flags_and_args(pdl_header_inclusion_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_header_inclusion_test.cpp)
 endif ()
 
 
@@ -125,6 +162,7 @@ if (dret_build_tools)
     cxx_executable_with_flags(build_items_sada "" "${tool_LIBS}" tool/build_items_sada.cpp tool/definitions.h)
     cxx_executable_with_flags(build_items_ilcp "" "${tool_LIBS}" tool/build_items_ilcp.cpp tool/definitions.h)
     cxx_executable_with_flags(build_items_gcda "" "${tool_LIBS}" tool/build_items_gcda.cpp tool/definitions.h)
+    cxx_executable_with_flags(dump_pdl_doclists "" "${tool_LIBS}" tool/dump_pdl_doclists.cpp)
     #    cxx_executable_with_flags(build_dslp "" "${tool_LIBS}" tool/build_dslp.cpp)
 endif ()
 

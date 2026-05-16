@@ -40,6 +40,18 @@ constexpr std::string_view kCILCP = "cilcp";
 constexpr std::string_view kRmq = "rmq";
 constexpr std::string_view kRunHeads = "runHeads";
 constexpr std::string_view kRmqNDoc = "rmq_n_doc";
+
+// PDL (precomputed document listing) — sparse suffix-tree indexes with
+// per-variant stored-set codecs. kPDL is the umbrella; kTree is the
+// shared tree-topology cache; each variant (kPlain/kRP/kBC) owns its
+// own kSets payload, and kBC additionally owns kDict.
+constexpr std::string_view kPDL = "pdl";
+constexpr std::string_view kPlain = "plain";
+constexpr std::string_view kRP = "rp";
+constexpr std::string_view kBC = "bc";
+constexpr std::string_view kTree = "tree";
+constexpr std::string_view kSets = "sets";
+constexpr std::string_view kDict = "dict";
 }  // namespace conf
 
 template <uint8_t t_width = DRET_DEFAULT_ALPHABET_WIDTH>
@@ -86,6 +98,31 @@ struct Keys {
             },
         },
         {conf::kRmqNDoc, "rmq_n_doc"},
+        {
+            conf::kPDL,
+            {
+                {conf::kTree, "pdl_tree"},
+                {
+                    conf::kPlain,
+                    {
+                        {conf::kSets, "pdl_plain_sets"},
+                    },
+                },
+                {
+                    conf::kRP,
+                    {
+                        {conf::kSets, "pdl_rp_sets"},
+                    },
+                },
+                {
+                    conf::kBC,
+                    {
+                        {conf::kSets, "pdl_bc_sets"},
+                        {conf::kDict, "pdl_bc_dict"},
+                    },
+                },
+            },
+        },
     });
   }
 

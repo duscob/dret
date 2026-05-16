@@ -28,23 +28,21 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
     auto [sp, ep] = count(t_pattern);
 
-    auto cover = computeCover(sp, ep);
+    std::vector<std::pair<std::size_t, std::size_t>> raw_ranges;
+    std::vector<std::size_t> nodes;
+    computeCoverFull(sp, ep, raw_ranges, nodes);
 
-    const auto& range = cover.first;
-    const auto& nodes = cover.second;
-
+    std::size_t total_raw = 0;
+    for (const auto& r : raw_ranges) total_raw += r.second - r.first;
     std::vector<TDocId> docs;
-    docs.reserve(range.first - sp + ep - range.second);
+    docs.reserve(total_raw);
 
     auto add_doc = [&docs](const auto& tt_d) {
       docs.emplace_back(tt_d);
     };
 
-    if (nodes.empty()) {
-      getDocs(sp, ep, add_doc);
-    } else {
-      getDocs(sp, range.first, add_doc);
-      getDocs(range.second, ep, add_doc);
+    for (const auto& [b, e] : raw_ranges) {
+      getDocs(b, e, add_doc);
     }
 
     sort(docs.begin(), docs.end());
@@ -68,6 +66,26 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
   virtual std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
       std::size_t t_sp,
       std::size_t t_ep) const = 0;
+
+  // Multi-range cover. Default delegates to the single-range computeCover
+  // and produces at most a prefix and a suffix raw range — semantically
+  // equivalent to the previous Search shape, so GCDA/DGCDA keep working
+  // unchanged. PDL indexes override this to return interleaved raw gaps
+  // when their storage policy leaves leaves unselected (see
+  // PDLTreeCore::computeCoverFull, Task 12).
+  virtual void computeCoverFull(std::size_t t_sp,
+                                std::size_t t_ep,
+                                std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,
+                                std::vector<std::size_t>& t_nodes) const {
+    auto [range, nds] = computeCover(t_sp, t_ep);
+    if (nds.empty()) {
+      t_raw_ranges.emplace_back(t_sp, t_ep);
+    } else {
+      if (t_sp < range.first) t_raw_ranges.emplace_back(t_sp, range.first);
+      if (range.second < t_ep) t_raw_ranges.emplace_back(range.second, t_ep);
+    }
+    t_nodes = std::move(nds);
+  }
 
   virtual void getDocs(std::size_t t_sp, std::size_t t_ep, const std::function<void(TDocId)>& t_report) const = 0;
 
