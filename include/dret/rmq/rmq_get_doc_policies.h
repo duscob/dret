@@ -24,7 +24,6 @@
 
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_slp.h"
-#include "dret/doc_list/doc_list_dgcda.h"
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"

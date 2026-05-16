@@ -26,7 +26,6 @@
 #include "dret/doc_list/doc_list_slp.h"
 #include "dret/doc_list/doc_list_brute.h"
 #include "dret/doc_list/doc_list_rmq.h"
-#include "dret/doc_list/doc_list_dgcda.h"
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/index_base.h"
 #include "dret/doc_list/doc_list_pdl.h"
