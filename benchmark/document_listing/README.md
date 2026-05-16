@@ -39,6 +39,7 @@ Both binaries share the same axis enums (`bench::axes::*`) and the same parse/na
 | `--rmq_get_doc_variants` | `da`, `slp`, `slp_ns`, `dslp` | RMQ family's raw-range doc lookup. |
 | `--gcda_slp_variants`    | `default`, `compact_bp`, `compact_louds`, `cslp` | GCDA's TSLP choice (also reused by RMQ-SLP for cache sharing). |
 | `--bare_slp_variants`    | `default`, `raw`, `dv`, `vv` | Non-sampled `grammar::SLP<>` container variants (SLP-NS family). |
+| `--dgcda_slp_variants`   | `default`, `otf`, `crl`, `ev`, `dv`, `vv` | DGCDA's TSLP choice (DifferentialLightSLP span-length and inner-container variants). |
 | `--pdl_variants`         | `plain`, `rp`, `bc` (or empty) | PDL stored-set codec. Empty disables PDL. |
 | `--pdl_get_doc_variants` | `da`, `slp`, `dslp` | PDL raw-range get-doc backing. (`slp_ns` is rejected.) |
 | `--pdl_storage_policy`   | `occurrence_weighted`, `all_internal`, `leaves_only` | PDL tree-construction storage policy. |

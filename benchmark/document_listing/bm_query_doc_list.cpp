@@ -46,6 +46,10 @@ DEFINE_string(bare_slp_variants,
               "default,raw,dv,vv",
               "Bare-SLP container variants for SLP-NS family: comma-separated default,raw,dv,vv.");
 
+DEFINE_string(dgcda_slp_variants,
+              "default,otf,crl,ev,dv,vv",
+              "DGCDA TSLP variants: comma-separated default,otf,crl,ev,dv,vv.");
+
 DEFINE_string(pdl_variants,
               "",
               "PDL stored-set codec variants: comma-separated plain,rp,bc. Empty disables PDL.");
@@ -253,6 +257,7 @@ int main(int argc, char* argv[]) {
   std::vector<Factory<>::GetDocEnum> rmq_get_doc_variants;
   std::vector<Factory<>::GCDASLPVariant> gcda_slp_variants;
   std::vector<Factory<>::BareSLPVariant> bare_slp_variants;
+  std::vector<Factory<>::DGCDASLPVariant> dgcda_slp_variants;
   std::vector<Factory<>::PDLVariant> pdl_variants;
   std::vector<Factory<>::GetDocEnum> pdl_get_doc_variants;
   std::vector<Factory<>::PDLStoragePolicy> pdl_storage_policies;
@@ -260,6 +265,7 @@ int main(int argc, char* argv[]) {
     rmq_get_doc_variants = bench::axes::ParseCSV<bench::axes::GetDocEnum>(FLAGS_rmq_get_doc_variants);
     gcda_slp_variants = bench::axes::ParseCSV<bench::axes::GCDASLPVariant>(FLAGS_gcda_slp_variants);
     bare_slp_variants = bench::axes::ParseCSV<bench::axes::BareSLPVariant>(FLAGS_bare_slp_variants);
+    dgcda_slp_variants = bench::axes::ParseCSV<bench::axes::DGCDASLPVariant>(FLAGS_dgcda_slp_variants);
     pdl_variants = bench::axes::ParseCSV<bench::axes::PDLVariant>(FLAGS_pdl_variants);
     pdl_get_doc_variants = ParsePDLGetDocVariantsStrict(FLAGS_pdl_get_doc_variants);
     pdl_storage_policies = bench::axes::ParseCSV<bench::axes::PDLStoragePolicy>(FLAGS_pdl_storage_policy);
@@ -372,34 +378,24 @@ int main(int argc, char* argv[]) {
         idx_configs.push_back({name, cfg, false});
       }
 
-      auto dgcda_name = "DocListDGCDA-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
-      Factory<>::Config dgcda_cfg{Factory<>::IndexEnum::DGCDA, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
-      idx_configs.push_back({dgcda_name, dgcda_cfg, false});
-
-      auto dgcda_otf_name = "DocListDGCDA-OTF-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
-      Factory<>::Config dgcda_otf_cfg{
-          Factory<>::IndexEnum::DGCDA_OTF, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
-      idx_configs.push_back({dgcda_otf_name, dgcda_otf_cfg, false});
-
-      auto dgcda_crl_name = "DocListDGCDA-CRL-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
-      Factory<>::Config dgcda_crl_cfg{
-          Factory<>::IndexEnum::DGCDA_CRL, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
-      idx_configs.push_back({dgcda_crl_name, dgcda_crl_cfg, false});
-
-      auto dgcda_ev_name = "DocListDGCDA-EV-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
-      Factory<>::Config dgcda_ev_cfg{
-          Factory<>::IndexEnum::DGCDA_EV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
-      idx_configs.push_back({dgcda_ev_name, dgcda_ev_cfg, false});
-
-      auto dgcda_dv_name = "DocListDGCDA-DV-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
-      Factory<>::Config dgcda_dv_cfg{
-          Factory<>::IndexEnum::DGCDA_DV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
-      idx_configs.push_back({dgcda_dv_name, dgcda_dv_cfg, false});
-
-      auto dgcda_vv_name = "DocListDGCDA-VV-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
-      Factory<>::Config dgcda_vv_cfg{
-          Factory<>::IndexEnum::DGCDA_VV, 0, static_cast<uint32_t>(bs), static_cast<float>(sf)};
-      idx_configs.push_back({dgcda_vv_name, dgcda_vv_cfg, false});
+      // DGCDA — one entry per requested TSLP variant (Default, OTF, CRL, EV, DV, VV).
+      for (const auto dgcda_slp : dgcda_slp_variants) {
+        auto dgcda_suffix = (dgcda_slp == Factory<>::DGCDASLPVariant::Default)
+                                ? std::string{}
+                                : std::string("-") + bench::axes::EnumTraits<bench::axes::DGCDASLPVariant>::Name(dgcda_slp);
+        auto name = "DocListDGCDA" + dgcda_suffix + "-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
+        Factory<>::Config cfg{Factory<>::IndexEnum::DGCDA,
+                              0,
+                              static_cast<uint32_t>(bs),
+                              static_cast<float>(sf),
+                              Factory<>::GetDocEnum::DA,
+                              Factory<>::GCDASLPVariant::Default,
+                              Factory<>::BareSLPVariant::Default,
+                              Factory<>::PDLVariant::Plain,
+                              Factory<>::PDLStoragePolicy::OccurrenceWeighted,
+                              dgcda_slp};
+        idx_configs.push_back({name, cfg, false});
+      }
 
       // PDL: codec variant × get-doc backing × storage policy at the
       // current (bs, sf). Only registered when --pdl_variants is set.

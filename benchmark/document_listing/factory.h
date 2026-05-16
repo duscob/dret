@@ -50,6 +50,7 @@ class Factory {
   using GetDocEnum       = bench::axes::GetDocEnum;
   using GCDASLPVariant   = bench::axes::GCDASLPVariant;
   using BareSLPVariant   = bench::axes::BareSLPVariant;
+  using DGCDASLPVariant  = bench::axes::DGCDASLPVariant;
 
   // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
   // (the span-length strategy). Everything downstream — SampledSLP, Chunks,
@@ -260,6 +261,10 @@ class Factory {
     BareSLPVariant bare_slp = BareSLPVariant::Default;
     PDLVariant pdl_variant = PDLVariant::Plain;
     PDLStoragePolicy pdl_storage_policy = PDLStoragePolicy::OccurrenceWeighted;
+    // Appended at the end of the struct so older 9-arg positional Config{}
+    // initialisers in the benchmark binaries keep landing in the correct
+    // fields. New code should prefer designated init.
+    DGCDASLPVariant dgcda_slp = DGCDASLPVariant::Default;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -278,7 +283,9 @@ class Factory {
         return bare_slp < t_c.bare_slp;
       if (pdl_variant != t_c.pdl_variant)
         return pdl_variant < t_c.pdl_variant;
-      return pdl_storage_policy < t_c.pdl_storage_policy;
+      if (pdl_storage_policy != t_c.pdl_storage_policy)
+        return pdl_storage_policy < t_c.pdl_storage_policy;
+      return dgcda_slp < t_c.dgcda_slp;
     }
   };
 
@@ -428,56 +435,34 @@ class Factory {
       }
 
       case IndexEnum::DGCDA: {
-        auto idx = std::make_shared<dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage>>(
-            std::ref(storage_), t_config.block_size, t_config.storing_factor);
-        construct(*idx, config_);
-        idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*idx)};
-        break;
-      }
+        // DGCDA's TSLP axis (DGCDASLPVariant) selects the differential-SLP
+        // variant. Default uses the standard DifferentialLightSLP<>; OTF/CRL
+        // vary the BasicSLP span-length strategy; EV/DV/VV vary the inner
+        // int-vector container for roots / span_sums / samples.
+        auto build = [this, &t_config, &index](auto type_tag) {
+          using TIndex = typename decltype(type_tag)::type;
+          auto idx = std::make_shared<TIndex>(
+              std::ref(storage_), t_config.block_size, t_config.storing_factor);
+          construct(*idx, config_);
+          idx->load(config_);
+          index = {idx, sdsl::size_in_bytes(*idx)};
+        };
+        struct DGCDA_Default { using type = dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage>; };
+        struct DGCDA_OTF     { using type = DGCDAVariant<DGCDASLP_OTF>; };
+        struct DGCDA_CRL     { using type = DGCDAVariant<DGCDASLP_CRL>; };
+        struct DGCDA_EV      { using type = DGCDAVariant<DGCDASLP_EV>; };
+        struct DGCDA_DV      { using type = DGCDAVariant<DGCDASLP_DV>; };
+        struct DGCDA_VV      { using type = DGCDAVariant<DGCDASLP_VV>; };
 
-      case IndexEnum::DGCDA_OTF: {
-        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_OTF>>(
-            std::ref(storage_), t_config.block_size, t_config.storing_factor);
-        construct(*idx, config_);
-        idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*idx)};
-        break;
-      }
-
-      case IndexEnum::DGCDA_CRL: {
-        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_CRL>>(
-            std::ref(storage_), t_config.block_size, t_config.storing_factor);
-        construct(*idx, config_);
-        idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*idx)};
-        break;
-      }
-
-      case IndexEnum::DGCDA_EV: {
-        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_EV>>(
-            std::ref(storage_), t_config.block_size, t_config.storing_factor);
-        construct(*idx, config_);
-        idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*idx)};
-        break;
-      }
-
-      case IndexEnum::DGCDA_DV: {
-        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_DV>>(
-            std::ref(storage_), t_config.block_size, t_config.storing_factor);
-        construct(*idx, config_);
-        idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*idx)};
-        break;
-      }
-
-      case IndexEnum::DGCDA_VV: {
-        auto idx = std::make_shared<DGCDAVariant<DGCDASLP_VV>>(
-            std::ref(storage_), t_config.block_size, t_config.storing_factor);
-        construct(*idx, config_);
-        idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*idx)};
+        switch (t_config.dgcda_slp) {
+          case DGCDASLPVariant::OTF: build(DGCDA_OTF{}); break;
+          case DGCDASLPVariant::CRL: build(DGCDA_CRL{}); break;
+          case DGCDASLPVariant::EV:  build(DGCDA_EV{});  break;
+          case DGCDASLPVariant::DV:  build(DGCDA_DV{});  break;
+          case DGCDASLPVariant::VV:  build(DGCDA_VV{});  break;
+          case DGCDASLPVariant::Default:
+          default:                   build(DGCDA_Default{}); break;
+        }
         break;
       }
 

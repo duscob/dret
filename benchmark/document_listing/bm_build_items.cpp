@@ -57,6 +57,10 @@ DEFINE_string(bare_slp_variants,
               "default,raw,dv,vv",
               "Bare-SLP container variants for SLP-NS family: comma-separated default,raw,dv,vv.");
 
+DEFINE_string(dgcda_slp_variants,
+              "default,otf,crl,ev,dv,vv",
+              "DGCDA TSLP variants: comma-separated default,otf,crl,ev,dv,vv.");
+
 DEFINE_string(pdl_variants,
               "",
               "PDL stored-set codec variants: comma-separated plain,rp,bc. Empty disables PDL.");
@@ -73,6 +77,7 @@ DEFINE_string(pdl_storage_policy,
 // All axis enums and parsing/name helpers come from enum_traits.h. The local
 // HasVariant<T> alias preserves the call sites further below.
 using bench::axes::BareSLPVariant;
+using bench::axes::DGCDASLPVariant;
 using bench::axes::GCDASLPVariant;
 using bench::axes::GetDocEnum;
 using bench::axes::PDLStoragePolicy;
@@ -373,6 +378,7 @@ int main(int argc, char** argv) {
   std::vector<GetDocEnum> rmq_get_doc_variants;
   std::vector<GCDASLPVariant> gcda_slp_variants;
   std::vector<BareSLPVariant> bare_slp_variants;
+  std::vector<DGCDASLPVariant> dgcda_slp_variants;
   std::vector<PDLVariant> pdl_variants;
   std::vector<GetDocEnum> pdl_get_doc_variants;
   std::vector<PDLStoragePolicy> pdl_storage_policies;
@@ -380,6 +386,7 @@ int main(int argc, char** argv) {
     rmq_get_doc_variants = bench::axes::ParseCSV<GetDocEnum>(FLAGS_rmq_get_doc_variants);
     gcda_slp_variants = bench::axes::ParseCSV<GCDASLPVariant>(FLAGS_gcda_slp_variants);
     bare_slp_variants = bench::axes::ParseCSV<BareSLPVariant>(FLAGS_bare_slp_variants);
+    dgcda_slp_variants = bench::axes::ParseCSV<DGCDASLPVariant>(FLAGS_dgcda_slp_variants);
     pdl_variants = bench::axes::ParseCSV<PDLVariant>(FLAGS_pdl_variants);
     pdl_get_doc_variants = ParseGetDocEnumsStrict(FLAGS_pdl_get_doc_variants);
     pdl_storage_policies = bench::axes::ParseCSV<PDLStoragePolicy>(FLAGS_pdl_storage_policy);
@@ -520,10 +527,6 @@ int main(int argc, char** argv) {
           ->ArgsProduct({block_sizes, storing_factors});
     }
 
-    benchmark::RegisterBenchmark(
-        "DocListDGCDA", BM_ConstructDocListIdxGCDA<dret::dgcda::DocListIdxDGCDA<>>, config)
-        ->ArgsProduct({block_sizes, storing_factors});
-
     using GetDocSLP = dret::rmq::GetDocSLP<dret::GenericStorage>;
     using SADACoreSLP = dret::rmq::SadaCore<dret::GenericStorage,
                                              dret::Alphabet<>::int_width,
@@ -658,24 +661,20 @@ int main(int argc, char** argv) {
           ->ArgsProduct({block_sizes, storing_factors});
     }
 
+    // DGCDA — one construct benchmark per requested TSLP variant. Each
+    // typed alias names a different DifferentialLightSLP shape; the variant
+    // axis is matched against --dgcda_slp_variants.
+    using DGCDA_Default = dret::dgcda::DocListIdxDGCDA<>;
     using DGCDA_OTF = dret::dgcda::DocListIdxDGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
         sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
         dret::DifferentialLightSLP<dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>>>;
-    benchmark::RegisterBenchmark(
-        "DocListDGCDA-OTF", BM_ConstructDocListIdxGCDA<DGCDA_OTF>, config)
-        ->ArgsProduct({block_sizes, storing_factors});
-
     using DGCDA_CRL = dret::dgcda::DocListIdxDGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
         sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
         dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>;
-    benchmark::RegisterBenchmark(
-        "DocListDGCDA-CRL", BM_ConstructDocListIdxGCDA<DGCDA_CRL>, config)
-        ->ArgsProduct({block_sizes, storing_factors});
-
     // Compressed int-vector variants: vary TRoots/TSpanSums/TSamples in lockstep;
     // TSampleRootsPos stays at the class default sdsl::enc_vector<>.
     using DGCDA_EV = dret::dgcda::DocListIdxDGCDA<
@@ -687,10 +686,6 @@ int main(int argc, char** argv) {
                                     sdsl::enc_vector<>,
                                     sdsl::enc_vector<>,
                                     sdsl::enc_vector<>>>;
-    benchmark::RegisterBenchmark(
-        "DocListDGCDA-EV", BM_ConstructDocListIdxGCDA<DGCDA_EV>, config)
-        ->ArgsProduct({block_sizes, storing_factors});
-
     using DGCDA_DV = dret::dgcda::DocListIdxDGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
@@ -700,10 +695,6 @@ int main(int argc, char** argv) {
                                     sdsl::dac_vector<>,
                                     sdsl::dac_vector<>,
                                     sdsl::dac_vector<>>>;
-    benchmark::RegisterBenchmark(
-        "DocListDGCDA-DV", BM_ConstructDocListIdxGCDA<DGCDA_DV>, config)
-        ->ArgsProduct({block_sizes, storing_factors});
-
     using DGCDA_VV = dret::dgcda::DocListIdxDGCDA<
         dret::GenericStorage,
         dret::Alphabet<>,
@@ -713,9 +704,24 @@ int main(int argc, char** argv) {
                                     sdsl::vlc_vector<>,
                                     sdsl::vlc_vector<>,
                                     sdsl::vlc_vector<>>>;
-    benchmark::RegisterBenchmark(
-        "DocListDGCDA-VV", BM_ConstructDocListIdxGCDA<DGCDA_VV>, config)
-        ->ArgsProduct({block_sizes, storing_factors});
+
+    auto register_dgcda = [&]<typename TIndex>(const char* suffix) {
+      const std::string name = std::string("DocListDGCDA") + suffix;
+      benchmark::RegisterBenchmark(name, BM_ConstructDocListIdxGCDA<TIndex>, config)
+          ->ArgsProduct({block_sizes, storing_factors});
+    };
+    if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::Default))
+      register_dgcda.template operator()<DGCDA_Default>("");
+    if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::OTF))
+      register_dgcda.template operator()<DGCDA_OTF>("-OTF");
+    if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::CRL))
+      register_dgcda.template operator()<DGCDA_CRL>("-CRL");
+    if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::EV))
+      register_dgcda.template operator()<DGCDA_EV>("-EV");
+    if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::DV))
+      register_dgcda.template operator()<DGCDA_DV>("-DV");
+    if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::VV))
+      register_dgcda.template operator()<DGCDA_VV>("-VV");
 
     // PDL build benchmarks. The (codec, get-doc) pair is a type-level
     // axis (9 template instantiations); storage policy is a runtime

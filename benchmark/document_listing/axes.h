@@ -14,21 +14,20 @@
 namespace bench::axes {
 
 // Which doc-list family / variant the benchmark is targeting.
+//
+// DGCDA's TSLP sub-axis (Default / OTF / CRL / EV / DV / VV) lives in
+// DGCDASLPVariant below; consumers fan out across that axis just like GCDA fans
+// across GCDASLPVariant.
 enum class IndexEnum {
   BRUTE_R_INDEX,
   BRUTE_SR_INDEX,
   GCDA,
-  DGCDA,
-  DGCDA_OTF,  // BasicSLPOnTheFlySpanLength — no stored lengths
-  DGCDA_CRL,  // BasicSLPCachedRootSpanLengths — lengths cached for roots only
-  DGCDA_EV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::enc_vector<>
-  DGCDA_DV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::dac_vector<>
-  DGCDA_VV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::vlc_vector<>
-  SADA,       // RMinQ on prev_doc
-  ILCP,       // RMinQ on backward-ILCP runs
-  CILCP,      // RMinQ on doc-aware compressed backward-ILCP runs
-  SLP_NS,     // Phase C: dret::DocListIdxSLP — non-sampled grammar::SLP<>
-  PDL,        // Precomputed Document Listing — variant axis selects Plain/RP/BC
+  DGCDA,    // variant axis selects Default / OTF / CRL / EV / DV / VV (see DGCDASLPVariant)
+  SADA,     // RMinQ on prev_doc
+  ILCP,     // RMinQ on backward-ILCP runs
+  CILCP,    // RMinQ on doc-aware compressed backward-ILCP runs
+  SLP_NS,   // Phase C: dret::DocListIdxSLP — non-sampled grammar::SLP<>
+  PDL,      // Precomputed Document Listing — variant axis selects Plain/RP/BC
 };
 
 // PDL stored-set codec axis. The class template differs per value
@@ -73,6 +72,18 @@ enum class BareSLPVariant {
   Raw,      // grammar::SLP<> — library defaults (std::vector<uint32_t>); DRL-equivalent
   DV,       // grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>
   VV,       // grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>
+};
+
+// DGCDA's TSLP choice. Default = the standard DifferentialLightSLP<>; OTF /
+// CRL vary the BasicSLP span-length strategy; EV / DV / VV vary the inner
+// int-vector container for roots / span_sums / samples.
+enum class DGCDASLPVariant {
+  Default,  // DifferentialLightSLP<> — the existing DGCDA default
+  OTF,      // BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>
+  CRL,      // BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>
+  EV,       // grammar::SLP<>; TRoots/TSpanSums/TSamples = sdsl::enc_vector<>
+  DV,       // grammar::SLP<>; TRoots/TSpanSums/TSamples = sdsl::dac_vector<>
+  VV,       // grammar::SLP<>; TRoots/TSpanSums/TSamples = sdsl::vlc_vector<>
 };
 
 }  // namespace bench::axes

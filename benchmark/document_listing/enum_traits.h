@@ -107,6 +107,35 @@ struct EnumTraits<GCDASLPVariant> {
 };
 
 template <>
+struct EnumTraits<DGCDASLPVariant> {
+  static constexpr const char* flag_name() { return "dgcda_slp_variants"; }
+  static constexpr bool has_default() { return true; }
+  static constexpr DGCDASLPVariant default_value() { return DGCDASLPVariant::Default; }
+
+  static std::optional<DGCDASLPVariant> TryParse(std::string_view s) {
+    if (s == "default") return DGCDASLPVariant::Default;
+    if (s == "otf")     return DGCDASLPVariant::OTF;
+    if (s == "crl")     return DGCDASLPVariant::CRL;
+    if (s == "ev")      return DGCDASLPVariant::EV;
+    if (s == "dv")      return DGCDASLPVariant::DV;
+    if (s == "vv")      return DGCDASLPVariant::VV;
+    return std::nullopt;
+  }
+
+  static const char* Name(DGCDASLPVariant v) {
+    switch (v) {
+      case DGCDASLPVariant::Default: return "Default";
+      case DGCDASLPVariant::OTF:     return "OTF";
+      case DGCDASLPVariant::CRL:     return "CRL";
+      case DGCDASLPVariant::EV:      return "EV";
+      case DGCDASLPVariant::DV:      return "DV";
+      case DGCDASLPVariant::VV:      return "VV";
+    }
+    return "UNKNOWN";
+  }
+};
+
+template <>
 struct EnumTraits<BareSLPVariant> {
   static constexpr const char* flag_name() { return "bare_slp_variants"; }
   static constexpr bool has_default() { return true; }
