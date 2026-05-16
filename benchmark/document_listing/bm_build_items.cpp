@@ -35,6 +35,8 @@
 #include "dret/pdl/storage_policy.h"
 #include "dret/size_report.h"
 
+#include "enum_traits.h"
+
 
 DEFINE_string(data, "", "Data file. (MANDATORY)");
 DEFINE_int32(data_width, 8, "Data width in bits: 8, 16, 32 or 64");
@@ -68,188 +70,29 @@ DEFINE_string(pdl_storage_policy,
 
 //~~~~~~~
 
-enum class RMQGetDocVariant {
-  DA,
-  SLP,
-  SLP_NS,
-  DSLP,
-};
+// All axis enums and parsing/name helpers come from enum_traits.h. The local
+// HasVariant<T> alias preserves the call sites further below.
+using bench::axes::BareSLPVariant;
+using bench::axes::GCDASLPVariant;
+using bench::axes::GetDocEnum;
+using bench::axes::PDLStoragePolicy;
+using bench::axes::PDLVariant;
 
-std::vector<RMQGetDocVariant> ParseRMQGetDocVariants(const std::string& value) {
-  std::vector<RMQGetDocVariant> variants;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "da") {
-      variants.push_back(RMQGetDocVariant::DA);
-    } else if (item == "slp") {
-      variants.push_back(RMQGetDocVariant::SLP);
-    } else if (item == "slp_ns") {
-      variants.push_back(RMQGetDocVariant::SLP_NS);
-    } else if (item == "dslp") {
-      variants.push_back(RMQGetDocVariant::DSLP);
-    } else if (!item.empty()) {
-      throw std::invalid_argument("Unknown --rmq_get_doc_variants item: " + item);
+template <typename E>
+bool HasVariant(const std::vector<E>& vec, E v) {
+  return bench::axes::Contains(vec, v);
+}
+
+// PDL accepts only DA/SLP/DSLP (no SLP_NS). The generic parser allows all
+// four GetDocEnum values, so we filter SLP_NS afterwards here.
+static std::vector<GetDocEnum> ParseGetDocEnumsStrict(const std::string& value) {
+  auto variants = bench::axes::ParseCSV<GetDocEnum>(value);
+  for (auto v : variants) {
+    if (v == GetDocEnum::SLP_NS) {
+      throw std::invalid_argument("--pdl_get_doc_variants: 'slp_ns' is not a valid PDL backing");
     }
   }
-  if (variants.empty())
-    variants.push_back(RMQGetDocVariant::DA);
   return variants;
-}
-
-enum class GCDASLPVariant {
-  Default,
-  CompactBP,
-  CompactLOUDS,
-  CSLP,
-};
-
-enum class BareSLPVariant {
-  Default,
-  Raw,
-  DV,
-  VV,
-};
-
-std::vector<BareSLPVariant> ParseBareSLPVariants(const std::string& value) {
-  std::vector<BareSLPVariant> variants;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "default") {
-      variants.push_back(BareSLPVariant::Default);
-    } else if (item == "raw") {
-      variants.push_back(BareSLPVariant::Raw);
-    } else if (item == "dv") {
-      variants.push_back(BareSLPVariant::DV);
-    } else if (item == "vv") {
-      variants.push_back(BareSLPVariant::VV);
-    } else if (!item.empty()) {
-      throw std::invalid_argument("Unknown --bare_slp_variants item: " + item);
-    }
-  }
-  if (variants.empty())
-    variants.push_back(BareSLPVariant::Default);
-  return variants;
-}
-
-std::vector<GCDASLPVariant> ParseGCDASLPVariants(const std::string& value) {
-  std::vector<GCDASLPVariant> variants;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "default") {
-      variants.push_back(GCDASLPVariant::Default);
-    } else if (item == "compact_bp") {
-      variants.push_back(GCDASLPVariant::CompactBP);
-    } else if (item == "compact_louds") {
-      variants.push_back(GCDASLPVariant::CompactLOUDS);
-    } else if (item == "cslp") {
-      variants.push_back(GCDASLPVariant::CSLP);
-    } else if (!item.empty()) {
-      throw std::invalid_argument("Unknown --gcda_slp_variants item: " + item);
-    }
-  }
-  if (variants.empty())
-    variants.push_back(GCDASLPVariant::Default);
-  return variants;
-}
-
-bool HasVariant(const std::vector<GCDASLPVariant>& variants, GCDASLPVariant variant) {
-  return std::find(variants.begin(), variants.end(), variant) != variants.end();
-}
-
-bool HasVariant(const std::vector<RMQGetDocVariant>& variants, RMQGetDocVariant variant) {
-  return std::find(variants.begin(), variants.end(), variant) != variants.end();
-}
-
-bool HasVariant(const std::vector<BareSLPVariant>& variants, BareSLPVariant variant) {
-  return std::find(variants.begin(), variants.end(), variant) != variants.end();
-}
-
-enum class PDLCodecVariant { Plain, RP, BC };
-enum class PDLGetDocVariant { DA, SLP, DSLP };
-
-std::vector<PDLCodecVariant> ParsePDLVariants(const std::string& value) {
-  std::vector<PDLCodecVariant> variants;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "plain")
-      variants.push_back(PDLCodecVariant::Plain);
-    else if (item == "rp")
-      variants.push_back(PDLCodecVariant::RP);
-    else if (item == "bc")
-      variants.push_back(PDLCodecVariant::BC);
-    else if (!item.empty())
-      throw std::invalid_argument("Unknown --pdl_variants item: " + item);
-  }
-  return variants;
-}
-
-std::vector<PDLGetDocVariant> ParsePDLGetDocVariants(const std::string& value) {
-  std::vector<PDLGetDocVariant> variants;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "da")
-      variants.push_back(PDLGetDocVariant::DA);
-    else if (item == "slp")
-      variants.push_back(PDLGetDocVariant::SLP);
-    else if (item == "dslp")
-      variants.push_back(PDLGetDocVariant::DSLP);
-    else if (!item.empty())
-      throw std::invalid_argument("Unknown --pdl_get_doc_variants item: " + item);
-  }
-  if (variants.empty())
-    variants.push_back(PDLGetDocVariant::DA);
-  return variants;
-}
-
-std::vector<dret::pdl::StoragePolicy> ParsePDLStoragePolicies(const std::string& value) {
-  std::vector<dret::pdl::StoragePolicy> policies;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "occurrence_weighted")
-      policies.push_back(dret::pdl::StoragePolicy::OccurrenceWeighted);
-    else if (item == "all_internal")
-      policies.push_back(dret::pdl::StoragePolicy::StoreAllInternal);
-    else if (item == "leaves_only")
-      policies.push_back(dret::pdl::StoragePolicy::LeavesOnly);
-    else if (!item.empty())
-      throw std::invalid_argument("Unknown --pdl_storage_policy item: " + item);
-  }
-  if (policies.empty())
-    policies.push_back(dret::pdl::StoragePolicy::OccurrenceWeighted);
-  return policies;
-}
-
-const char* PDLCodecVariantName(PDLCodecVariant v) {
-  switch (v) {
-    case PDLCodecVariant::Plain: return "Plain";
-    case PDLCodecVariant::RP:    return "RP";
-    case PDLCodecVariant::BC:    return "BC";
-  }
-  return "UNKNOWN";
-}
-
-const char* PDLGetDocVariantName(PDLGetDocVariant v) {
-  switch (v) {
-    case PDLGetDocVariant::DA:   return "DA";
-    case PDLGetDocVariant::SLP:  return "SLP";
-    case PDLGetDocVariant::DSLP: return "DSLP";
-  }
-  return "UNKNOWN";
-}
-
-const char* PDLStoragePolicyName(dret::pdl::StoragePolicy p) {
-  switch (p) {
-    case dret::pdl::StoragePolicy::OccurrenceWeighted: return "OccurrenceWeighted";
-    case dret::pdl::StoragePolicy::StoreAllInternal:   return "StoreAllInternal";
-    case dret::pdl::StoragePolicy::LeavesOnly:         return "LeavesOnly";
-  }
-  return "UNKNOWN";
 }
 
 //~~~~~~~
@@ -527,19 +370,19 @@ int main(int argc, char** argv) {
   }
 
   std::string data_path = FLAGS_data;
-  std::vector<RMQGetDocVariant> rmq_get_doc_variants;
+  std::vector<GetDocEnum> rmq_get_doc_variants;
   std::vector<GCDASLPVariant> gcda_slp_variants;
   std::vector<BareSLPVariant> bare_slp_variants;
-  std::vector<PDLCodecVariant> pdl_variants;
-  std::vector<PDLGetDocVariant> pdl_get_doc_variants;
-  std::vector<dret::pdl::StoragePolicy> pdl_storage_policies;
+  std::vector<PDLVariant> pdl_variants;
+  std::vector<GetDocEnum> pdl_get_doc_variants;
+  std::vector<PDLStoragePolicy> pdl_storage_policies;
   try {
-    rmq_get_doc_variants = ParseRMQGetDocVariants(FLAGS_rmq_get_doc_variants);
-    gcda_slp_variants = ParseGCDASLPVariants(FLAGS_gcda_slp_variants);
-    bare_slp_variants = ParseBareSLPVariants(FLAGS_bare_slp_variants);
-    pdl_variants = ParsePDLVariants(FLAGS_pdl_variants);
-    pdl_get_doc_variants = ParsePDLGetDocVariants(FLAGS_pdl_get_doc_variants);
-    pdl_storage_policies = ParsePDLStoragePolicies(FLAGS_pdl_storage_policy);
+    rmq_get_doc_variants = bench::axes::ParseCSV<GetDocEnum>(FLAGS_rmq_get_doc_variants);
+    gcda_slp_variants = bench::axes::ParseCSV<GCDASLPVariant>(FLAGS_gcda_slp_variants);
+    bare_slp_variants = bench::axes::ParseCSV<BareSLPVariant>(FLAGS_bare_slp_variants);
+    pdl_variants = bench::axes::ParseCSV<PDLVariant>(FLAGS_pdl_variants);
+    pdl_get_doc_variants = ParseGetDocEnumsStrict(FLAGS_pdl_get_doc_variants);
+    pdl_storage_policies = bench::axes::ParseCSV<PDLStoragePolicy>(FLAGS_pdl_storage_policy);
   } catch (const std::invalid_argument& e) {
     std::cerr << e.what() << std::endl;
     return 1;
@@ -566,7 +409,7 @@ int main(int argc, char** argv) {
                                              dret::Alphabet<>,
                                              sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                              dret::rmq::CilcpCore<dret::GenericStorage>>;
-  if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::DA)) {
+  if (HasVariant(rmq_get_doc_variants, GetDocEnum::DA)) {
     benchmark::RegisterBenchmark("DocListSADA-DA", BM_ConstructBruteIdx<SADAIdx>, config, data_path);
     benchmark::RegisterBenchmark("DocListILCP-DA", BM_ConstructBruteIdx<ILCPIdx>, config, data_path);
     benchmark::RegisterBenchmark("DocListCILCP-DA", BM_ConstructBruteIdx<CILCPIdx>, config, data_path);
@@ -617,7 +460,7 @@ int main(int argc, char** argv) {
 
     benchmark::RegisterBenchmark(
         std::string("DocListSLP-NS") + suffix, BM_ConstructDocListIdxSLP<IdxSLP>, config);
-    if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::SLP_NS)) {
+    if (HasVariant(rmq_get_doc_variants, GetDocEnum::SLP_NS)) {
       benchmark::RegisterBenchmark(std::string("DocListSADA-SLP-NS") + suffix,
                                    BM_ConstructDocListIdxRMQCompressedNS<SadaIdx, SadaCore>, config);
       benchmark::RegisterBenchmark(std::string("DocListILCP-SLP-NS") + suffix,
@@ -711,7 +554,7 @@ int main(int argc, char** argv) {
                                                  dret::Alphabet<>,
                                                  sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                  CILCPCoreSLP>;
-    if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::SLP)) {
+    if (HasVariant(rmq_get_doc_variants, GetDocEnum::SLP)) {
       // Default SLP TSLP (matches GCDA default).
       if (HasVariant(gcda_slp_variants, GCDASLPVariant::Default)) {
         benchmark::RegisterBenchmark("DocListSADA-SLP", BM_ConstructDocListIdxRMQCompressed<SADAIdxSLP, SADACoreSLP>, config)
@@ -806,7 +649,7 @@ int main(int argc, char** argv) {
                                                   dret::Alphabet<>,
                                                   sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
                                                   CILCPCoreDSLP>;
-    if (HasVariant(rmq_get_doc_variants, RMQGetDocVariant::DSLP)) {
+    if (HasVariant(rmq_get_doc_variants, GetDocEnum::DSLP)) {
       benchmark::RegisterBenchmark("DocListSADA-DSLP", BM_ConstructDocListIdxRMQCompressed<SADAIdxDSLP, SADACoreDSLP>, config)
           ->ArgsProduct({block_sizes, storing_factors});
       benchmark::RegisterBenchmark("DocListILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<ILCPIdxDSLP, ILCPCoreDSLP>, config)
@@ -880,67 +723,67 @@ int main(int argc, char** argv) {
     // --pdl_variants is empty.
     auto register_pdl = [&]<typename TIndex>(const std::string& base) {
       for (const auto sp : pdl_storage_policies) {
-        std::string name = "DocListPDL-" + base + "-" + PDLStoragePolicyName(sp);
+        std::string name = "DocListPDL-" + base + "-" + bench::axes::EnumTraits<PDLStoragePolicy>::Name(sp);
         benchmark::RegisterBenchmark(
-            name, BM_ConstructDocListIdxPDL<TIndex>, config, sp)
+            name, BM_ConstructDocListIdxPDL<TIndex>, config, bench::axes::toPDLStoragePolicy(sp))
             ->ArgsProduct({block_sizes, storing_factors});
       }
     };
 
     for (const auto pdl_v : pdl_variants) {
       for (const auto pdl_gd : pdl_get_doc_variants) {
-        std::string pair = std::string(PDLCodecVariantName(pdl_v)) + "-" +
-                           std::string(PDLGetDocVariantName(pdl_gd));
+        std::string pair = std::string(bench::axes::EnumTraits<PDLVariant>::Name(pdl_v)) + "-" +
+                           std::string(bench::axes::EnumTraits<GetDocEnum>::Name(pdl_gd));
         using TCountIdx = sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>;
         switch (pdl_v) {
-          case PDLCodecVariant::Plain:
+          case PDLVariant::Plain:
             switch (pdl_gd) {
-              case PDLGetDocVariant::DA:
+              case GetDocEnum::DA:
                 register_pdl.template operator()<
                     dret::pdl::DocListIdxPDLPlain<dret::GenericStorage>>(pair);
                 break;
-              case PDLGetDocVariant::SLP:
+              case GetDocEnum::SLP:
                 register_pdl.template operator()<
                     dret::pdl::DocListIdxPDLPlain<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
                                                   dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>>(pair);
                 break;
-              case PDLGetDocVariant::DSLP:
+              case GetDocEnum::DSLP:
                 register_pdl.template operator()<
                     dret::pdl::DocListIdxPDLPlain<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
                                                   dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>(pair);
                 break;
             }
             break;
-          case PDLCodecVariant::RP:
+          case PDLVariant::RP:
             switch (pdl_gd) {
-              case PDLGetDocVariant::DA:
+              case GetDocEnum::DA:
                 register_pdl.template operator()<
                     dret::pdl::DocListIdxPDLRP<dret::GenericStorage>>(pair);
                 break;
-              case PDLGetDocVariant::SLP:
+              case GetDocEnum::SLP:
                 register_pdl.template operator()<
                     dret::pdl::DocListIdxPDLRP<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
                                                dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>>(pair);
                 break;
-              case PDLGetDocVariant::DSLP:
+              case GetDocEnum::DSLP:
                 register_pdl.template operator()<
                     dret::pdl::DocListIdxPDLRP<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
                                                dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>(pair);
                 break;
             }
             break;
-          case PDLCodecVariant::BC:
+          case PDLVariant::BC:
             switch (pdl_gd) {
-              case PDLGetDocVariant::DA:
+              case GetDocEnum::DA:
                 register_pdl.template operator()<
                     dret::pdl::DocListIdxPDLBC<dret::GenericStorage>>(pair);
                 break;
-              case PDLGetDocVariant::SLP:
+              case GetDocEnum::SLP:
                 register_pdl.template operator()<
                     dret::pdl::DocListIdxPDLBC<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
                                                dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>>(pair);
                 break;
-              case PDLGetDocVariant::DSLP:
+              case GetDocEnum::DSLP:
                 register_pdl.template operator()<
                     dret::pdl::DocListIdxPDLBC<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
                                                dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>(pair);

@@ -20,6 +20,7 @@
 
 #include "dret/size_report.h"
 
+#include "enum_traits.h"
 #include "factory.h"
 
 DEFINE_string(patterns, "", "Patterns file. (MANDATORY)");
@@ -64,195 +65,17 @@ DEFINE_bool(print_result, false, "Execute benchmark that print results per index
 
 //~~~~~~~
 
-std::vector<Factory<>::GetDocEnum> ParseGetDocVariants(const std::string& value) {
-  std::vector<Factory<>::GetDocEnum> variants;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "da") {
-      variants.push_back(Factory<>::GetDocEnum::DA);
-    } else if (item == "slp") {
-      variants.push_back(Factory<>::GetDocEnum::SLP);
-    } else if (item == "slp_ns") {
-      variants.push_back(Factory<>::GetDocEnum::SLP_NS);
-    } else if (item == "dslp") {
-      variants.push_back(Factory<>::GetDocEnum::DSLP);
-    } else if (!item.empty()) {
-      throw std::invalid_argument("Unknown --rmq_get_doc_variants item: " + item);
-    }
-  }
-  if (variants.empty())
-    variants.push_back(Factory<>::GetDocEnum::DA);
-  return variants;
-}
-
-const char* GetDocName(Factory<>::GetDocEnum variant) {
-  switch (variant) {
-    case Factory<>::GetDocEnum::DA:
-      return "DA";
-    case Factory<>::GetDocEnum::SLP:
-      return "SLP";
-    case Factory<>::GetDocEnum::SLP_NS:
-      return "SLP-NS";
-    case Factory<>::GetDocEnum::DSLP:
-      return "DSLP";
-  }
-  return "UNKNOWN";
-}
-
-std::vector<Factory<>::GCDASLPVariant> ParseGCDASLPVariants(const std::string& value) {
-  std::vector<Factory<>::GCDASLPVariant> variants;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "default") {
-      variants.push_back(Factory<>::GCDASLPVariant::Default);
-    } else if (item == "compact_bp") {
-      variants.push_back(Factory<>::GCDASLPVariant::CompactBP);
-    } else if (item == "compact_louds") {
-      variants.push_back(Factory<>::GCDASLPVariant::CompactLOUDS);
-    } else if (item == "cslp") {
-      variants.push_back(Factory<>::GCDASLPVariant::CSLP);
-    } else if (!item.empty()) {
-      throw std::invalid_argument("Unknown --gcda_slp_variants item: " + item);
-    }
-  }
-  if (variants.empty())
-    variants.push_back(Factory<>::GCDASLPVariant::Default);
-  return variants;
-}
-
-const char* GCDASLPVariantName(Factory<>::GCDASLPVariant variant) {
-  switch (variant) {
-    case Factory<>::GCDASLPVariant::Default:
-      return "Default";
-    case Factory<>::GCDASLPVariant::CompactBP:
-      return "CompactBP";
-    case Factory<>::GCDASLPVariant::CompactLOUDS:
-      return "CompactLOUDS";
-    case Factory<>::GCDASLPVariant::CSLP:
-      return "CSLP";
-  }
-  return "UNKNOWN";
-}
-
-std::vector<Factory<>::BareSLPVariant> ParseBareSLPVariants(const std::string& value) {
-  std::vector<Factory<>::BareSLPVariant> variants;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "default") {
-      variants.push_back(Factory<>::BareSLPVariant::Default);
-    } else if (item == "raw") {
-      variants.push_back(Factory<>::BareSLPVariant::Raw);
-    } else if (item == "dv") {
-      variants.push_back(Factory<>::BareSLPVariant::DV);
-    } else if (item == "vv") {
-      variants.push_back(Factory<>::BareSLPVariant::VV);
-    } else if (!item.empty()) {
-      throw std::invalid_argument("Unknown --bare_slp_variants item: " + item);
-    }
-  }
-  if (variants.empty())
-    variants.push_back(Factory<>::BareSLPVariant::Default);
-  return variants;
-}
-
-const char* BareSLPVariantName(Factory<>::BareSLPVariant variant) {
-  switch (variant) {
-    case Factory<>::BareSLPVariant::Default:
-      return "Default";
-    case Factory<>::BareSLPVariant::Raw:
-      return "Raw";
-    case Factory<>::BareSLPVariant::DV:
-      return "DV";
-    case Factory<>::BareSLPVariant::VV:
-      return "VV";
-  }
-  return "UNKNOWN";
-}
-
-std::vector<Factory<>::PDLVariant> ParsePDLVariants(const std::string& value) {
-  std::vector<Factory<>::PDLVariant> variants;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "plain") {
-      variants.push_back(Factory<>::PDLVariant::Plain);
-    } else if (item == "rp") {
-      variants.push_back(Factory<>::PDLVariant::RP);
-    } else if (item == "bc") {
-      variants.push_back(Factory<>::PDLVariant::BC);
-    } else if (!item.empty()) {
-      throw std::invalid_argument("Unknown --pdl_variants item: " + item);
+// Shorthand: every per-axis parse / name call goes through bench::axes::EnumTraits.
+// The PDL get-doc flag accepts only DA / SLP / DSLP (no SLP_NS); the generic parser
+// accepts all four GetDocEnum values, so we filter SLP_NS afterwards here.
+static std::vector<Factory<>::GetDocEnum> ParsePDLGetDocVariantsStrict(const std::string& value) {
+  auto variants = bench::axes::ParseCSV<bench::axes::GetDocEnum>(value);
+  for (auto v : variants) {
+    if (v == bench::axes::GetDocEnum::SLP_NS) {
+      throw std::invalid_argument("--pdl_get_doc_variants: 'slp_ns' is not a valid PDL backing");
     }
   }
   return variants;
-}
-
-const char* PDLVariantName(Factory<>::PDLVariant variant) {
-  switch (variant) {
-    case Factory<>::PDLVariant::Plain:
-      return "Plain";
-    case Factory<>::PDLVariant::RP:
-      return "RP";
-    case Factory<>::PDLVariant::BC:
-      return "BC";
-  }
-  return "UNKNOWN";
-}
-
-// PDL accepts only the DA/SLP/DSLP get-doc backings (no SLP_NS).
-std::vector<Factory<>::GetDocEnum> ParsePDLGetDocVariants(const std::string& value) {
-  std::vector<Factory<>::GetDocEnum> variants;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "da") {
-      variants.push_back(Factory<>::GetDocEnum::DA);
-    } else if (item == "slp") {
-      variants.push_back(Factory<>::GetDocEnum::SLP);
-    } else if (item == "dslp") {
-      variants.push_back(Factory<>::GetDocEnum::DSLP);
-    } else if (!item.empty()) {
-      throw std::invalid_argument("Unknown --pdl_get_doc_variants item: " + item);
-    }
-  }
-  if (variants.empty())
-    variants.push_back(Factory<>::GetDocEnum::DA);
-  return variants;
-}
-
-std::vector<Factory<>::PDLStoragePolicy> ParsePDLStoragePolicies(const std::string& value) {
-  std::vector<Factory<>::PDLStoragePolicy> policies;
-  std::stringstream ss(value);
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    if (item == "occurrence_weighted") {
-      policies.push_back(Factory<>::PDLStoragePolicy::OccurrenceWeighted);
-    } else if (item == "all_internal") {
-      policies.push_back(Factory<>::PDLStoragePolicy::StoreAllInternal);
-    } else if (item == "leaves_only") {
-      policies.push_back(Factory<>::PDLStoragePolicy::LeavesOnly);
-    } else if (!item.empty()) {
-      throw std::invalid_argument("Unknown --pdl_storage_policy item: " + item);
-    }
-  }
-  if (policies.empty())
-    policies.push_back(Factory<>::PDLStoragePolicy::OccurrenceWeighted);
-  return policies;
-}
-
-const char* PDLStoragePolicyName(Factory<>::PDLStoragePolicy policy) {
-  switch (policy) {
-    case Factory<>::PDLStoragePolicy::OccurrenceWeighted:
-      return "OccurrenceWeighted";
-    case Factory<>::PDLStoragePolicy::StoreAllInternal:
-      return "StoreAllInternal";
-    case Factory<>::PDLStoragePolicy::LeavesOnly:
-      return "LeavesOnly";
-  }
-  return "UNKNOWN";
 }
 
 //~~~~~~~
@@ -434,12 +257,12 @@ int main(int argc, char* argv[]) {
   std::vector<Factory<>::GetDocEnum> pdl_get_doc_variants;
   std::vector<Factory<>::PDLStoragePolicy> pdl_storage_policies;
   try {
-    rmq_get_doc_variants = ParseGetDocVariants(FLAGS_rmq_get_doc_variants);
-    gcda_slp_variants = ParseGCDASLPVariants(FLAGS_gcda_slp_variants);
-    bare_slp_variants = ParseBareSLPVariants(FLAGS_bare_slp_variants);
-    pdl_variants = ParsePDLVariants(FLAGS_pdl_variants);
-    pdl_get_doc_variants = ParsePDLGetDocVariants(FLAGS_pdl_get_doc_variants);
-    pdl_storage_policies = ParsePDLStoragePolicies(FLAGS_pdl_storage_policy);
+    rmq_get_doc_variants = bench::axes::ParseCSV<bench::axes::GetDocEnum>(FLAGS_rmq_get_doc_variants);
+    gcda_slp_variants = bench::axes::ParseCSV<bench::axes::GCDASLPVariant>(FLAGS_gcda_slp_variants);
+    bare_slp_variants = bench::axes::ParseCSV<bench::axes::BareSLPVariant>(FLAGS_bare_slp_variants);
+    pdl_variants = bench::axes::ParseCSV<bench::axes::PDLVariant>(FLAGS_pdl_variants);
+    pdl_get_doc_variants = ParsePDLGetDocVariantsStrict(FLAGS_pdl_get_doc_variants);
+    pdl_storage_policies = bench::axes::ParseCSV<bench::axes::PDLStoragePolicy>(FLAGS_pdl_storage_policy);
   } catch (const std::invalid_argument& e) {
     std::cerr << e.what() << std::endl;
     return 1;
@@ -502,7 +325,7 @@ int main(int argc, char* argv[]) {
       for (const auto bare_slp : bare_slp_variants) {
         const auto suffix = (bare_slp == Factory<>::BareSLPVariant::Default)
                                 ? std::string{}
-                                : std::string("-") + BareSLPVariantName(bare_slp);
+                                : std::string("-") + bench::axes::EnumTraits<bench::axes::BareSLPVariant>::Name(bare_slp);
         Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA, 0, 512, 4,
                                    Factory<>::GetDocEnum::SLP_NS,
                                    Factory<>::GCDASLPVariant::Default, bare_slp};
@@ -525,7 +348,7 @@ int main(int argc, char* argv[]) {
   for (const auto bare_slp : bare_slp_variants) {
     const auto suffix = (bare_slp == Factory<>::BareSLPVariant::Default)
                             ? std::string{}
-                            : std::string("-") + BareSLPVariantName(bare_slp);
+                            : std::string("-") + bench::axes::EnumTraits<bench::axes::BareSLPVariant>::Name(bare_slp);
     Factory<>::Config slp_ns_cfg{Factory<>::IndexEnum::SLP_NS, 0, 512, 4,
                                  Factory<>::GetDocEnum::DA,
                                  Factory<>::GCDASLPVariant::Default, bare_slp};
@@ -538,7 +361,7 @@ int main(int argc, char* argv[]) {
       for (const auto gcda_slp : gcda_slp_variants) {
         auto suffix = (gcda_slp == Factory<>::GCDASLPVariant::Default)
                           ? std::string{}
-                          : std::string("-") + GCDASLPVariantName(gcda_slp);
+                          : std::string("-") + bench::axes::EnumTraits<bench::axes::GCDASLPVariant>::Name(gcda_slp);
         auto name = "DocListGCDA" + suffix + "-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
         Factory<>::Config cfg{Factory<>::IndexEnum::GCDA,
                               0,
@@ -583,9 +406,9 @@ int main(int argc, char* argv[]) {
       for (const auto pdl_v : pdl_variants) {
         for (const auto pdl_gd : pdl_get_doc_variants) {
           for (const auto pdl_sp : pdl_storage_policies) {
-            std::string name = std::string("DocListPDL-") + PDLVariantName(pdl_v) +
-                               "-" + GetDocName(pdl_gd) +
-                               "-" + PDLStoragePolicyName(pdl_sp) +
+            std::string name = std::string("DocListPDL-") + bench::axes::EnumTraits<bench::axes::PDLVariant>::Name(pdl_v) +
+                               "-" + bench::axes::EnumTraits<bench::axes::GetDocEnum>::Name(pdl_gd) +
+                               "-" + bench::axes::EnumTraits<bench::axes::PDLStoragePolicy>::Name(pdl_sp) +
                                "-bs" + std::to_string(bs) +
                                "-sf" + std::to_string(sf);
             Factory<>::Config cfg{Factory<>::IndexEnum::PDL,
@@ -618,9 +441,9 @@ int main(int argc, char* argv[]) {
         for (const auto gcda_slp : inner_variants) {
           auto variant_suffix = (get_doc == Factory<>::GetDocEnum::SLP &&
                                  gcda_slp != Factory<>::GCDASLPVariant::Default)
-                                    ? std::string("-") + GCDASLPVariantName(gcda_slp)
+                                    ? std::string("-") + bench::axes::EnumTraits<bench::axes::GCDASLPVariant>::Name(gcda_slp)
                                     : std::string{};
-          const auto suffix = std::string("-") + GetDocName(get_doc) + variant_suffix +
+          const auto suffix = std::string("-") + bench::axes::EnumTraits<bench::axes::GetDocEnum>::Name(get_doc) + variant_suffix +
                               "-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
           Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA, 0,
                                      static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};

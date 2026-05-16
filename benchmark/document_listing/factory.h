@@ -33,75 +33,23 @@
 #include "dret/pdl/get_docs.h"
 #include "dret/pdl/storage_policy.h"
 
+#include "axes.h"
+
 
 using ExternalGenericStorage = std::reference_wrapper<sri::GenericStorage>;
 
 template <uint8_t t_width = 8>
 class Factory {
  public:
-  enum class IndexEnum {
-    BRUTE_R_INDEX,
-    BRUTE_SR_INDEX,
-    GCDA,
-    DGCDA,
-    DGCDA_OTF,  // BasicSLPOnTheFlySpanLength — no stored lengths
-    DGCDA_CRL,  // BasicSLPCachedRootSpanLengths — lengths cached for roots only
-    DGCDA_EV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::enc_vector<>
-    DGCDA_DV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::dac_vector<>
-    DGCDA_VV,   // default SLP; TRoots/TSpanSums/TSamples = sdsl::vlc_vector<>
-    SADA,       // RMinQ on prev_doc
-    ILCP,       // RMinQ on backward-ILCP runs
-    CILCP,      // RMinQ on doc-aware compressed backward-ILCP runs
-    SLP_NS,     // Phase C: dret::DocListIdxSLP — non-sampled grammar::SLP<>
-    PDL,        // Precomputed Document Listing — variant axis selects Plain/RP/BC
-  };
-
-  // PDL stored-set codec axis. The class template differs per value
-  // (DocListIdxPDLPlain / DocListIdxPDLRP / DocListIdxPDLBC), so MakeIndex
-  // dispatches at compile time on this enum.
-  enum class PDLVariant {
-    Plain,
-    RP,
-    BC,
-  };
-
-  // PDL tree-construction storage policy. Affects which nodes carry a
-  // precomputed doc set but does NOT change the index's template type —
-  // it's threaded into the index constructor as a runtime argument and
-  // baked into the cache-key prefix.
-  enum class PDLStoragePolicy {
-    OccurrenceWeighted,
-    StoreAllInternal,
-    LeavesOnly,
-  };
-
-  enum class GetDocEnum {
-    DA,
-    SLP,
-    SLP_NS,  // bare grammar::SLP<>; shares Phase C's kSLPNS cache (no bs/sf knobs).
-    DSLP,
-  };
-
-  // GCDA's TSLP choice — independent from the RMQ DA-lookup `GetDocEnum`. The
-  // RMQ-SLP path consults this too so SADA/ILCP/CILCP-SLP reuse the SLP cache
-  // file built for the matching GCDA variant.
-  enum class GCDASLPVariant {
-    Default,       // grammar::LightSLP<...> — the existing GCDA default
-    CompactBP,     // grammar::CompactBPSLP<>
-    CompactLOUDS,  // grammar::CompactLOUDSSLP<>
-    CSLP,          // grammar::CombinedSLPWithUnitCover<> — Phase B
-  };
-
-  // Bare-SLP container choice — independent from `gcda_slp`. Selects which
-  // typed kSLPNS cache file is read by `DocListSLP-NS` and the three RMQ-NS
-  // variants. enc_vector<> is excluded: rule pairs and span lengths are
-  // non-monotonic.
-  enum class BareSLPVariant {
-    Default,  // grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>
-    Raw,      // grammar::SLP<> — library defaults (std::vector<uint32_t>); DRL-equivalent
-    DV,       // grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>
-    VV,       // grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>
-  };
+  // Axis enums are defined at bench::axes scope (axes.h) so bm_query_doc_list
+  // and bm_build_items can share the same types. Aliases below preserve every
+  // existing Factory<>::IndexEnum / Factory<>::GetDocEnum / ... reference.
+  using IndexEnum        = bench::axes::IndexEnum;
+  using PDLVariant       = bench::axes::PDLVariant;
+  using PDLStoragePolicy = bench::axes::PDLStoragePolicy;
+  using GetDocEnum       = bench::axes::GetDocEnum;
+  using GCDASLPVariant   = bench::axes::GCDASLPVariant;
+  using BareSLPVariant   = bench::axes::BareSLPVariant;
 
   // DGCDA variants differ only in the DifferentialLightSLP's inner TSLP type
   // (the span-length strategy). Everything downstream — SampledSLP, Chunks,
@@ -417,6 +365,11 @@ class Factory {
     Index index;
     switch (t_config.index_t) {
       case IndexEnum::BRUTE_R_INDEX: {
+        // Brute baselines bypass auto-build: the underlying sri::RIndex /
+        // sri::SrIndexValidArea caches are managed externally via the
+        // factory's lazy rIndex() / srIndex(), and DocListIdxBrute's own
+        // construct() would try to rebuild them from scratch (signature
+        // mismatch on sr-index sampling).
         auto idx = std::make_shared<
             dret::DocListIdxBrute<ExternalGenericStorage, dret::Alphabet<>, sri::RIndex<ExternalGenericStorage>>>(
             std::ref(storage_));
@@ -440,6 +393,7 @@ class Factory {
           case GCDASLPVariant::CompactBP: {
             auto idx = std::make_shared<GCDAVariant<GCDASLP_CompactBP>>(
                 std::ref(storage_), t_config.block_size, t_config.storing_factor);
+            construct(*idx, config_);
             idx->load(config_);
             index = {idx, sdsl::size_in_bytes(*idx)};
             break;
@@ -447,6 +401,7 @@ class Factory {
           case GCDASLPVariant::CompactLOUDS: {
             auto idx = std::make_shared<GCDAVariant<GCDASLP_CompactLOUDS>>(
                 std::ref(storage_), t_config.block_size, t_config.storing_factor);
+            construct(*idx, config_);
             idx->load(config_);
             index = {idx, sdsl::size_in_bytes(*idx)};
             break;
@@ -454,6 +409,7 @@ class Factory {
           case GCDASLPVariant::CSLP: {
             auto idx = std::make_shared<GCDAVariant<GCDASLP_CSLP>>(
                 std::ref(storage_), t_config.block_size, t_config.storing_factor);
+            construct(*idx, config_);
             idx->load(config_);
             index = {idx, sdsl::size_in_bytes(*idx)};
             break;
@@ -462,6 +418,7 @@ class Factory {
           default: {
             auto idx = std::make_shared<dret::gcda::DocListIdxGCDA<ExternalGenericStorage>>(
                 std::ref(storage_), t_config.block_size, t_config.storing_factor);
+            construct(*idx, config_);
             idx->load(config_);
             index = {idx, sdsl::size_in_bytes(*idx)};
             break;
@@ -473,6 +430,7 @@ class Factory {
       case IndexEnum::DGCDA: {
         auto idx = std::make_shared<dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        construct(*idx, config_);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;
@@ -481,6 +439,7 @@ class Factory {
       case IndexEnum::DGCDA_OTF: {
         auto idx = std::make_shared<DGCDAVariant<DGCDASLP_OTF>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        construct(*idx, config_);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;
@@ -489,6 +448,7 @@ class Factory {
       case IndexEnum::DGCDA_CRL: {
         auto idx = std::make_shared<DGCDAVariant<DGCDASLP_CRL>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        construct(*idx, config_);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;
@@ -497,6 +457,7 @@ class Factory {
       case IndexEnum::DGCDA_EV: {
         auto idx = std::make_shared<DGCDAVariant<DGCDASLP_EV>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        construct(*idx, config_);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;
@@ -505,6 +466,7 @@ class Factory {
       case IndexEnum::DGCDA_DV: {
         auto idx = std::make_shared<DGCDAVariant<DGCDASLP_DV>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        construct(*idx, config_);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;
@@ -513,6 +475,7 @@ class Factory {
       case IndexEnum::DGCDA_VV: {
         auto idx = std::make_shared<DGCDAVariant<DGCDASLP_VV>>(
             std::ref(storage_), t_config.block_size, t_config.storing_factor);
+        construct(*idx, config_);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;
@@ -524,6 +487,7 @@ class Factory {
             case BareSLPVariant::Raw: {
               typename SadaIdxSLP_NS_Raw::Core core(std::ref(storage_));
               auto idx = std::make_shared<SadaIdxSLP_NS_Raw>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -531,6 +495,7 @@ class Factory {
             case BareSLPVariant::DV: {
               typename SadaIdxSLP_NS_DV::Core core(std::ref(storage_));
               auto idx = std::make_shared<SadaIdxSLP_NS_DV>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -538,6 +503,7 @@ class Factory {
             case BareSLPVariant::VV: {
               typename SadaIdxSLP_NS_VV::Core core(std::ref(storage_));
               auto idx = std::make_shared<SadaIdxSLP_NS_VV>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -546,6 +512,7 @@ class Factory {
             default: {
               typename SadaIdxSLP_NS::Core core(std::ref(storage_));
               auto idx = std::make_shared<SadaIdxSLP_NS>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -559,6 +526,7 @@ class Factory {
               using IdxT = SadaIdxSLPVariant<GetDocSLP_CompactBP>;
               typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -567,6 +535,7 @@ class Factory {
               using IdxT = SadaIdxSLPVariant<GetDocSLP_CompactLOUDS>;
               typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -575,6 +544,7 @@ class Factory {
               using IdxT = SadaIdxSLPVariant<GetDocSLP_CSLP>;
               typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -583,6 +553,7 @@ class Factory {
             default: {
               typename SadaIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<SadaIdxSLP>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -593,12 +564,14 @@ class Factory {
         if (t_config.get_doc == GetDocEnum::DSLP) {
           typename SadaIdxDSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
           auto idx = std::make_shared<SadaIdxDSLP>(std::ref(storage_), core);
+          construct(*idx, config_);
           idx->load(config_);
           index = {idx, sdsl::size_in_bytes(*idx)};
           break;
         }
 
         auto idx = std::make_shared<SadaIdx>(std::ref(storage_));
+        construct(*idx, config_);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;
@@ -610,6 +583,7 @@ class Factory {
             case BareSLPVariant::Raw: {
               typename IlcpIdxSLP_NS_Raw::Core core(std::ref(storage_));
               auto idx = std::make_shared<IlcpIdxSLP_NS_Raw>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -617,6 +591,7 @@ class Factory {
             case BareSLPVariant::DV: {
               typename IlcpIdxSLP_NS_DV::Core core(std::ref(storage_));
               auto idx = std::make_shared<IlcpIdxSLP_NS_DV>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -624,6 +599,7 @@ class Factory {
             case BareSLPVariant::VV: {
               typename IlcpIdxSLP_NS_VV::Core core(std::ref(storage_));
               auto idx = std::make_shared<IlcpIdxSLP_NS_VV>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -632,6 +608,7 @@ class Factory {
             default: {
               typename IlcpIdxSLP_NS::Core core(std::ref(storage_));
               auto idx = std::make_shared<IlcpIdxSLP_NS>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -645,6 +622,7 @@ class Factory {
               using IdxT = IlcpIdxSLPVariant<GetDocSLP_CompactBP>;
               typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -653,6 +631,7 @@ class Factory {
               using IdxT = IlcpIdxSLPVariant<GetDocSLP_CompactLOUDS>;
               typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -661,6 +640,7 @@ class Factory {
               using IdxT = IlcpIdxSLPVariant<GetDocSLP_CSLP>;
               typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -669,6 +649,7 @@ class Factory {
             default: {
               typename IlcpIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IlcpIdxSLP>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -679,12 +660,14 @@ class Factory {
         if (t_config.get_doc == GetDocEnum::DSLP) {
           typename IlcpIdxDSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
           auto idx = std::make_shared<IlcpIdxDSLP>(std::ref(storage_), core);
+          construct(*idx, config_);
           idx->load(config_);
           index = {idx, sdsl::size_in_bytes(*idx)};
           break;
         }
 
         auto idx = std::make_shared<IlcpIdx>(std::ref(storage_));
+        construct(*idx, config_);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;
@@ -700,6 +683,7 @@ class Factory {
               t_config.block_size,
               t_config.storing_factor,
               policy);
+          construct(*idx, config_);
           idx->load(config_);
           index = {idx, sdsl::size_in_bytes(*idx)};
         };
@@ -768,6 +752,7 @@ class Factory {
                                                             dret::Alphabet<>,
                                                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                                                             BareSLP_Raw>>(std::ref(storage_));
+            construct(*idx, config_);
             idx->load(config_);
             index = {idx, sdsl::size_in_bytes(*idx)};
             break;
@@ -777,6 +762,7 @@ class Factory {
                                                             dret::Alphabet<>,
                                                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                                                             BareSLP_DV>>(std::ref(storage_));
+            construct(*idx, config_);
             idx->load(config_);
             index = {idx, sdsl::size_in_bytes(*idx)};
             break;
@@ -786,6 +772,7 @@ class Factory {
                                                             dret::Alphabet<>,
                                                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                                                             BareSLP_VV>>(std::ref(storage_));
+            construct(*idx, config_);
             idx->load(config_);
             index = {idx, sdsl::size_in_bytes(*idx)};
             break;
@@ -793,6 +780,7 @@ class Factory {
           case BareSLPVariant::Default:
           default: {
             auto idx = std::make_shared<dret::DocListIdxSLP<ExternalGenericStorage>>(std::ref(storage_));
+            construct(*idx, config_);
             idx->load(config_);
             index = {idx, sdsl::size_in_bytes(*idx)};
             break;
@@ -807,6 +795,7 @@ class Factory {
             case BareSLPVariant::Raw: {
               typename CilcpIdxSLP_NS_Raw::Core core(std::ref(storage_));
               auto idx = std::make_shared<CilcpIdxSLP_NS_Raw>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -814,6 +803,7 @@ class Factory {
             case BareSLPVariant::DV: {
               typename CilcpIdxSLP_NS_DV::Core core(std::ref(storage_));
               auto idx = std::make_shared<CilcpIdxSLP_NS_DV>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -821,6 +811,7 @@ class Factory {
             case BareSLPVariant::VV: {
               typename CilcpIdxSLP_NS_VV::Core core(std::ref(storage_));
               auto idx = std::make_shared<CilcpIdxSLP_NS_VV>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -829,6 +820,7 @@ class Factory {
             default: {
               typename CilcpIdxSLP_NS::Core core(std::ref(storage_));
               auto idx = std::make_shared<CilcpIdxSLP_NS>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -842,6 +834,7 @@ class Factory {
               using IdxT = CilcpIdxSLPVariant<GetDocSLP_CompactBP>;
               typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -850,6 +843,7 @@ class Factory {
               using IdxT = CilcpIdxSLPVariant<GetDocSLP_CompactLOUDS>;
               typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -858,6 +852,7 @@ class Factory {
               using IdxT = CilcpIdxSLPVariant<GetDocSLP_CSLP>;
               typename IdxT::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<IdxT>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -866,6 +861,7 @@ class Factory {
             default: {
               typename CilcpIdxSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
               auto idx = std::make_shared<CilcpIdxSLP>(std::ref(storage_), core);
+              construct(*idx, config_);
               idx->load(config_);
               index = {idx, sdsl::size_in_bytes(*idx)};
               break;
@@ -876,12 +872,14 @@ class Factory {
         if (t_config.get_doc == GetDocEnum::DSLP) {
           typename CilcpIdxDSLP::Core core(std::ref(storage_), t_config.block_size, t_config.storing_factor);
           auto idx = std::make_shared<CilcpIdxDSLP>(std::ref(storage_), core);
+          construct(*idx, config_);
           idx->load(config_);
           index = {idx, sdsl::size_in_bytes(*idx)};
           break;
         }
 
         auto idx = std::make_shared<CilcpIdx>(std::ref(storage_));
+        construct(*idx, config_);
         idx->load(config_);
         index = {idx, sdsl::size_in_bytes(*idx)};
         break;
