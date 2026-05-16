@@ -40,25 +40,25 @@ inline constexpr std::uint8_t kWidth = dret::Alphabet<>::int_width;
 // Re-export the sibling-factory SLP type aliases so RMQ-SLP / RMQ-SLP-NS /
 // RMQ-DSLP cache files match the corresponding GCDA / SLP-NS / DGCDA builds
 // via grammar:: type-hashing on disk.
-using gcda::SLP_Default;
+using gcda::SLP_Light;
 using gcda::SLP_CompactBP;
 using gcda::SLP_CompactLOUDS;
-using gcda::SLP_CSLP;
-using slp_ns::BareSLP_Default;
+using gcda::SLP_Combined;
+using slp_ns::BareSLP_IV;
 using slp_ns::BareSLP_Raw;
 using slp_ns::BareSLP_DV;
 using slp_ns::BareSLP_VV;
 
 // GetDoc policy template aliases. The GetDocSLP TSLP default intentionally
-// matches gcda::SLP_Default, and GetDocDSLP's TSLP default matches the DGCDA
+// matches gcda::SLP_Light, and GetDocDSLP's TSLP default matches the DGCDA
 // default — cache sharing depends on the exact template match.
 template <typename TStorage>
 using GetDocDA = dret::rmq::GetDocDA<TStorage, kWidth>;
 
-template <typename TStorage, typename TSLP = SLP_Default>
+template <typename TStorage, typename TSLP = SLP_Light>
 using GetDocSLP = dret::rmq::GetDocSLP<TStorage, kWidth, TSLP>;
 
-template <typename TStorage, typename TSLP = BareSLP_Default>
+template <typename TStorage, typename TSLP = BareSLP_IV>
 using GetDocSLP_NS = dret::rmq::GetDocSLP_NS<TStorage, kWidth, TSLP>;
 
 template <typename TStorage>
@@ -171,11 +171,11 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
           return MakeSLP<TCoreT, TStorage, SLP_CompactBP>(t_storage, t_config, t_block_size, t_storing_factor);
         case GCDASLPVariant::CompactLOUDS:
           return MakeSLP<TCoreT, TStorage, SLP_CompactLOUDS>(t_storage, t_config, t_block_size, t_storing_factor);
-        case GCDASLPVariant::CSLP:
-          return MakeSLP<TCoreT, TStorage, SLP_CSLP>(t_storage, t_config, t_block_size, t_storing_factor);
-        case GCDASLPVariant::Default:
+        case GCDASLPVariant::Combined:
+          return MakeSLP<TCoreT, TStorage, SLP_Combined>(t_storage, t_config, t_block_size, t_storing_factor);
+        case GCDASLPVariant::Light:
         default:
-          return MakeSLP<TCoreT, TStorage, SLP_Default>(t_storage, t_config, t_block_size, t_storing_factor);
+          return MakeSLP<TCoreT, TStorage, SLP_Light>(t_storage, t_config, t_block_size, t_storing_factor);
       }
     case GetDocEnum::SLP_NS:
       switch (t_bare_slp) {
@@ -185,9 +185,9 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
           return MakeSLP_NS<TCoreT, TStorage, BareSLP_DV>(t_storage, t_config);
         case BareSLPVariant::VV:
           return MakeSLP_NS<TCoreT, TStorage, BareSLP_VV>(t_storage, t_config);
-        case BareSLPVariant::Default:
+        case BareSLPVariant::IV:
         default:
-          return MakeSLP_NS<TCoreT, TStorage, BareSLP_Default>(t_storage, t_config);
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_IV>(t_storage, t_config);
       }
     case GetDocEnum::DSLP:
       return MakeDSLP<TCoreT, TStorage>(t_storage, t_config, t_block_size, t_storing_factor);

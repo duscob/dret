@@ -62,8 +62,8 @@ class Factory {
     uint32_t block_size = 512;
     float storing_factor = 4;
     GetDocEnum get_doc = GetDocEnum::DA;
-    GCDASLPVariant gcda_slp = GCDASLPVariant::Default;
-    BareSLPVariant bare_slp = BareSLPVariant::Default;
+    GCDASLPVariant gcda_slp = GCDASLPVariant::Light;
+    BareSLPVariant bare_slp = BareSLPVariant::IV;
     PDLVariant pdl_variant = PDLVariant::Plain;
     PDLStoragePolicy pdl_storage_policy = PDLStoragePolicy::OccurrenceWeighted;
     // Appended at the end of the struct so older 9-arg positional Config{}

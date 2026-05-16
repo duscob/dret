@@ -58,17 +58,21 @@ enum class GetDocEnum {
 
 // GCDA's TSLP choice. The RMQ-SLP path also consults this so SADA / ILCP /
 // CILCP-SLP reuse the SLP cache file built for the matching GCDA variant.
+// `Light` is the canonical GCDA TSLP (grammar::LightSLP<...>) — the family
+// default; the other three are alternative grammar representations.
 enum class GCDASLPVariant {
-  Default,       // grammar::LightSLP<...> — the existing GCDA default
+  Light,         // grammar::LightSLP<...> — canonical GCDA TSLP; the family default
   CompactBP,     // grammar::CompactBPSLP<>
   CompactLOUDS,  // grammar::CompactLOUDSSLP<>
-  CSLP,          // grammar::CombinedSLPWithUnitCover<> — Phase B
+  Combined,          // grammar::CombinedSLPWithUnitCover<> — Phase B
 };
 
 // Bare-SLP container choice for the SLP-NS family. enc_vector<> is excluded:
-// rule pairs and span lengths are non-monotonic.
+// rule pairs and span lengths are non-monotonic. The four values name the
+// inner container in (IV=int_vector / Raw=library default vector<uint32_t> /
+// DV=dac_vector / VV=vlc_vector).
 enum class BareSLPVariant {
-  Default,  // grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>
+  IV,       // grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>> — the family default
   Raw,      // grammar::SLP<> — library defaults (std::vector<uint32_t>); DRL-equivalent
   DV,       // grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>
   VV,       // grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>

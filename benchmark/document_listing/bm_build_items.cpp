@@ -56,12 +56,12 @@ DEFINE_int32(max_storing_factor, 4, "Maximum storing factor (power of 2).");
 DEFINE_string(rmq_get_doc_variants, "da,slp,slp_ns", "RMQ GetDoc variants to build: comma-separated da,slp,dslp.");
 
 DEFINE_string(gcda_slp_variants,
-              "default,compact_bp,compact_louds,cslp",
-              "GCDA TSLP variants: comma-separated default,compact_bp,compact_louds,cslp.");
+              "light,compact_bp,compact_louds,combined",
+              "GCDA TSLP variants: comma-separated light,compact_bp,compact_louds,combined.");
 
 DEFINE_string(bare_slp_variants,
-              "default,raw,dv,vv",
-              "Bare-SLP container variants for SLP-NS family: comma-separated default,raw,dv,vv.");
+              "iv,raw,dv,vv",
+              "Bare-SLP container variants for SLP-NS family: comma-separated iv,raw,dv,vv.");
 
 DEFINE_string(dgcda_slp_variants,
               "default,otf,crl,ev,dv,vv",
@@ -453,8 +453,8 @@ int main(int argc, char** argv) {
     }
   };
 
-  if (HasVariant(bare_slp_variants, BareSLPVariant::Default))
-    register_slp_ns_for_tslp.template operator()<bench::factories::slp_ns::BareSLP_Default>("");
+  if (HasVariant(bare_slp_variants, BareSLPVariant::IV))
+    register_slp_ns_for_tslp.template operator()<bench::factories::slp_ns::BareSLP_IV>("");
   if (HasVariant(bare_slp_variants, BareSLPVariant::Raw))
     register_slp_ns_for_tslp.template operator()<bench::factories::slp_ns::BareSLP_Raw>("-Raw");
   if (HasVariant(bare_slp_variants, BareSLPVariant::DV))
@@ -474,14 +474,14 @@ int main(int argc, char** argv) {
       benchmark::RegisterBenchmark(name, BM_ConstructDocListIdxGCDA<TIndex>, config)
           ->ArgsProduct({block_sizes, storing_factors});
     };
-    if (HasVariant(gcda_slp_variants, GCDASLPVariant::Default))
+    if (HasVariant(gcda_slp_variants, GCDASLPVariant::Light))
       register_gcda.template operator()<gcda_fac::Idx<dret::GenericStorage>>("");
     if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactBP))
       register_gcda.template operator()<gcda_fac::Idx<dret::GenericStorage, gcda_fac::SLP_CompactBP>>("-CompactBP");
     if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactLOUDS))
       register_gcda.template operator()<gcda_fac::Idx<dret::GenericStorage, gcda_fac::SLP_CompactLOUDS>>("-CompactLOUDS");
-    if (HasVariant(gcda_slp_variants, GCDASLPVariant::CSLP))
-      register_gcda.template operator()<gcda_fac::Idx<dret::GenericStorage, gcda_fac::SLP_CSLP>>("-CSLP");
+    if (HasVariant(gcda_slp_variants, GCDASLPVariant::Combined))
+      register_gcda.template operator()<gcda_fac::Idx<dret::GenericStorage, gcda_fac::SLP_Combined>>("-Combined");
 
     // RMQ-SLP — one register per (gcda_slp variant) requested. Each variant's
     // GetDocSLP TSLP shares its cache file with the matching DocListGCDA-*
@@ -506,14 +506,14 @@ int main(int argc, char** argv) {
           ->ArgsProduct({block_sizes, storing_factors});
     };
     if (HasVariant(rmq_get_doc_variants, GetDocEnum::SLP)) {
-      if (HasVariant(gcda_slp_variants, GCDASLPVariant::Default))
-        register_rmq_slp_for_tslp.template operator()<rmq_fac::SLP_Default>("");
+      if (HasVariant(gcda_slp_variants, GCDASLPVariant::Light))
+        register_rmq_slp_for_tslp.template operator()<rmq_fac::SLP_Light>("");
       if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactBP))
         register_rmq_slp_for_tslp.template operator()<rmq_fac::SLP_CompactBP>("CompactBP");
       if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactLOUDS))
         register_rmq_slp_for_tslp.template operator()<rmq_fac::SLP_CompactLOUDS>("CompactLOUDS");
-      if (HasVariant(gcda_slp_variants, GCDASLPVariant::CSLP))
-        register_rmq_slp_for_tslp.template operator()<rmq_fac::SLP_CSLP>("CSLP");
+      if (HasVariant(gcda_slp_variants, GCDASLPVariant::Combined))
+        register_rmq_slp_for_tslp.template operator()<rmq_fac::SLP_Combined>("Combined");
     }
 
     // RMQ-DSLP.

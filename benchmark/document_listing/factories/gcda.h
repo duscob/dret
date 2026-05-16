@@ -37,16 +37,16 @@
 namespace bench::factories::gcda {
 
 // TSLP type choices for the GCDA family. Storage-independent.
-using SLP_Default     = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
+using SLP_Light     = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
                                           grammar::SampledSLP<>,
                                           grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>;
 using SLP_CompactBP   = grammar::CompactBPSLP<>;
 using SLP_CompactLOUDS = grammar::CompactLOUDSSLP<>;
-using SLP_CSLP        = grammar::CombinedSLPWithUnitCover<>;
+using SLP_Combined        = grammar::CombinedSLPWithUnitCover<>;
 
 // Storage-parameterised typed-index template alias. The default TSLP matches
-// the dret::gcda::DocListIdxGCDA default (SLP_Default = grammar::LightSLP<...>).
-template <typename TStorage, typename TSLP = SLP_Default>
+// the dret::gcda::DocListIdxGCDA default (SLP_Light = grammar::LightSLP<...>).
+template <typename TStorage, typename TSLP = SLP_Light>
 using Idx = dret::gcda::DocListIdxGCDA<
     TStorage,
     dret::Alphabet<>,
@@ -73,17 +73,17 @@ Make(TStorage t_storage,
     result = {idx, sdsl::size_in_bytes(*idx)};
   };
 
-  struct T_Default      { using type = Idx<TStorage, SLP_Default>; };
+  struct T_Light      { using type = Idx<TStorage, SLP_Light>; };
   struct T_CompactBP    { using type = Idx<TStorage, SLP_CompactBP>; };
   struct T_CompactLOUDS { using type = Idx<TStorage, SLP_CompactLOUDS>; };
-  struct T_CSLP         { using type = Idx<TStorage, SLP_CSLP>; };
+  struct T_CSLP         { using type = Idx<TStorage, SLP_Combined>; };
 
   switch (t_slp) {
     case bench::axes::GCDASLPVariant::CompactBP:    build(T_CompactBP{});    break;
     case bench::axes::GCDASLPVariant::CompactLOUDS: build(T_CompactLOUDS{}); break;
-    case bench::axes::GCDASLPVariant::CSLP:         build(T_CSLP{});         break;
-    case bench::axes::GCDASLPVariant::Default:
-    default:                                        build(T_Default{});      break;
+    case bench::axes::GCDASLPVariant::Combined:         build(T_CSLP{});         break;
+    case bench::axes::GCDASLPVariant::Light:
+    default:                                        build(T_Light{});      break;
   }
   return result;
 }

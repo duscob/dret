@@ -30,14 +30,14 @@ namespace bench::factories::slp_ns {
 
 // Bare-SLP container choices. enc_vector<> is excluded: rule pairs and span
 // lengths are non-monotonic. Default matches dret::DocListIdxSLP<>::TSLP.
-using BareSLP_Default = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>;
+using BareSLP_IV = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>;
 using BareSLP_Raw     = grammar::SLP<>;
 using BareSLP_DV      = grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>;
 using BareSLP_VV      = grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>;
 
 // Storage-parameterised typed-index template alias. Default TSLP matches
-// dret::DocListIdxSLP<>::TSLP (BareSLP_Default).
-template <typename TStorage, typename TSLP = BareSLP_Default>
+// dret::DocListIdxSLP<>::TSLP (BareSLP_IV).
+template <typename TStorage, typename TSLP = BareSLP_IV>
 using Idx = dret::DocListIdxSLP<
     TStorage,
     dret::Alphabet<>,
@@ -59,7 +59,7 @@ Make(TStorage t_storage,
     result = {idx, sdsl::size_in_bytes(*idx)};
   };
 
-  struct T_Default { using type = Idx<TStorage, BareSLP_Default>; };
+  struct T_IV { using type = Idx<TStorage, BareSLP_IV>; };
   struct T_Raw     { using type = Idx<TStorage, BareSLP_Raw>; };
   struct T_DV      { using type = Idx<TStorage, BareSLP_DV>; };
   struct T_VV      { using type = Idx<TStorage, BareSLP_VV>; };
@@ -68,8 +68,8 @@ Make(TStorage t_storage,
     case bench::axes::BareSLPVariant::Raw: build(T_Raw{}); break;
     case bench::axes::BareSLPVariant::DV:  build(T_DV{});  break;
     case bench::axes::BareSLPVariant::VV:  build(T_VV{});  break;
-    case bench::axes::BareSLPVariant::Default:
-    default:                               build(T_Default{}); break;
+    case bench::axes::BareSLPVariant::IV:
+    default:                               build(T_IV{}); break;
   }
   return result;
 }

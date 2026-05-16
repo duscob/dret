@@ -85,22 +85,22 @@ template <>
 struct EnumTraits<GCDASLPVariant> {
   static constexpr const char* flag_name() { return "gcda_slp_variants"; }
   static constexpr bool has_default() { return true; }
-  static constexpr GCDASLPVariant default_value() { return GCDASLPVariant::Default; }
+  static constexpr GCDASLPVariant default_value() { return GCDASLPVariant::Light; }
 
   static std::optional<GCDASLPVariant> TryParse(std::string_view s) {
-    if (s == "default")       return GCDASLPVariant::Default;
+    if (s == "light")         return GCDASLPVariant::Light;
     if (s == "compact_bp")    return GCDASLPVariant::CompactBP;
     if (s == "compact_louds") return GCDASLPVariant::CompactLOUDS;
-    if (s == "cslp")          return GCDASLPVariant::CSLP;
+    if (s == "combined")          return GCDASLPVariant::Combined;
     return std::nullopt;
   }
 
   static const char* Name(GCDASLPVariant v) {
     switch (v) {
-      case GCDASLPVariant::Default:      return "Default";
+      case GCDASLPVariant::Light:        return "Light";
       case GCDASLPVariant::CompactBP:    return "CompactBP";
       case GCDASLPVariant::CompactLOUDS: return "CompactLOUDS";
-      case GCDASLPVariant::CSLP:         return "CSLP";
+      case GCDASLPVariant::Combined:         return "Combined";
     }
     return "UNKNOWN";
   }
@@ -139,22 +139,22 @@ template <>
 struct EnumTraits<BareSLPVariant> {
   static constexpr const char* flag_name() { return "bare_slp_variants"; }
   static constexpr bool has_default() { return true; }
-  static constexpr BareSLPVariant default_value() { return BareSLPVariant::Default; }
+  static constexpr BareSLPVariant default_value() { return BareSLPVariant::IV; }
 
   static std::optional<BareSLPVariant> TryParse(std::string_view s) {
-    if (s == "default") return BareSLPVariant::Default;
-    if (s == "raw")     return BareSLPVariant::Raw;
-    if (s == "dv")      return BareSLPVariant::DV;
-    if (s == "vv")      return BareSLPVariant::VV;
+    if (s == "iv")  return BareSLPVariant::IV;
+    if (s == "raw") return BareSLPVariant::Raw;
+    if (s == "dv")  return BareSLPVariant::DV;
+    if (s == "vv")  return BareSLPVariant::VV;
     return std::nullopt;
   }
 
   static const char* Name(BareSLPVariant v) {
     switch (v) {
-      case BareSLPVariant::Default: return "Default";
-      case BareSLPVariant::Raw:     return "Raw";
-      case BareSLPVariant::DV:      return "DV";
-      case BareSLPVariant::VV:      return "VV";
+      case BareSLPVariant::IV:  return "IV";
+      case BareSLPVariant::Raw: return "Raw";
+      case BareSLPVariant::DV:  return "DV";
+      case BareSLPVariant::VV:  return "VV";
     }
     return "UNKNOWN";
   }

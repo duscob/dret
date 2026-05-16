@@ -16,7 +16,7 @@ Both binaries share the same axis enums (`bench::axes::*`) and the same parse/na
 ./bm_query_doc_list \
   --data_dir=/path/to/data --data_name=wiki \
   --patterns=/path/to/queries.txt \
-  --gcda_slp_variants=default,compact_bp \
+  --gcda_slp_variants=light,compact_bp \
   --min_block_size=256 --max_block_size=1024 \
   --min_storing_factor=2 --max_storing_factor=8 \
   --benchmark_out_format=csv --benchmark_out=results.csv
@@ -26,7 +26,7 @@ Both binaries share the same axis enums (`bench::axes::*`) and the same parse/na
 # If you want construction-time + memory logs as well:
 ./bm_build_items \
   --data=/path/to/data/wiki \
-  --gcda_slp_variants=default,compact_bp \
+  --gcda_slp_variants=light,compact_bp \
   --min_block_size=256 --max_block_size=1024 \
   --min_storing_factor=2 --max_storing_factor=8 \
   --benchmark_out_format=json --benchmark_out=build.json
@@ -37,8 +37,8 @@ Both binaries share the same axis enums (`bench::axes::*`) and the same parse/na
 | Flag | Values | Meaning |
 |---|---|---|
 | `--rmq_get_doc_variants` | `da`, `slp`, `slp_ns`, `dslp` | RMQ family's raw-range doc lookup. |
-| `--gcda_slp_variants`    | `default`, `compact_bp`, `compact_louds`, `cslp` | GCDA's TSLP choice (also reused by RMQ-SLP for cache sharing). |
-| `--bare_slp_variants`    | `default`, `raw`, `dv`, `vv` | Non-sampled `grammar::SLP<>` container variants (SLP-NS family). |
+| `--gcda_slp_variants`    | `light`, `compact_bp`, `compact_louds`, `combined` | GCDA's TSLP choice (also reused by RMQ-SLP for cache sharing). `light` = `grammar::LightSLP<...>` (the family default). |
+| `--bare_slp_variants`    | `iv`, `raw`, `dv`, `vv` | Non-sampled `grammar::SLP<>` container variants. `iv` = `int_vector` (the family default), `raw` = `std::vector<uint32_t>`, `dv` = `dac_vector`, `vv` = `vlc_vector`. |
 | `--dgcda_slp_variants`   | `default`, `otf`, `crl`, `ev`, `dv`, `vv` | DGCDA's TSLP choice (DifferentialLightSLP span-length and inner-container variants). |
 | `--pdl_variants`         | `plain`, `rp`, `bc` (or empty) | PDL stored-set codec. Empty disables PDL. |
 | `--pdl_get_doc_variants` | `da`, `slp`, `dslp` | PDL raw-range get-doc backing. (`slp_ns` is rejected.) |

@@ -39,12 +39,12 @@ DEFINE_int32(max_storing_factor, 4, "Maximum storing factor for DocListGCDA (pow
 DEFINE_string(rmq_get_doc_variants, "da,slp,slp_ns", "RMQ GetDoc variants to run: comma-separated da,slp,dslp.");
 
 DEFINE_string(gcda_slp_variants,
-              "default,compact_bp,compact_louds,cslp",
-              "GCDA TSLP variants: comma-separated default,compact_bp,compact_louds,cslp.");
+              "light,compact_bp,compact_louds,combined",
+              "GCDA TSLP variants: comma-separated light,compact_bp,compact_louds,combined.");
 
 DEFINE_string(bare_slp_variants,
-              "default,raw,dv,vv",
-              "Bare-SLP container variants for SLP-NS family: comma-separated default,raw,dv,vv.");
+              "iv,raw,dv,vv",
+              "Bare-SLP container variants for SLP-NS family: comma-separated iv,raw,dv,vv.");
 
 DEFINE_string(dgcda_slp_variants,
               "default,otf,crl,ev,dv,vv",
@@ -329,18 +329,18 @@ int main(int argc, char* argv[]) {
       // the bare SLP is parameter-free. Fan out across the bare-SLP container axis
       // (Default = sdsl::int_vector<>, DV = dac_vector<>, VV = vlc_vector<>).
       for (const auto bare_slp : bare_slp_variants) {
-        const auto suffix = (bare_slp == Factory<>::BareSLPVariant::Default)
+        const auto suffix = (bare_slp == Factory<>::BareSLPVariant::IV)
                                 ? std::string{}
                                 : std::string("-") + bench::axes::EnumTraits<bench::axes::BareSLPVariant>::Name(bare_slp);
         Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA, 0, 512, 4,
                                    Factory<>::GetDocEnum::SLP_NS,
-                                   Factory<>::GCDASLPVariant::Default, bare_slp};
+                                   Factory<>::GCDASLPVariant::Light, bare_slp};
         Factory<>::Config ilcp_cfg{Factory<>::IndexEnum::ILCP, 0, 512, 4,
                                    Factory<>::GetDocEnum::SLP_NS,
-                                   Factory<>::GCDASLPVariant::Default, bare_slp};
+                                   Factory<>::GCDASLPVariant::Light, bare_slp};
         Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP, 0, 512, 4,
                                     Factory<>::GetDocEnum::SLP_NS,
-                                    Factory<>::GCDASLPVariant::Default, bare_slp};
+                                    Factory<>::GCDASLPVariant::Light, bare_slp};
         idx_configs.push_back({"SADA-SLP-NS" + suffix, sada_cfg, false});
         idx_configs.push_back({"ILCP-SLP-NS" + suffix, ilcp_cfg, false});
         idx_configs.push_back({"CILCP-SLP-NS" + suffix, cilcp_cfg, false});
@@ -352,12 +352,12 @@ int main(int argc, char* argv[]) {
   // Fan across the bare-SLP container axis (same cache pool as the RMQ-NS variants
   // above; type-hash on grammar::SLP<TVars,TLens> distinguishes the three on disk).
   for (const auto bare_slp : bare_slp_variants) {
-    const auto suffix = (bare_slp == Factory<>::BareSLPVariant::Default)
+    const auto suffix = (bare_slp == Factory<>::BareSLPVariant::IV)
                             ? std::string{}
                             : std::string("-") + bench::axes::EnumTraits<bench::axes::BareSLPVariant>::Name(bare_slp);
     Factory<>::Config slp_ns_cfg{Factory<>::IndexEnum::SLP_NS, 0, 512, 4,
                                  Factory<>::GetDocEnum::DA,
-                                 Factory<>::GCDASLPVariant::Default, bare_slp};
+                                 Factory<>::GCDASLPVariant::Light, bare_slp};
     idx_configs.push_back({"DocListSLP-NS" + suffix, slp_ns_cfg, false});
   }
 
@@ -365,7 +365,7 @@ int main(int argc, char* argv[]) {
     for (int64_t sf = FLAGS_min_storing_factor; sf <= FLAGS_max_storing_factor; sf *= 2) {
       // GCDA — one entry per requested TSLP variant (Default, CompactBP, CompactLOUDS).
       for (const auto gcda_slp : gcda_slp_variants) {
-        auto suffix = (gcda_slp == Factory<>::GCDASLPVariant::Default)
+        auto suffix = (gcda_slp == Factory<>::GCDASLPVariant::Light)
                           ? std::string{}
                           : std::string("-") + bench::axes::EnumTraits<bench::axes::GCDASLPVariant>::Name(gcda_slp);
         auto name = "DocListGCDA" + suffix + "-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
@@ -389,8 +389,8 @@ int main(int argc, char* argv[]) {
                               static_cast<uint32_t>(bs),
                               static_cast<float>(sf),
                               Factory<>::GetDocEnum::DA,
-                              Factory<>::GCDASLPVariant::Default,
-                              Factory<>::BareSLPVariant::Default,
+                              Factory<>::GCDASLPVariant::Light,
+                              Factory<>::BareSLPVariant::IV,
                               Factory<>::PDLVariant::Plain,
                               Factory<>::PDLStoragePolicy::OccurrenceWeighted,
                               dgcda_slp};
@@ -412,8 +412,8 @@ int main(int argc, char* argv[]) {
                                   static_cast<uint32_t>(bs),
                                   static_cast<float>(sf),
                                   pdl_gd,
-                                  Factory<>::GCDASLPVariant::Default,
-                                  Factory<>::BareSLPVariant::Default,
+                                  Factory<>::GCDASLPVariant::Light,
+                                  Factory<>::BareSLPVariant::IV,
                                   pdl_v,
                                   pdl_sp};
             idx_configs.push_back({name, cfg, false});
@@ -432,11 +432,11 @@ int main(int argc, char* argv[]) {
         const auto inner_variants =
             (get_doc == Factory<>::GetDocEnum::SLP)
                 ? gcda_slp_variants
-                : std::vector<Factory<>::GCDASLPVariant>{Factory<>::GCDASLPVariant::Default};
+                : std::vector<Factory<>::GCDASLPVariant>{Factory<>::GCDASLPVariant::Light};
 
         for (const auto gcda_slp : inner_variants) {
           auto variant_suffix = (get_doc == Factory<>::GetDocEnum::SLP &&
-                                 gcda_slp != Factory<>::GCDASLPVariant::Default)
+                                 gcda_slp != Factory<>::GCDASLPVariant::Light)
                                     ? std::string("-") + bench::axes::EnumTraits<bench::axes::GCDASLPVariant>::Name(gcda_slp)
                                     : std::string{};
           const auto suffix = std::string("-") + bench::axes::EnumTraits<bench::axes::GetDocEnum>::Name(get_doc) + variant_suffix +
