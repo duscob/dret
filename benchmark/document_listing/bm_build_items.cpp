@@ -36,6 +36,12 @@
 #include "dret/size_report.h"
 
 #include "enum_traits.h"
+#include "factories/brute.h"
+#include "factories/dgcda.h"
+#include "factories/gcda.h"
+#include "factories/pdl.h"
+#include "factories/rmq.h"
+#include "factories/slp_ns.h"
 
 
 DEFINE_string(data, "", "Data file. (MANDATORY)");
@@ -402,24 +408,22 @@ int main(int argc, char** argv) {
                       FLAGS_data_width,
                       FLAGS_doc_delim);
 
+  // Brute baseline — DocListIdxBrute<> with default storage. (The r-index /
+  // sr-index variants only matter for the query binary's factory cache; they
+  // aren't constructed here.)
   benchmark::RegisterBenchmark("DocListIdxBrute", BM_ConstructBruteIdx<dret::DocListIdxBrute<>>, config, data_path);
 
-  using SADAIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                            dret::Alphabet<>,
-                                            sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                            dret::rmq::SadaCore<dret::GenericStorage>>;
-  using ILCPIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                            dret::Alphabet<>,
-                                            sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                            dret::rmq::IlcpCore<dret::GenericStorage>>;
-  using CILCPIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                             dret::Alphabet<>,
-                                             sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                             dret::rmq::CilcpCore<dret::GenericStorage>>;
+  // RMQ family — typed aliases come from bench::factories::rmq, parameterised
+  // on dret::GenericStorage (each construct() takes a fresh storage).
+  namespace rmq_fac = bench::factories::rmq;
+  using GS = dret::GenericStorage;
   if (HasVariant(rmq_get_doc_variants, GetDocEnum::DA)) {
-    benchmark::RegisterBenchmark("DocListSADA-DA", BM_ConstructBruteIdx<SADAIdx>, config, data_path);
-    benchmark::RegisterBenchmark("DocListILCP-DA", BM_ConstructBruteIdx<ILCPIdx>, config, data_path);
-    benchmark::RegisterBenchmark("DocListCILCP-DA", BM_ConstructBruteIdx<CILCPIdx>, config, data_path);
+    using SadaIdx = rmq_fac::Idx<GS, rmq_fac::SadaCore<GS>>;
+    using IlcpIdx = rmq_fac::Idx<GS, rmq_fac::IlcpCore<GS>>;
+    using CilcpIdx = rmq_fac::Idx<GS, rmq_fac::CilcpCore<GS>>;
+    benchmark::RegisterBenchmark("DocListSADA-DA", BM_ConstructBruteIdx<SadaIdx>, config, data_path);
+    benchmark::RegisterBenchmark("DocListILCP-DA", BM_ConstructBruteIdx<IlcpIdx>, config, data_path);
+    benchmark::RegisterBenchmark("DocListCILCP-DA", BM_ConstructBruteIdx<CilcpIdx>, config, data_path);
   }
 
   // Phase C: non-sampled SLP index, plus the three RMQ listing cores backed by
@@ -428,42 +432,14 @@ int main(int argc, char** argv) {
   // sdsl::int_vector<>, DV = sdsl::dac_vector<>, VV = sdsl::vlc_vector<>); type-
   // hashes on grammar::SLP<TVars,TLens> distinguish the on-disk cache files.
   auto register_slp_ns_for_tslp = [&]<typename TSLP>(const char* suffix) {
-    using IdxSLP = dret::DocListIdxSLP<dret::GenericStorage,
-                                        dret::Alphabet<>,
-                                        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                        TSLP>;
-    using GetDoc = dret::rmq::GetDocSLP_NS<dret::GenericStorage,
-                                            dret::Alphabet<>::int_width,
-                                            TSLP>;
-    using SadaCore = dret::rmq::SadaCore<dret::GenericStorage,
-                                          dret::Alphabet<>::int_width,
-                                          sdsl::rmq_succinct_sct<true>,
-                                          sdsl::sd_vector<>,
-                                          GetDoc>;
-    using IlcpCore = dret::rmq::IlcpCore<dret::GenericStorage,
-                                          dret::Alphabet<>::int_width,
-                                          sdsl::sd_vector<>,
-                                          sdsl::rmq_succinct_sct<true>,
-                                          sdsl::sd_vector<>,
-                                          GetDoc>;
-    using CilcpCore = dret::rmq::CilcpCore<dret::GenericStorage,
-                                            dret::Alphabet<>::int_width,
-                                            sdsl::sd_vector<>,
-                                            sdsl::rmq_succinct_sct<true>,
-                                            sdsl::sd_vector<>,
-                                            GetDoc>;
-    using SadaIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                              dret::Alphabet<>,
-                                              sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                              SadaCore>;
-    using IlcpIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                              dret::Alphabet<>,
-                                              sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                              IlcpCore>;
-    using CilcpIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                               dret::Alphabet<>,
-                                               sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                               CilcpCore>;
+    using IdxSLP    = bench::factories::slp_ns::Idx<GS, TSLP>;
+    using GetDoc    = rmq_fac::GetDocSLP_NS<GS, TSLP>;
+    using SadaCore  = rmq_fac::SadaCore<GS, GetDoc>;
+    using IlcpCore  = rmq_fac::IlcpCore<GS, GetDoc>;
+    using CilcpCore = rmq_fac::CilcpCore<GS, GetDoc>;
+    using SadaIdx   = rmq_fac::Idx<GS, SadaCore>;
+    using IlcpIdx   = rmq_fac::Idx<GS, IlcpCore>;
+    using CilcpIdx  = rmq_fac::Idx<GS, CilcpCore>;
 
     benchmark::RegisterBenchmark(
         std::string("DocListSLP-NS") + suffix, BM_ConstructDocListIdxSLP<IdxSLP>, config);
@@ -478,255 +454,110 @@ int main(int argc, char** argv) {
   };
 
   if (HasVariant(bare_slp_variants, BareSLPVariant::Default))
-    register_slp_ns_for_tslp.template operator()<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>("");
+    register_slp_ns_for_tslp.template operator()<bench::factories::slp_ns::BareSLP_Default>("");
   if (HasVariant(bare_slp_variants, BareSLPVariant::Raw))
-    register_slp_ns_for_tslp.template operator()<grammar::SLP<>>("-Raw");
+    register_slp_ns_for_tslp.template operator()<bench::factories::slp_ns::BareSLP_Raw>("-Raw");
   if (HasVariant(bare_slp_variants, BareSLPVariant::DV))
-    register_slp_ns_for_tslp.template operator()<grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>>("-DV");
+    register_slp_ns_for_tslp.template operator()<bench::factories::slp_ns::BareSLP_DV>("-DV");
   if (HasVariant(bare_slp_variants, BareSLPVariant::VV))
-    register_slp_ns_for_tslp.template operator()<grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>>("-VV");
+    register_slp_ns_for_tslp.template operator()<bench::factories::slp_ns::BareSLP_VV>("-VV");
 
   auto block_sizes = powersOfTwo(FLAGS_min_block_size, FLAGS_max_block_size);
   auto storing_factors = powersOfTwo(FLAGS_min_storing_factor, FLAGS_max_storing_factor);
   if (!block_sizes.empty() && !storing_factors.empty()) {
-    if (HasVariant(gcda_slp_variants, GCDASLPVariant::Default)) {
-      benchmark::RegisterBenchmark(
-          "DocListGCDA", BM_ConstructDocListIdxGCDA<dret::gcda::DocListIdxGCDA<>>, config)
+    // GCDA — typed-index aliases come from bench::factories::gcda, parameterised
+    // on dret::GenericStorage. Type-hashes on disk match what the factory path
+    // produces because TStorage / TAlphabet / TCountIdx are identical.
+    namespace gcda_fac = bench::factories::gcda;
+    auto register_gcda = [&]<typename TIndex>(const char* suffix) {
+      const std::string name = std::string("DocListGCDA") + suffix;
+      benchmark::RegisterBenchmark(name, BM_ConstructDocListIdxGCDA<TIndex>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-    }
+    };
+    if (HasVariant(gcda_slp_variants, GCDASLPVariant::Default))
+      register_gcda.template operator()<gcda_fac::Idx<dret::GenericStorage>>("");
+    if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactBP))
+      register_gcda.template operator()<gcda_fac::Idx<dret::GenericStorage, gcda_fac::SLP_CompactBP>>("-CompactBP");
+    if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactLOUDS))
+      register_gcda.template operator()<gcda_fac::Idx<dret::GenericStorage, gcda_fac::SLP_CompactLOUDS>>("-CompactLOUDS");
+    if (HasVariant(gcda_slp_variants, GCDASLPVariant::CSLP))
+      register_gcda.template operator()<gcda_fac::Idx<dret::GenericStorage, gcda_fac::SLP_CSLP>>("-CSLP");
 
-    using GCDA_CompactBP = dret::gcda::DocListIdxGCDA<
-        dret::GenericStorage,
-        dret::Alphabet<>,
-        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-        grammar::CompactBPSLP<>>;
-    using GCDA_CompactLOUDS = dret::gcda::DocListIdxGCDA<
-        dret::GenericStorage,
-        dret::Alphabet<>,
-        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-        grammar::CompactLOUDSSLP<>>;
-    if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactBP)) {
-      benchmark::RegisterBenchmark(
-          "DocListGCDA-CompactBP", BM_ConstructDocListIdxGCDA<GCDA_CompactBP>, config)
+    // RMQ-SLP — one register per (gcda_slp variant) requested. Each variant's
+    // GetDocSLP TSLP shares its cache file with the matching DocListGCDA-*
+    // build via grammar:: type-hashing on disk.
+    auto register_rmq_slp_for_tslp = [&]<typename TSLP>(const char* suffix) {
+      using GetDoc    = rmq_fac::GetDocSLP<GS, TSLP>;
+      using SadaCore  = rmq_fac::SadaCore<GS, GetDoc>;
+      using IlcpCore  = rmq_fac::IlcpCore<GS, GetDoc>;
+      using CilcpCore = rmq_fac::CilcpCore<GS, GetDoc>;
+      using SadaIdx   = rmq_fac::Idx<GS, SadaCore>;
+      using IlcpIdx   = rmq_fac::Idx<GS, IlcpCore>;
+      using CilcpIdx  = rmq_fac::Idx<GS, CilcpCore>;
+      const std::string sep = (suffix[0] == '\0') ? std::string{} : std::string("-") + suffix;
+      benchmark::RegisterBenchmark(std::string("DocListSADA-SLP") + sep,
+                                   BM_ConstructDocListIdxRMQCompressed<SadaIdx, SadaCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-    }
-    if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactLOUDS)) {
-      benchmark::RegisterBenchmark(
-          "DocListGCDA-CompactLOUDS", BM_ConstructDocListIdxGCDA<GCDA_CompactLOUDS>, config)
+      benchmark::RegisterBenchmark(std::string("DocListILCP-SLP") + sep,
+                                   BM_ConstructDocListIdxRMQCompressed<IlcpIdx, IlcpCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-    }
-
-    using GCDA_CSLP = dret::gcda::DocListIdxGCDA<
-        dret::GenericStorage,
-        dret::Alphabet<>,
-        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-        grammar::CombinedSLPWithUnitCover<>>;
-    if (HasVariant(gcda_slp_variants, GCDASLPVariant::CSLP)) {
-      benchmark::RegisterBenchmark(
-          "DocListGCDA-CSLP", BM_ConstructDocListIdxGCDA<GCDA_CSLP>, config)
+      benchmark::RegisterBenchmark(std::string("DocListCILCP-SLP") + sep,
+                                   BM_ConstructDocListIdxRMQCompressed<CilcpIdx, CilcpCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-    }
-
-    using GetDocSLP = dret::rmq::GetDocSLP<dret::GenericStorage>;
-    using SADACoreSLP = dret::rmq::SadaCore<dret::GenericStorage,
-                                             dret::Alphabet<>::int_width,
-                                             sdsl::rmq_succinct_sct<true>,
-                                             sdsl::sd_vector<>,
-                                             GetDocSLP>;
-    using ILCPCoreSLP = dret::rmq::IlcpCore<dret::GenericStorage,
-                                             dret::Alphabet<>::int_width,
-                                             sdsl::sd_vector<>,
-                                             sdsl::rmq_succinct_sct<true>,
-                                             sdsl::sd_vector<>,
-                                             GetDocSLP>;
-    using CILCPCoreSLP = dret::rmq::CilcpCore<dret::GenericStorage,
-                                               dret::Alphabet<>::int_width,
-                                               sdsl::sd_vector<>,
-                                               sdsl::rmq_succinct_sct<true>,
-                                               sdsl::sd_vector<>,
-                                               GetDocSLP>;
-    using SADAIdxSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                                dret::Alphabet<>,
-                                                sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                                SADACoreSLP>;
-    using ILCPIdxSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                                dret::Alphabet<>,
-                                                sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                                ILCPCoreSLP>;
-    using CILCPIdxSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                                 dret::Alphabet<>,
-                                                 sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                                 CILCPCoreSLP>;
+    };
     if (HasVariant(rmq_get_doc_variants, GetDocEnum::SLP)) {
-      // Default SLP TSLP (matches GCDA default).
-      if (HasVariant(gcda_slp_variants, GCDASLPVariant::Default)) {
-        benchmark::RegisterBenchmark("DocListSADA-SLP", BM_ConstructDocListIdxRMQCompressed<SADAIdxSLP, SADACoreSLP>, config)
-            ->ArgsProduct({block_sizes, storing_factors});
-        benchmark::RegisterBenchmark("DocListILCP-SLP", BM_ConstructDocListIdxRMQCompressed<ILCPIdxSLP, ILCPCoreSLP>, config)
-            ->ArgsProduct({block_sizes, storing_factors});
-        benchmark::RegisterBenchmark("DocListCILCP-SLP", BM_ConstructDocListIdxRMQCompressed<CILCPIdxSLP, CILCPCoreSLP>, config)
-            ->ArgsProduct({block_sizes, storing_factors});
-      }
-
-      // Compact-grammar TSLPs — share the SLP cache file with the matching
-      // DocListGCDA-Compact* build via TSLP type matching.
-      auto register_rmq_slp_for_tslp = [&]<typename TSLP>(const char* suffix) {
-        using GetDocSLPVar = dret::rmq::GetDocSLP<dret::GenericStorage,
-                                                  dret::Alphabet<>::int_width,
-                                                  TSLP>;
-        using SadaCore = dret::rmq::SadaCore<dret::GenericStorage,
-                                              dret::Alphabet<>::int_width,
-                                              sdsl::rmq_succinct_sct<true>,
-                                              sdsl::sd_vector<>,
-                                              GetDocSLPVar>;
-        using IlcpCore = dret::rmq::IlcpCore<dret::GenericStorage,
-                                              dret::Alphabet<>::int_width,
-                                              sdsl::sd_vector<>,
-                                              sdsl::rmq_succinct_sct<true>,
-                                              sdsl::sd_vector<>,
-                                              GetDocSLPVar>;
-        using CilcpCore = dret::rmq::CilcpCore<dret::GenericStorage,
-                                                dret::Alphabet<>::int_width,
-                                                sdsl::sd_vector<>,
-                                                sdsl::rmq_succinct_sct<true>,
-                                                sdsl::sd_vector<>,
-                                                GetDocSLPVar>;
-        using SadaIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                                  dret::Alphabet<>,
-                                                  sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                                  SadaCore>;
-        using IlcpIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                                  dret::Alphabet<>,
-                                                  sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                                  IlcpCore>;
-        using CilcpIdx = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                                   dret::Alphabet<>,
-                                                   sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                                   CilcpCore>;
-        benchmark::RegisterBenchmark(std::string("DocListSADA-SLP-") + suffix,
-                                     BM_ConstructDocListIdxRMQCompressed<SadaIdx, SadaCore>, config)
-            ->ArgsProduct({block_sizes, storing_factors});
-        benchmark::RegisterBenchmark(std::string("DocListILCP-SLP-") + suffix,
-                                     BM_ConstructDocListIdxRMQCompressed<IlcpIdx, IlcpCore>, config)
-            ->ArgsProduct({block_sizes, storing_factors});
-        benchmark::RegisterBenchmark(std::string("DocListCILCP-SLP-") + suffix,
-                                     BM_ConstructDocListIdxRMQCompressed<CilcpIdx, CilcpCore>, config)
-            ->ArgsProduct({block_sizes, storing_factors});
-      };
-
+      if (HasVariant(gcda_slp_variants, GCDASLPVariant::Default))
+        register_rmq_slp_for_tslp.template operator()<rmq_fac::SLP_Default>("");
       if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactBP))
-        register_rmq_slp_for_tslp.template operator()<grammar::CompactBPSLP<>>("CompactBP");
+        register_rmq_slp_for_tslp.template operator()<rmq_fac::SLP_CompactBP>("CompactBP");
       if (HasVariant(gcda_slp_variants, GCDASLPVariant::CompactLOUDS))
-        register_rmq_slp_for_tslp.template operator()<grammar::CompactLOUDSSLP<>>("CompactLOUDS");
+        register_rmq_slp_for_tslp.template operator()<rmq_fac::SLP_CompactLOUDS>("CompactLOUDS");
       if (HasVariant(gcda_slp_variants, GCDASLPVariant::CSLP))
-        register_rmq_slp_for_tslp.template operator()<grammar::CombinedSLPWithUnitCover<>>("CSLP");
+        register_rmq_slp_for_tslp.template operator()<rmq_fac::SLP_CSLP>("CSLP");
     }
 
-    using GetDocDSLP = dret::rmq::GetDocDSLP<dret::GenericStorage>;
-    using SADACoreDSLP = dret::rmq::SadaCore<dret::GenericStorage,
-                                              dret::Alphabet<>::int_width,
-                                              sdsl::rmq_succinct_sct<true>,
-                                              sdsl::sd_vector<>,
-                                              GetDocDSLP>;
-    using ILCPCoreDSLP = dret::rmq::IlcpCore<dret::GenericStorage,
-                                              dret::Alphabet<>::int_width,
-                                              sdsl::sd_vector<>,
-                                              sdsl::rmq_succinct_sct<true>,
-                                              sdsl::sd_vector<>,
-                                              GetDocDSLP>;
-    using CILCPCoreDSLP = dret::rmq::CilcpCore<dret::GenericStorage,
-                                                dret::Alphabet<>::int_width,
-                                                sdsl::sd_vector<>,
-                                                sdsl::rmq_succinct_sct<true>,
-                                                sdsl::sd_vector<>,
-                                                GetDocDSLP>;
-    using SADAIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                                 dret::Alphabet<>,
-                                                 sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                                 SADACoreDSLP>;
-    using ILCPIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                                 dret::Alphabet<>,
-                                                 sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                                 ILCPCoreDSLP>;
-    using CILCPIdxDSLP = dret::rmq::DocListIdxRMQ<dret::GenericStorage,
-                                                  dret::Alphabet<>,
-                                                  sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-                                                  CILCPCoreDSLP>;
+    // RMQ-DSLP.
     if (HasVariant(rmq_get_doc_variants, GetDocEnum::DSLP)) {
-      benchmark::RegisterBenchmark("DocListSADA-DSLP", BM_ConstructDocListIdxRMQCompressed<SADAIdxDSLP, SADACoreDSLP>, config)
+      using GetDoc    = rmq_fac::GetDocDSLP<GS>;
+      using SadaCore  = rmq_fac::SadaCore<GS, GetDoc>;
+      using IlcpCore  = rmq_fac::IlcpCore<GS, GetDoc>;
+      using CilcpCore = rmq_fac::CilcpCore<GS, GetDoc>;
+      using SadaIdx   = rmq_fac::Idx<GS, SadaCore>;
+      using IlcpIdx   = rmq_fac::Idx<GS, IlcpCore>;
+      using CilcpIdx  = rmq_fac::Idx<GS, CilcpCore>;
+      benchmark::RegisterBenchmark("DocListSADA-DSLP", BM_ConstructDocListIdxRMQCompressed<SadaIdx, SadaCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-      benchmark::RegisterBenchmark("DocListILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<ILCPIdxDSLP, ILCPCoreDSLP>, config)
+      benchmark::RegisterBenchmark("DocListILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<IlcpIdx, IlcpCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-      benchmark::RegisterBenchmark("DocListCILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<CILCPIdxDSLP, CILCPCoreDSLP>, config)
+      benchmark::RegisterBenchmark("DocListCILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<CilcpIdx, CilcpCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
     }
 
-    // DGCDA — one construct benchmark per requested TSLP variant. Each
-    // typed alias names a different DifferentialLightSLP shape; the variant
-    // axis is matched against --dgcda_slp_variants.
-    using DGCDA_Default = dret::dgcda::DocListIdxDGCDA<>;
-    using DGCDA_OTF = dret::dgcda::DocListIdxDGCDA<
-        dret::GenericStorage,
-        dret::Alphabet<>,
-        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-        dret::DifferentialLightSLP<dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>>>;
-    using DGCDA_CRL = dret::dgcda::DocListIdxDGCDA<
-        dret::GenericStorage,
-        dret::Alphabet<>,
-        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-        dret::DifferentialLightSLP<dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>>;
-    // Compressed int-vector variants: vary TRoots/TSpanSums/TSamples in lockstep;
-    // TSampleRootsPos stays at the class default sdsl::enc_vector<>.
-    using DGCDA_EV = dret::dgcda::DocListIdxDGCDA<
-        dret::GenericStorage,
-        dret::Alphabet<>,
-        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-        dret::DifferentialLightSLP<grammar::SLP<>,
-                                    grammar::SampledSLP<>,
-                                    sdsl::enc_vector<>,
-                                    sdsl::enc_vector<>,
-                                    sdsl::enc_vector<>>>;
-    using DGCDA_DV = dret::dgcda::DocListIdxDGCDA<
-        dret::GenericStorage,
-        dret::Alphabet<>,
-        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-        dret::DifferentialLightSLP<grammar::SLP<>,
-                                    grammar::SampledSLP<>,
-                                    sdsl::dac_vector<>,
-                                    sdsl::dac_vector<>,
-                                    sdsl::dac_vector<>>>;
-    using DGCDA_VV = dret::dgcda::DocListIdxDGCDA<
-        dret::GenericStorage,
-        dret::Alphabet<>,
-        sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>,
-        dret::DifferentialLightSLP<grammar::SLP<>,
-                                    grammar::SampledSLP<>,
-                                    sdsl::vlc_vector<>,
-                                    sdsl::vlc_vector<>,
-                                    sdsl::vlc_vector<>>>;
-
+    // DGCDA — one construct benchmark per requested TSLP variant.
+    namespace dgcda_fac = bench::factories::dgcda;
     auto register_dgcda = [&]<typename TIndex>(const char* suffix) {
       const std::string name = std::string("DocListDGCDA") + suffix;
       benchmark::RegisterBenchmark(name, BM_ConstructDocListIdxGCDA<TIndex>, config)
           ->ArgsProduct({block_sizes, storing_factors});
     };
     if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::Default))
-      register_dgcda.template operator()<DGCDA_Default>("");
+      register_dgcda.template operator()<dgcda_fac::Idx<dret::GenericStorage>>("");
     if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::OTF))
-      register_dgcda.template operator()<DGCDA_OTF>("-OTF");
+      register_dgcda.template operator()<dgcda_fac::Idx<dret::GenericStorage, dgcda_fac::SLP_OTF>>("-OTF");
     if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::CRL))
-      register_dgcda.template operator()<DGCDA_CRL>("-CRL");
+      register_dgcda.template operator()<dgcda_fac::Idx<dret::GenericStorage, dgcda_fac::SLP_CRL>>("-CRL");
     if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::EV))
-      register_dgcda.template operator()<DGCDA_EV>("-EV");
+      register_dgcda.template operator()<dgcda_fac::Idx<dret::GenericStorage, dgcda_fac::SLP_EV>>("-EV");
     if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::DV))
-      register_dgcda.template operator()<DGCDA_DV>("-DV");
+      register_dgcda.template operator()<dgcda_fac::Idx<dret::GenericStorage, dgcda_fac::SLP_DV>>("-DV");
     if (HasVariant(dgcda_slp_variants, DGCDASLPVariant::VV))
-      register_dgcda.template operator()<DGCDA_VV>("-VV");
+      register_dgcda.template operator()<dgcda_fac::Idx<dret::GenericStorage, dgcda_fac::SLP_VV>>("-VV");
 
-    // PDL build benchmarks. The (codec, get-doc) pair is a type-level
-    // axis (9 template instantiations); storage policy is a runtime
-    // arg threaded into the index constructor. Skipped entirely when
-    // --pdl_variants is empty.
+    // PDL build benchmarks. Typed-index aliases come from bench::factories::pdl;
+    // the (codec, get-doc) pair is a compile-time axis (9 template instantiations)
+    // and storage_policy is a runtime arg threaded into the constructor. Skipped
+    // entirely when --pdl_variants is empty.
+    namespace pdl_fac = bench::factories::pdl;
     auto register_pdl = [&]<typename TIndex>(const std::string& base) {
       for (const auto sp : pdl_storage_policies) {
         std::string name = "DocListPDL-" + base + "-" + bench::axes::EnumTraits<PDLStoragePolicy>::Name(sp);
@@ -740,60 +571,29 @@ int main(int argc, char** argv) {
       for (const auto pdl_gd : pdl_get_doc_variants) {
         std::string pair = std::string(bench::axes::EnumTraits<PDLVariant>::Name(pdl_v)) + "-" +
                            std::string(bench::axes::EnumTraits<GetDocEnum>::Name(pdl_gd));
-        using TCountIdx = sri::RIndexCount<dret::GenericStorage, dret::Alphabet<>>;
         switch (pdl_v) {
           case PDLVariant::Plain:
             switch (pdl_gd) {
-              case GetDocEnum::DA:
-                register_pdl.template operator()<
-                    dret::pdl::DocListIdxPDLPlain<dret::GenericStorage>>(pair);
-                break;
-              case GetDocEnum::SLP:
-                register_pdl.template operator()<
-                    dret::pdl::DocListIdxPDLPlain<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
-                                                  dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>>(pair);
-                break;
-              case GetDocEnum::DSLP:
-                register_pdl.template operator()<
-                    dret::pdl::DocListIdxPDLPlain<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
-                                                  dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>(pair);
-                break;
+              case GetDocEnum::DA:   register_pdl.template operator()<pdl_fac::IdxPlain<GS>>(pair); break;
+              case GetDocEnum::SLP:  register_pdl.template operator()<pdl_fac::IdxPlain<GS, pdl_fac::GetDocsSLP<GS>>>(pair); break;
+              case GetDocEnum::DSLP: register_pdl.template operator()<pdl_fac::IdxPlain<GS, pdl_fac::GetDocsDSLP<GS>>>(pair); break;
+              case GetDocEnum::SLP_NS: break;  // not a valid PDL backing
             }
             break;
           case PDLVariant::RP:
             switch (pdl_gd) {
-              case GetDocEnum::DA:
-                register_pdl.template operator()<
-                    dret::pdl::DocListIdxPDLRP<dret::GenericStorage>>(pair);
-                break;
-              case GetDocEnum::SLP:
-                register_pdl.template operator()<
-                    dret::pdl::DocListIdxPDLRP<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
-                                               dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>>(pair);
-                break;
-              case GetDocEnum::DSLP:
-                register_pdl.template operator()<
-                    dret::pdl::DocListIdxPDLRP<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
-                                               dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>(pair);
-                break;
+              case GetDocEnum::DA:   register_pdl.template operator()<pdl_fac::IdxRP<GS>>(pair); break;
+              case GetDocEnum::SLP:  register_pdl.template operator()<pdl_fac::IdxRP<GS, pdl_fac::GetDocsSLP<GS>>>(pair); break;
+              case GetDocEnum::DSLP: register_pdl.template operator()<pdl_fac::IdxRP<GS, pdl_fac::GetDocsDSLP<GS>>>(pair); break;
+              case GetDocEnum::SLP_NS: break;
             }
             break;
           case PDLVariant::BC:
             switch (pdl_gd) {
-              case GetDocEnum::DA:
-                register_pdl.template operator()<
-                    dret::pdl::DocListIdxPDLBC<dret::GenericStorage>>(pair);
-                break;
-              case GetDocEnum::SLP:
-                register_pdl.template operator()<
-                    dret::pdl::DocListIdxPDLBC<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
-                                               dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>>(pair);
-                break;
-              case GetDocEnum::DSLP:
-                register_pdl.template operator()<
-                    dret::pdl::DocListIdxPDLBC<dret::GenericStorage, dret::Alphabet<>, TCountIdx,
-                                               dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>(pair);
-                break;
+              case GetDocEnum::DA:   register_pdl.template operator()<pdl_fac::IdxBC<GS>>(pair); break;
+              case GetDocEnum::SLP:  register_pdl.template operator()<pdl_fac::IdxBC<GS, pdl_fac::GetDocsSLP<GS>>>(pair); break;
+              case GetDocEnum::DSLP: register_pdl.template operator()<pdl_fac::IdxBC<GS, pdl_fac::GetDocsDSLP<GS>>>(pair); break;
+              case GetDocEnum::SLP_NS: break;
             }
             break;
         }
