@@ -22,9 +22,9 @@
 #include "dret/doc_list/doc_list_dgcda.h"
 #include "dret/doc_list/doc_list_slp.h"
 #include "dret/doc_list/doc_list_gcda.h"
-#include "dret/doc_list/doc_list_pdl_bc.h"
-#include "dret/doc_list/doc_list_pdl_plain.h"
-#include "dret/doc_list/doc_list_pdl_rp.h"
+#include "dret/doc_list/doc_list_pdl.h"
+#include "dret/doc_list/doc_list_pdl.h"
+#include "dret/doc_list/doc_list_pdl.h"
 
 #include "base_test.h"
 

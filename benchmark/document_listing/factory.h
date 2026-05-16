@@ -28,9 +28,9 @@
 #include "dret/doc_list/doc_list_rmq.h"
 #include "dret/doc_list/doc_list_dgcda.h"
 #include "dret/doc_list/doc_list_gcda.h"
-#include "dret/doc_list/doc_list_pdl_bc.h"
-#include "dret/doc_list/doc_list_pdl_plain.h"
-#include "dret/doc_list/doc_list_pdl_rp.h"
+#include "dret/doc_list/doc_list_pdl.h"
+#include "dret/doc_list/doc_list_pdl.h"
+#include "dret/doc_list/doc_list_pdl.h"
 #include "dret/pdl/get_docs.h"
 #include "dret/pdl/storage_policy.h"
 

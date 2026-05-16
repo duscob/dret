@@ -48,6 +48,7 @@
 #include <sdsl/sd_vector.hpp>
 #include <sdsl/util.hpp>
 
+#include "dret/config.h"
 #include "dret/size_report.h"
 
 #ifndef VNMEXTRACT_EXE
@@ -140,6 +141,8 @@ template <typename TObjContainer = sdsl::int_vector<>,
           typename TPosContainer = sdsl::int_vector<>>
 class PlainCodec {
  public:
+  static constexpr std::string_view kVariantKey = conf::kPlain;
+
   using TStoredChunks = grammar::Chunks<TObjContainer, TPosContainer>;
 
   PlainCodec() = default;
@@ -224,6 +227,8 @@ template <typename TSLP = grammar::SLP<>,
           typename TChunks = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
 class RPCodec {
  public:
+  static constexpr std::string_view kVariantKey = conf::kRP;
+
   using TStoredChunks = grammar::GCChunks<TSLP, /*kExpand=*/true, TChunks>;
 
   RPCodec() = default;
@@ -331,6 +336,8 @@ template <typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>>
 class BCCodec {
  public:
+  static constexpr std::string_view kVariantKey = conf::kBC;
+
   using TSelect1 = typename TBitvector::select_1_type;
 
   BCCodec() = default;

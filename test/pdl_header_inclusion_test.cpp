@@ -24,15 +24,15 @@
 //                                              type)
 //
 // If a future refactor moves any of these declarations OUT of the
-// transitive include set of doc_list_pdl_plain.h (e.g., into a
-// separate header not pulled in by the public PDL Plain header), or
+// transitive include set of doc_list_pdl.h (e.g., into a
+// separate header not pulled in by the public PDL header), or
 // declares them AFTER the class-template definition that calls them
 // unqualified, this test fails to compile. The runtime assertions
 // are trivial — the load-bearing assertion is "this file compiles".
 //
 
 // Deliberately the only PDL include — no other transitive helpers.
-#include "dret/doc_list/doc_list_pdl_plain.h"
+#include "dret/doc_list/doc_list_pdl.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

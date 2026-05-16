@@ -86,9 +86,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_slp.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_gcda.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_dgcda.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_pdl_plain.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_pdl_rp.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_pdl_bc.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_pdl.h
 
         # pdl/: PDL infrastructure (codecs + sparse tree + storage policy + get-doc adapter).
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/storage_policy.h

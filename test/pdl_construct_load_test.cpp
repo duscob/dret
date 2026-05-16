@@ -27,9 +27,9 @@
 
 #include <sdsl/util.hpp>
 
-#include "dret/doc_list/doc_list_pdl_bc.h"
-#include "dret/doc_list/doc_list_pdl_plain.h"
-#include "dret/doc_list/doc_list_pdl_rp.h"
+#include "dret/doc_list/doc_list_pdl.h"
+#include "dret/doc_list/doc_list_pdl.h"
+#include "dret/doc_list/doc_list_pdl.h"
 #include "dret/pdl/storage_policy.h"
 
 #include "base_test.h"

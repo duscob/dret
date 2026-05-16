@@ -1,19 +1,25 @@
 //
-// Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/12/26.
+// Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/16/26.
 //
-// DocListIdxPDLPlain: PDL document-listing index whose stored sets use
-// the PlainCodec from set_codecs.h. Composes a count sub-index
-// (default: sri::RIndexCount), a raw-range get-doc policy (default:
-// PDLGetDocsDA), and a PDLTreeCore<..., PlainCodec<>> for the sparse
-// suffix-tree navigation + per-slot stored-set expansion.
+// DocListIdxPDL: PDL document-listing index parameterised on the stored-set
+// codec. Composes a count sub-index (default: sri::RIndexCount), a raw-range
+// get-doc policy (default: PDLGetDocsDA), and a PDLTreeCore<..., TStoredSetCodec>
+// for the sparse suffix-tree navigation + per-slot stored-set expansion.
 //
-// Search() is inherited from DLSampledTreeScheme — the index just
-// overrides the four virtual hooks: count, computeCover[Full], getDocs,
-// getDocSet. computeCover stays a stub since PDL only needs the
-// multi-range computeCoverFull; the base's default cover machinery
-// won't be exercised by Search after the Task 12 rewrite.
+// The three PlainCodec / RPCodec / BCCodec variants are exposed as alias
+// templates DocListIdxPDLPlain / DocListIdxPDLRP / DocListIdxPDLBC that lock
+// in the codec while leaving the remaining seven template parameters defaulted.
+// Each codec exposes a static constexpr std::string_view kVariantKey used by
+// both cache-key sites in loadInner() / construct() to interpolate the
+// per-variant string fragment ("plain" / "rp" / "bc"). Values match the
+// existing conf::kPlain / kRP / kBC string constants so on-disk cache
+// compatibility is preserved.
 //
-// Task 23 of docs/pdl_indexes_tasks.md.
+// Search() is inherited from DLSampledTreeScheme — the index just overrides
+// the four virtual hooks: count, computeCover[Full], getDocs, getDocSet.
+// computeCover stays a stub since PDL only needs the multi-range
+// computeCoverFull; the base's default cover machinery won't be exercised by
+// Search after the Task 12 rewrite.
 //
 
 #pragma once
@@ -60,7 +66,7 @@ template <typename TStorage = GenericStorage,
           typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>,
           typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
-class DocListIdxPDLPlain
+class DocListIdxPDL
     : public DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>,
       public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
@@ -73,12 +79,12 @@ class DocListIdxPDLPlain
                             TStoredSetCodec>;
   using typename SchemeBase::size_type;
 
-  DocListIdxPDLPlain() = default;
+  DocListIdxPDL() = default;
 
-  explicit DocListIdxPDLPlain(const TStorage& t_storage,
-                              uint32_t t_block_size = 512,
-                              float t_storing_factor = 4.0f,
-                              StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
+  explicit DocListIdxPDL(const TStorage& t_storage,
+                         uint32_t t_block_size = 512,
+                         float t_storing_factor = 4.0f,
+                         StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
       : SchemeBase(TMergeSets()),
         StorageBase(t_storage),
         count_idx_(t_storage),
@@ -90,11 +96,11 @@ class DocListIdxPDLPlain
   // Externally-supplied count_idx variant, mirroring the GCDA pattern at
   // doc_list/doc_list_gcda.h:54. Useful when the count sub-index is
   // shared across multiple indexes pointing at the same storage.
-  DocListIdxPDLPlain(const TStorage& t_storage,
-                     const TCountIdx& t_count_idx,
-                     uint32_t t_block_size = 512,
-                     float t_storing_factor = 4.0f,
-                     StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
+  DocListIdxPDL(const TStorage& t_storage,
+                const TCountIdx& t_count_idx,
+                uint32_t t_block_size = 512,
+                float t_storing_factor = 4.0f,
+                StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
       : SchemeBase(TMergeSets()),
         StorageBase(t_storage),
         count_idx_(t_count_idx),
@@ -177,9 +183,11 @@ class DocListIdxPDLPlain
         },
         t_source);
 
-    auto key_prefix = std::format("{}-{}_pdl_plain_{}_", block_size_, storing_factor_,
+    auto key_prefix = std::format("{}-{}_pdl_{}_{}_", block_size_, storing_factor_,
+                                  TStoredSetCodec::kVariantKey,
                                   static_cast<int>(policy_));
-    auto key_core = key_prefix + t_keys[kPDL][kPlain][kSets].get<std::string>();
+    auto key_core =
+        key_prefix + t_keys[kPDL][TStoredSetCodec::kVariantKey][kSets].template get<std::string>();
     core_ = this->template loadItemPtr<TCore>(key_core, t_source, true);
   }
 
@@ -191,17 +199,42 @@ class DocListIdxPDLPlain
   StoragePolicy policy_ = StoragePolicy::OccurrenceWeighted;
 };
 
-// Counts distinct documents in the cached text by counting kInternalDocDelim
-// (\1) bytes. Same convention as internal::ReadNDoc in doc_list/doc_list_rmq.h.
-inline std::size_t ReadNDocFromText(const Config& t_config) {
-  sdsl::int_vector_buffer<8> text_buf(
-      sdsl::cache_file_name(t_config.keys[conf::kText].get<std::string>(), t_config));
-  std::size_t n = 0;
-  for (std::size_t i = 0; i < text_buf.size(); ++i) {
-    if (text_buf[i] == 1) ++n;
-  }
-  return n;
-}
+// Backward-compatible aliases. Each locks the 5th template parameter
+// (TStoredSetCodec) to the matching codec while keeping every other parameter
+// default identical to the unified template. Existing consumers that wrote
+// DocListIdxPDLPlain<...>, DocListIdxPDLRP<...>, DocListIdxPDLBC<...> keep
+// working without changes — alias templates expand to the underlying class
+// template at the point of instantiation.
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxPDLPlain = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+                                          PlainCodec<>, TBitvector, TIntVector, TMergeSets>;
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxPDLRP = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+                                       RPCodec<>, TBitvector, TIntVector, TMergeSets>;
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxPDLBC = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+                                       BCCodec<>, TBitvector, TIntVector, TMergeSets>;
 
 template <typename TStorage,
           typename TAlphabet,
@@ -211,8 +244,8 @@ template <typename TStorage,
           typename TBitvector,
           typename TIntVector,
           typename TMergeSets>
-void construct(DocListIdxPDLPlain<TStorage, TAlphabet, TCountIdx, TGetDocs,
-                                  TStoredSetCodec, TBitvector, TIntVector, TMergeSets>& t_index,
+void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+                              TStoredSetCodec, TBitvector, TIntVector, TMergeSets>& t_index,
                Config& t_config) {
   using namespace conf;
   using Index = std::remove_reference_t<decltype(t_index)>;
@@ -247,13 +280,15 @@ void construct(DocListIdxPDLPlain<TStorage, TAlphabet, TCountIdx, TGetDocs,
   }
 
   // PDLTreeCore (tree + selected-node codec) under a key that bakes in
-  // block_size, storing_factor, and policy; loadItemPtr's type-hash adds
-  // a further axis for the bitvector / codec template parameters.
-  const auto key_prefix = std::format("{}-{}_pdl_plain_{}_",
+  // block_size, storing_factor, codec variant, and policy; loadItemPtr's
+  // type-hash adds a further axis for the bitvector / codec template params.
+  const auto key_prefix = std::format("{}-{}_pdl_{}_{}_",
                                       t_index.block_size(),
                                       t_index.storing_factor(),
+                                      TStoredSetCodec::kVariantKey,
                                       static_cast<int>(t_index.policy()));
-  const auto key_core = key_prefix + t_config.keys[kPDL][kPlain][kSets].get<std::string>();
+  const auto key_core =
+      key_prefix + t_config.keys[kPDL][TStoredSetCodec::kVariantKey][kSets].template get<std::string>();
 
   if (!sdsl::cache_file_exists<TCore>(key_core, t_config)) {
     auto event = sdsl::memory_monitor::event(key_core);
@@ -289,12 +324,11 @@ void construct(DocListIdxPDLPlain<TStorage, TAlphabet, TCountIdx, TGetDocs,
     sdsl::store_to_cache(core, key_core, t_config, true);
   }
 
-  // Raw get-doc backing cache. DA-backed is a no-op (DA was built
-  // above); SLP / DSLP variants build their own LightSLP / DSLP cache
-  // entries via construct() in rmq_get_doc_policies.h. Copy the
-  // index's get_docs so we don't need a default-constructible
-  // TGetDocs (which would be ill-formed when TStorage is
-  // std::reference_wrapper).
+  // Raw get-doc backing cache. DA-backed is a no-op (DA was built above);
+  // SLP / DSLP variants build their own LightSLP / DSLP cache entries via
+  // construct() in rmq_get_doc_policies.h. Copy the index's get_docs so we
+  // don't need a default-constructible TGetDocs (which would be ill-formed
+  // when TStorage is std::reference_wrapper).
   auto get_docs = t_index.get_docs();
   construct(get_docs, t_config);
 
