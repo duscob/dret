@@ -1,15 +1,50 @@
 # Document-listing benchmarks
 
-Two complementary binaries cover the doc-list index family.
+Three binaries cover the doc-list index family.
 
-| Binary | Measures | When to use |
-|---|---|---|
-| `bm_query_doc_list` | Query throughput per index variant; reports size breakdown via `GetSizeReport()`. Auto-builds any missing cache artefacts on first run. | Day-to-day "how fast is this index?" runs. |
-| `bm_build_items`    | Construction time per index variant; emits `construction-*.html` / `construction-*.json` sdsl memory logs and `sizes-*.json` size breakdowns. | When you specifically want construction-time numbers or memory traces. |
+| Binary | Measures | Input | When to use |
+|---|---|---|---|
+| **`bm_doc_list`** *(recommended)* | Query throughput **or** construction time (selectable per spec); reports size breakdown via `GetSizeReport()`. Auto-builds missing cache artefacts on first run. | JSON sweep spec (`--spec=path.json`) | Day-to-day runs. One declarative file describes the whole sweep; the same binary handles build + query workflows. |
+| `bm_query_doc_list` | Query throughput, gflags-driven sweep. | gflags (`--gcda_slp_variants=...`, etc.) | Legacy. Still works; kept alongside while migrating to `bm_doc_list`. |
+| `bm_build_items`    | Construction time, gflags-driven sweep. Emits `construction-*.{html,json}` sdsl memory logs and `sizes-*.json` size breakdowns. | gflags (same as above) | Legacy. Use when you specifically want construction-time **memory traces** (which `bm_doc_list` doesn't emit yet). |
 
-Both binaries share the same axis enums (`bench::axes::*`) and the same parse/name helpers (`bench::axes::EnumTraits<E>` and `bench::axes::ParseCSV<E>`) — so every flag value listed below behaves the same across both.
+All three binaries share the same axis enums (`bench::axes::*`) and parse/name helpers (`bench::axes::EnumTraits<E>` and `bench::axes::ParseCSV<E>`), so axis names behave the same across the JSON spec and the legacy gflags.
 
-## Quick start
+## `bm_doc_list` — JSON-driven sweep
+
+See `example_sweep.json` for a complete reference. The spec is a single JSON document with four top-level keys:
+
+```json
+{
+  "mode":     "query",           // "query" | "construct"
+  "dataset":  { "dir": "...", "name": "...", "patterns": "...", "data_width": 8 },
+  "workload": { "reps": 10, "min_time": 0.0 },
+  "sweep":    [ ...family blocks... ]
+}
+```
+
+Each entry in `sweep` is one family block. The driver expands each block's Cartesian product against the family's axes and registers one Google Benchmark per cell:
+
+| Family | Axes |
+|---|---|
+| `gcda`   | `tslp` (`light` / `compact_bp` / `compact_louds` / `combined`), `block_size`, `storing_factor` |
+| `dgcda`  | `tslp` (`default` / `otf` / `crl` / `ev` / `dv` / `vv`), `block_size`, `storing_factor` |
+| `slp_ns` | `tslp` (`iv` / `raw` / `dv` / `vv`) |
+| `rmq`    | `core` (`sada` / `ilcp` / `cilcp`), `get_doc` (`da` / `slp` / `slp_ns` / `dslp`), `gcda_slp`, `bare_slp`, `block_size`, `storing_factor` |
+| `pdl`    | `codec` (`plain` / `rp` / `bc`), `get_doc` (`da` / `slp` / `dslp`), `policy`, `block_size`, `storing_factor` |
+| `brute`  | `kind` (`r-index` / `sr-index`), `sampling_size` |
+
+Missing axes default to the family's canonical value (`light`, `default`, `iv`, etc.). Unknown axis values throw at parse time with a helpful message.
+
+```bash
+./bm_doc_list --spec=example_sweep.json --benchmark_out_format=csv --benchmark_out=results.csv
+```
+
+Switch the spec's `mode` to `"construct"` to time `construct()` instead of `Search()` — same sweep, same expansion logic.
+
+## Legacy: `bm_query_doc_list` / `bm_build_items`
+
+These older binaries take gflags directly (one comma-separated list per axis). They predate the JSON spec; kept alongside for one cycle.
 
 ```bash
 # One-shot query benchmark (builds caches inline if missing):
@@ -32,7 +67,7 @@ Both binaries share the same axis enums (`bench::axes::*`) and the same parse/na
   --benchmark_out_format=json --benchmark_out=build.json
 ```
 
-## CLI axes (shared by both binaries)
+### CLI axes (legacy binaries; same values appear in the `bm_doc_list` JSON spec)
 
 | Flag | Values | Meaning |
 |---|---|---|
@@ -64,9 +99,13 @@ Each output row carries the per-component size breakdown emitted by `GetSizeRepo
 benchmark/document_listing/
 ├── axes.h                 — six axis enums at namespace bench::axes scope
 ├── enum_traits.h          — EnumTraits<E>::ParseCSV / ::Name, plus ParseCSV<E>(csv) helper
-├── factory.h              — Factory<>: builds + caches index instances, auto-builds missing cache artefacts
-├── bm_query_doc_list.cpp  — query benchmark binary
-└── bm_build_items.cpp     — construction benchmark binary
+├── spec.h                 — JSON spec types + parser for bm_doc_list
+├── factory.h              — Factory<>: builds + caches index instances; auto-builds missing cache artefacts
+├── factories/             — one header per family (brute, gcda, dgcda, slp_ns, rmq, pdl)
+├── bm_doc_list.cpp            — JSON-spec-driven benchmark binary (recommended entry point)
+├── bm_query_doc_list.cpp  — legacy gflags-driven query binary
+├── bm_build_items.cpp     — legacy gflags-driven construction binary (kept for memory-monitor traces)
+└── example_sweep.json     — annotated example spec for bm_doc_list
 ```
 
-To add a new axis value (e.g. a new TSLP variant), add it to `axes.h`, add the parse/name handling to `enum_traits.h`'s relevant `EnumTraits<>` specialisation, then wire it into the `Factory::MakeIndex` switch in `factory.h` and into the sweep loop in whichever binary cares about it. A future phase will pull the type-alias library out of `factory.h` into per-family headers under `factories/` so adding a variant is a one-file edit.
+To add a new axis value (e.g. a new TSLP variant): one line in `axes.h`, one arm in `enum_traits.h`'s `EnumTraits<>` specialisation, one alias + one Make() arm in the relevant `factories/<family>.h`, and one register-block in each binary that participates in the sweep.
