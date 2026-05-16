@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <unordered_map>
 
-#include "doc_freq_index.h"
+#include "dret/doc_freq/doc_freq_base.h"
 
 namespace dret {
 

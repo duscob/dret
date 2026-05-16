@@ -24,9 +24,9 @@
 #include <vector>
 
 #include "dret/config.h"
-#include "dret/pdl/doc_list_pdl_plain.h"
+#include "dret/doc_list/doc_list_pdl_plain.h"
 #include "dret/pdl/get_docs.h"
-#include "dret/rmq_get_doc_policies.h"
+#include "dret/rmq/rmq_get_doc_policies.h"
 
 #include "base_test.h"
 

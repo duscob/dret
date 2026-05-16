@@ -1,15 +1,13 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/13/26.
 //
-// DocListIdxPDLBC: PDL document-listing index whose stored sets use the
-// BCCodec (biClique-coded blocks built via Cecilia Hernandez's
-// vnmextract dense-subgraph extractor, see external/dsextract/). Mirrors
-// DocListIdxPDLPlain / DocListIdxPDLRP in shape — only the stored-set
-// codec, the JSON key path (kBC instead of kPlain/kRP), and the
-// cache-key prefix differ. Search() is inherited from
-// DLSampledTreeScheme.
+// DocListIdxPDLRP: PDL document-listing index whose stored sets use the
+// RPCodec (RePair-compressed per-slot doc sets, recursively expanded via
+// grammar::GCChunks). Mirrors DocListIdxPDLPlain in shape — only the
+// stored-set codec, the JSON key path (kRP instead of kPlain), and the
+// cache-key prefix differ. Search() is inherited from DLSampledTreeScheme.
 //
-// Task 25 of docs/pdl_indexes_tasks.md.
+// Task 24 of docs/pdl_indexes_tasks.md.
 //
 
 #pragma once
@@ -33,19 +31,19 @@
 
 #include "sr-index/r_index.h"
 
-#include "../config.h"
-#include "../construct_base.h"
-#include "../doc_list_sampled_tree.h"
-#include "../doc_list_sampled_tree_gcda.h"
-#include "../index_base.h"
-#include "../size_report.h"
-#include "build_pdl_core.h"
-#include "doc_list_pdl_plain.h"  // for ReadNDocFromText
-#include "get_docs.h"
-#include "set_codecs.h"
-#include "storage_policy.h"
-#include "tree_builder.h"
-#include "tree_core.h"
+#include "dret/config.h"
+#include "dret/construct_base.h"
+#include "dret/doc_list/doc_list_sampled_tree_base.h"
+#include "dret/doc_list/doc_list_gcda.h"
+#include "dret/index_base.h"
+#include "dret/size_report.h"
+#include "dret/pdl/build_pdl_core.h"
+#include "dret/doc_list/doc_list_pdl_plain.h"  // for ReadNDocFromText
+#include "dret/pdl/get_docs.h"
+#include "dret/pdl/set_codecs.h"
+#include "dret/pdl/storage_policy.h"
+#include "dret/pdl/tree_builder.h"
+#include "dret/pdl/tree_core.h"
 
 namespace dret::pdl {
 
@@ -53,11 +51,11 @@ template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
           typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
-          typename TStoredSetCodec = BCCodec<>,
+          typename TStoredSetCodec = RPCodec<>,
           typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>,
           typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
-class DocListIdxPDLBC
+class DocListIdxPDLRP
     : public DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>,
       public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
@@ -70,9 +68,9 @@ class DocListIdxPDLBC
                             TStoredSetCodec>;
   using typename SchemeBase::size_type;
 
-  DocListIdxPDLBC() = default;
+  DocListIdxPDLRP() = default;
 
-  explicit DocListIdxPDLBC(const TStorage& t_storage,
+  explicit DocListIdxPDLRP(const TStorage& t_storage,
                            uint32_t t_block_size = 512,
                            float t_storing_factor = 4.0f,
                            StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
@@ -84,7 +82,7 @@ class DocListIdxPDLBC
         storing_factor_(t_storing_factor),
         policy_(t_policy) {}
 
-  DocListIdxPDLBC(const TStorage& t_storage,
+  DocListIdxPDLRP(const TStorage& t_storage,
                   const TCountIdx& t_count_idx,
                   uint32_t t_block_size = 512,
                   float t_storing_factor = 4.0f,
@@ -166,9 +164,9 @@ class DocListIdxPDLBC
         },
         t_source);
 
-    auto key_prefix = std::format("{}-{}_pdl_bc_{}_", block_size_, storing_factor_,
+    auto key_prefix = std::format("{}-{}_pdl_rp_{}_", block_size_, storing_factor_,
                                   static_cast<int>(policy_));
-    auto key_core = key_prefix + t_keys[kPDL][kBC][kSets].get<std::string>();
+    auto key_core = key_prefix + t_keys[kPDL][kRP][kSets].get<std::string>();
     core_ = this->template loadItemPtr<TCore>(key_core, t_source, true);
   }
 
@@ -188,7 +186,7 @@ template <typename TStorage,
           typename TBitvector,
           typename TIntVector,
           typename TMergeSets>
-void construct(DocListIdxPDLBC<TStorage, TAlphabet, TCountIdx, TGetDocs,
+void construct(DocListIdxPDLRP<TStorage, TAlphabet, TCountIdx, TGetDocs,
                                TStoredSetCodec, TBitvector, TIntVector, TMergeSets>& t_index,
                Config& t_config) {
   using namespace conf;
@@ -221,11 +219,11 @@ void construct(DocListIdxPDLBC<TStorage, TAlphabet, TCountIdx, TGetDocs,
     sdsl::construct_lcp_kasai<t_width>(t_config);
   }
 
-  const auto key_prefix = std::format("{}-{}_pdl_bc_{}_",
+  const auto key_prefix = std::format("{}-{}_pdl_rp_{}_",
                                       t_index.block_size(),
                                       t_index.storing_factor(),
                                       static_cast<int>(t_index.policy()));
-  const auto key_core = key_prefix + t_config.keys[kPDL][kBC][kSets].get<std::string>();
+  const auto key_core = key_prefix + t_config.keys[kPDL][kRP][kSets].get<std::string>();
 
   if (!sdsl::cache_file_exists<TCore>(key_core, t_config)) {
     auto event = sdsl::memory_monitor::event(key_core);

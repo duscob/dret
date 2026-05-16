@@ -9,8 +9,8 @@
 #include <utility>
 #include <cassert>
 
-#include "algorithm.h"
-#include "util.h"
+#include "dret/common/algorithm.h"
+#include "dret/common/util.h"
 
 namespace dret {
 

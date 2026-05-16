@@ -2,7 +2,7 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com>.
 //
 // Shared RMQ-based machinery used by both document-frequency and document-listing
-// indexes (doc_freq_index_rmq.h and doc_list_index_rmq.h).
+// indexes (doc_freq/doc_freq_rmq.h and doc_list/doc_list_rmq.h).
 //
 
 #pragma once

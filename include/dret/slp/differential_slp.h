@@ -16,9 +16,9 @@
 #include <grammar/slp_helper.h>
 #include <grammar/utility.h>
 
-#include "basic_slp_span_length.h"
-#include "config.h"
-#include "size_report.h"
+#include "dret/slp/basic_slp_span_length.h"
+#include "dret/config.h"
+#include "dret/size_report.h"
 
 namespace dret {
 

@@ -7,7 +7,7 @@
 // dret-side `collectSizes` overload so two-phase lookup at
 // `DocListIdxGCDA::GetSizeReport`'s definition point can find it.
 //
-// Must be `#include`-d at the top of `doc_list_sampled_tree_gcda.h`
+// Must be `#include`-d at the top of `doc_list/doc_list_gcda.h`
 // (before the `DocListIdxGCDA` class body).
 //
 
@@ -19,7 +19,7 @@
 #include <grammar/sampled_slp.h>
 #include <sdsl/util.hpp>
 
-#include "size_report.h"
+#include "dret/size_report.h"
 
 namespace dret {
 

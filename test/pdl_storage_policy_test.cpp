@@ -27,8 +27,8 @@
 #include <utility>
 #include <vector>
 
-#include "dret/doc_list_index_brute.h"
-#include "dret/pdl/doc_list_pdl_plain.h"
+#include "dret/doc_list/doc_list_brute.h"
+#include "dret/doc_list/doc_list_pdl_plain.h"
 #include "dret/pdl/storage_policy.h"
 
 #include "base_test.h"

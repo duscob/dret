@@ -13,13 +13,13 @@
 
 #include "sr-index/r_index.h"
 
-#include "combined_slp_with_unit_cover.h"
-#include "compact_bp_slp.h"
-#include "compact_louds_slp.h"
-#include "construct_base.h"
-#include "doc_list_sampled_tree.h"
-#include "index_base.h"
-#include "slp_tools.h"
+#include "dret/slp/combined_slp_with_unit_cover.h"
+#include "dret/slp/compact_bp_slp.h"
+#include "dret/slp/compact_louds_slp.h"
+#include "dret/construct_base.h"
+#include "dret/doc_list/doc_list_sampled_tree_base.h"
+#include "dret/index_base.h"
+#include "dret/slp/slp_tools.h"
 
 namespace dret {
 
@@ -169,7 +169,7 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
                float t_storing_factor);
 
 // Compact-grammar TSLP variants (added in Phase A.0.3 upstream; the dret-side
-// shims at "compact_bp_slp.h" / "compact_louds_slp.h" re-export them as
+// shims at "dret/slp/compact_bp_slp.h" / "dret/slp/compact_louds_slp.h" re-export them as
 // dret::CompactBPSLP / dret::CompactLOUDSSLP). These forward declarations are
 // required so the unqualified `construct(slp, ...)` call inside the
 // `construct(DocListIdxGCDA&, ...)` template below resolves at the

@@ -16,8 +16,8 @@
 #include <cstddef>
 #include <utility>
 
-#include "../config.h"
-#include "../rmq_get_doc_policies.h"
+#include "dret/config.h"
+#include "dret/rmq/rmq_get_doc_policies.h"
 
 namespace dret::pdl {
 

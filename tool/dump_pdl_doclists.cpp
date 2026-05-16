@@ -30,7 +30,7 @@
 #include <gflags/gflags.h>
 
 #include "dret/config.h"
-#include "dret/pdl/doc_list_pdl_plain.h"
+#include "dret/doc_list/doc_list_pdl_plain.h"
 
 DEFINE_string(data, "", "Data file (collection). Document delimiter is byte 0x00.");
 DEFINE_string(patterns, "", "Patterns file (one pattern per line).");

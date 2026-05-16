@@ -14,8 +14,8 @@
 #include <grammar/slp.h>
 #include <grammar/slp_helper.h>
 
-#include "config.h"
-#include "differential_slp.h"
+#include "dret/config.h"
+#include "dret/slp/differential_slp.h"
 
 namespace dret {
 

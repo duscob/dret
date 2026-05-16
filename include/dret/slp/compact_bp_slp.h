@@ -7,7 +7,7 @@
 //   - declares the dret-side `collectSizes` overload so two-phase lookup at
 //     `DocListIdxGCDA::GetSizeReport`'s definition point can find it.
 //
-// Must be `#include`-d at the top of `doc_list_sampled_tree_gcda.h` (before
+// Must be `#include`-d at the top of `doc_list/doc_list_gcda.h` (before
 // the `DocListIdxGCDA` class body) so the size-report overload is visible to
 // ordinary lookup at the template-definition point. ADL on
 // `grammar::CompactBPSLP` searches `namespace grammar` only — never `dret` —
@@ -21,7 +21,7 @@
 #include <grammar/compact_bp_slp.h>
 #include <sdsl/util.hpp>
 
-#include "size_report.h"
+#include "dret/size_report.h"
 
 namespace dret {
 

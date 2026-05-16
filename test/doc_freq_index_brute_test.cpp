@@ -5,7 +5,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
-#include <doc_freq_index_brute.h>
+#include <dret/doc_freq/doc_freq_brute.h>
 
 using Occurrences = std::vector<std::size_t>;
 using DocFreqs = std::unordered_map<std::size_t, std::size_t>;

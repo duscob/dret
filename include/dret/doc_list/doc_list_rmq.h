@@ -2,7 +2,7 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com>.
 //
 // RMQ-based document listing index (SADA / ILCP / CILCP variants), mirroring the
-// frequency-index structure in doc_freq_index_rmq.h but trimmed for pure listing:
+// frequency-index structure in doc_freq/doc_freq_rmq.h but trimmed for pure listing:
 // only the LEFTMOST pass is needed to visit each distinct doc in [sp, ep] once.
 //
 
@@ -26,14 +26,14 @@
 #include "sr-index/r_index.h"
 #include "sr-index/sr_index.h"
 
-#include "config.h"
-#include "construct_base.h"
-#include "doc_index_rmq_common.h"
-#include "doc_list_index.h"
-#include "doc_list_rmq_scheme.h"
-#include "index_base.h"
-#include "rmq_get_doc_policies.h"
-#include "size_report.h"
+#include "dret/config.h"
+#include "dret/construct_base.h"
+#include "dret/rmq/doc_index_rmq_common.h"
+#include "dret/doc_list/doc_list_base.h"
+#include "dret/rmq/doc_list_rmq_scheme.h"
+#include "dret/index_base.h"
+#include "dret/rmq/rmq_get_doc_policies.h"
+#include "dret/size_report.h"
 
 namespace dret {
 namespace rmq {

@@ -25,8 +25,8 @@
 #include <sdsl/sd_vector.hpp>
 #include <sdsl/util.hpp>
 
-#include "../size_report.h"
-#include "storage_policy.h"
+#include "dret/size_report.h"
+#include "dret/pdl/storage_policy.h"
 
 namespace dret::pdl {
 

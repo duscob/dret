@@ -45,40 +45,58 @@ include_directories(${COMMON_INCLUDES})
 
 
 set(SOURCE_FILES
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_brute.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_index_rmq_common.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_rmq.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index_rmq.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_rmq_scheme.h
-        ${PROJECT_SOURCE_DIR}/include/dret/rmq_get_doc_policies.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_gcda.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq_index_sada.h
-        ${PROJECT_SOURCE_DIR}/include/dret/tf.h
-        ${PROJECT_SOURCE_DIR}/include/dret/slp_tools.h
-        ${PROJECT_SOURCE_DIR}/include/dret/algorithm.h
-        ${PROJECT_SOURCE_DIR}/include/dret/run_length_encode.h
+        # Root: project config + foundational base classes used by every family.
         ${PROJECT_SOURCE_DIR}/include/dret/config.h
         ${PROJECT_SOURCE_DIR}/include/dret/index_base.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_index_brute.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree_gcda.h
-        ${PROJECT_SOURCE_DIR}/include/dret/basic_slp_span_length.h
-        ${PROJECT_SOURCE_DIR}/include/dret/differential_slp.h
-        ${PROJECT_SOURCE_DIR}/include/dret/differential_light_slp.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list_sampled_tree_dgcda.h
+        ${PROJECT_SOURCE_DIR}/include/dret/construct_base.h
+        ${PROJECT_SOURCE_DIR}/include/dret/size_report.h
 
-        # PDL (precomputed document listing) — append new include/dret/pdl/*.h here.
+        # common/: small cross-cutting utilities.
+        ${PROJECT_SOURCE_DIR}/include/dret/common/algorithm.h
+        ${PROJECT_SOURCE_DIR}/include/dret/common/util.h
+        ${PROJECT_SOURCE_DIR}/include/dret/common/run_length_encode.h
+        ${PROJECT_SOURCE_DIR}/include/dret/common/tf.h
+
+        # slp/: SLP variants and helpers.
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/slp_tools.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/basic_slp_span_length.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/differential_slp.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/differential_light_slp.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/combined_slp_with_unit_cover.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/compact_bp_slp.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/compact_louds_slp.h
+
+        # rmq/: RMQ scheme + shared cores + get-doc policies (shared by freq and list).
+        ${PROJECT_SOURCE_DIR}/include/dret/rmq/doc_index_rmq_common.h
+        ${PROJECT_SOURCE_DIR}/include/dret/rmq/doc_list_rmq_scheme.h
+        ${PROJECT_SOURCE_DIR}/include/dret/rmq/rmq_get_doc_policies.h
+
+        # doc_freq/: document-frequency family.
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_base.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_brute.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_sada.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_gcda.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_rmq.h
+
+        # doc_list/: document-listing family — all listing index entry points.
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_base.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_sampled_tree_base.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_brute.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_rmq.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_slp.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_gcda.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_dgcda.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_pdl_plain.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_pdl_rp.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_pdl_bc.h
+
+        # pdl/: PDL infrastructure (codecs + sparse tree + storage policy + get-doc adapter).
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/storage_policy.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_builder.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/build_pdl_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/set_codecs.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/get_docs.h
-        ${PROJECT_SOURCE_DIR}/include/dret/pdl/doc_list_pdl_plain.h
-        ${PROJECT_SOURCE_DIR}/include/dret/pdl/doc_list_pdl_rp.h
-        ${PROJECT_SOURCE_DIR}/include/dret/pdl/doc_list_pdl_bc.h
 )
 
 add_library(dret INTERFACE)

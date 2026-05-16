@@ -32,7 +32,7 @@
 //
 
 // Deliberately the only PDL include — no other transitive helpers.
-#include "dret/pdl/doc_list_pdl_plain.h"
+#include "dret/doc_list/doc_list_pdl_plain.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

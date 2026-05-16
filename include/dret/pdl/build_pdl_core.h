@@ -17,10 +17,10 @@
 #include <sdsl/bit_vectors.hpp>
 #include <sdsl/util.hpp>
 
-#include "set_codecs.h"
-#include "storage_policy.h"
-#include "tree_builder.h"
-#include "tree_core.h"
+#include "dret/pdl/set_codecs.h"
+#include "dret/pdl/storage_policy.h"
+#include "dret/pdl/tree_builder.h"
+#include "dret/pdl/tree_core.h"
 
 namespace dret::pdl {
 

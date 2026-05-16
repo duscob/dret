@@ -28,9 +28,9 @@
 #include <sdsl/sd_vector.hpp>
 
 #include "dret/config.h"
-#include "dret/pdl/doc_list_pdl_bc.h"
-#include "dret/pdl/doc_list_pdl_plain.h"
-#include "dret/pdl/doc_list_pdl_rp.h"
+#include "dret/doc_list/doc_list_pdl_bc.h"
+#include "dret/doc_list/doc_list_pdl_plain.h"
+#include "dret/doc_list/doc_list_pdl_rp.h"
 #include "dret/pdl/get_docs.h"
 #include "dret/pdl/set_codecs.h"
 #include "sr-index/r_index.h"

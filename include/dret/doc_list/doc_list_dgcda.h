@@ -8,9 +8,9 @@
 
 #include <grammar/re_pair.h>
 
-#include "construct_base.h"
-#include "differential_light_slp.h"
-#include "doc_list_sampled_tree_gcda.h"
+#include "dret/construct_base.h"
+#include "dret/slp/differential_light_slp.h"
+#include "dret/doc_list/doc_list_gcda.h"
 
 namespace dret {
 

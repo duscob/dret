@@ -12,7 +12,7 @@
 
 #include <sdsl/io.hpp>
 
-#include "config.h"
+#include "dret/config.h"
 
 namespace dret {
 

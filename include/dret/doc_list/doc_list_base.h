@@ -7,9 +7,9 @@
 #include <memory>
 #include <string>
 
-#include "config.h"
-#include "index_base.h"
-#include "size_report.h"
+#include "dret/config.h"
+#include "dret/index_base.h"
+#include "dret/size_report.h"
 
 namespace dret {
 

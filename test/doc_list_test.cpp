@@ -14,17 +14,17 @@
 #include <sdsl/rmq_succinct_sct.hpp>
 #include <sdsl/vlc_vector.hpp>
 
-#include "dret/basic_slp_span_length.h"
-#include "dret/differential_slp.h"
-#include "dret/doc_list_index_brute.h"
-#include "dret/doc_list_index_rmq.h"
-#include "dret/doc_list_rmq_scheme.h"
-#include "dret/doc_list_sampled_tree_dgcda.h"
-#include "dret/doc_list_idx_slp.h"
-#include "dret/doc_list_sampled_tree_gcda.h"
-#include "dret/pdl/doc_list_pdl_bc.h"
-#include "dret/pdl/doc_list_pdl_plain.h"
-#include "dret/pdl/doc_list_pdl_rp.h"
+#include "dret/slp/basic_slp_span_length.h"
+#include "dret/slp/differential_slp.h"
+#include "dret/doc_list/doc_list_brute.h"
+#include "dret/doc_list/doc_list_rmq.h"
+#include "dret/rmq/doc_list_rmq_scheme.h"
+#include "dret/doc_list/doc_list_dgcda.h"
+#include "dret/doc_list/doc_list_slp.h"
+#include "dret/doc_list/doc_list_gcda.h"
+#include "dret/doc_list/doc_list_pdl_bc.h"
+#include "dret/doc_list/doc_list_pdl_plain.h"
+#include "dret/doc_list/doc_list_pdl_rp.h"
 
 #include "base_test.h"
 
