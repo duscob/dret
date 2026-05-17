@@ -86,12 +86,23 @@ enum class BareSLPVariant {
 // TRunValues container choice for the Sadakane-style (-S) doc-listing
 // families (ILCP-S / CILCP-S). The persisted per-run min(VILCP) array
 // can be encoded fixed-width and bit-compressed (IV) or with variable-
-// length per-element codes (DV / VV). SADA-S has no run_values axis —
-// its prev_doc array is per SA-position, not per run.
+// length per-element codes (DV / VV).
 enum class RunValuesVariant {
   IV,       // sdsl::int_vector<>  — fixed-width, sdsl::util::bit_compress
   DV,       // sdsl::dac_vector<>  — direct access codes (family default)
   VV,       // sdsl::vlc_vector<>  — variable-length codes
+};
+
+// TPrevDoc container choice for the Sadakane-style SADA-S family. The
+// persisted prev_doc array stores per-SA-position previous-occurrence
+// SA positions — values cover [0, n) roughly uniformly, so the natural
+// default is fixed-width int_vector (DAC / VLC have little to compress
+// in a uniform distribution); the axis exists so users can verify that
+// empirically without recompiling.
+enum class PrevDocVariant {
+  IV,       // sdsl::int_vector<>  — fixed-width, sdsl::util::bit_compress (family default)
+  DV,       // sdsl::dac_vector<>
+  VV,       // sdsl::vlc_vector<>
 };
 
 // DGCDA's TSLP choice. Default = the standard DifferentialLightSLP<>; OTF /

@@ -115,6 +115,9 @@ struct RMQSweep {
   // matches IlcpLikeSCore's default; other variants in {iv, dv, vv} fan
   // the -S cores out across the run-values container.
   std::vector<axes::RunValuesVariant> run_values{axes::RunValuesVariant::DV};
+  // TPrevDoc axis for SADA-S. Default IV matches SadaSCore's default;
+  // other variants in {iv, dv, vv}.
+  std::vector<axes::PrevDocVariant> prev_doc{axes::PrevDocVariant::IV};
   std::vector<std::uint32_t> block_size{512};
   std::vector<float> storing_factor{4.0f};
 };
@@ -233,6 +236,7 @@ inline RMQSweep ParseRMQ(const nlohmann::json& j) {
   s.gcda_slp = ParseEnumList<axes::GCDASLPVariant>(j, "gcda_slp", s.gcda_slp);
   s.bare_slp = ParseEnumList<axes::BareSLPVariant>(j, "bare_slp", s.bare_slp);
   s.run_values = ParseEnumList<axes::RunValuesVariant>(j, "run_values", s.run_values);
+  s.prev_doc = ParseEnumList<axes::PrevDocVariant>(j, "prev_doc", s.prev_doc);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
   s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
   return s;

@@ -249,7 +249,8 @@ template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
-          typename TGetDoc = GetDocDA<TStorage, t_width>>
+          typename TGetDoc = GetDocDA<TStorage, t_width>,
+          typename TPrevDoc = sdsl::int_vector<>>
 class SadaSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
@@ -297,7 +298,7 @@ class SadaSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     written += rmq_ ? sdsl::serialize(*rmq_, out, child, "rmq") : sdsl::serialize_empty_object<TRMQ>(out, child, "rmq");
     written += prev_doc_
                    ? sdsl::serialize(*prev_doc_, out, child, "prev_doc")
-                   : sdsl::serialize_empty_object<sdsl::int_vector<>>(out, child, "prev_doc");
+                   : sdsl::serialize_empty_object<TPrevDoc>(out, child, "prev_doc");
     sdsl::int_vector<64> n_doc_vec(1, n_doc_);
     written += sdsl::serialize(n_doc_vec, out, child, "n_doc");
     written += get_doc_.serialize(out, child, "get_doc");
@@ -329,7 +330,7 @@ class SadaSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     rmq_ = this->template loadItemPtr<TRMQ>(key_rmq_, t_source, true);
 
     key_prev_doc_ = t_keys[kSadaS][kPrevDoc].get<std::string>();
-    prev_doc_ = this->template loadItemPtr<sdsl::int_vector<>>(key_prev_doc_, t_source, true);
+    prev_doc_ = this->template loadItemPtr<TPrevDoc>(key_prev_doc_, t_source, true);
 
     const auto key_n_doc = t_keys[kRmqNDoc].get<std::string>();
     const auto* n_doc_vec = this->template loadItemPtr<sdsl::int_vector<64>>(key_n_doc, t_source, true);
@@ -340,7 +341,7 @@ class SadaSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   std::string key_prev_doc_;
 
   const TRMQ* rmq_ = nullptr;
-  const sdsl::int_vector<>* prev_doc_ = nullptr;
+  const TPrevDoc* prev_doc_ = nullptr;
   std::size_t n_doc_ = 0;
   TGetDoc get_doc_;
 };
@@ -913,6 +914,39 @@ void StoreRunHeadsAndRMQ(Config& t_config,
 
 }  // namespace internal
 
+// Helper: pack a std::vector<std::size_t> of values into the requested
+// TContainer and persist it under t_key. Used by ILCP-S / CILCP-S to
+// store run_values (per-run min(VILCP)) and by SADA-S to store prev_doc
+// (per SA-position previous occurrence). Compressed containers
+// (sdsl::dac_vector, sdsl::vlc_vector, ...) compress at construction;
+// sdsl::int_vector<> is bit-compressed explicitly to ceil(log2(max))
+// bits per entry. Query-time access is operator[] in every case.
+template <typename TContainer>
+inline void StorePackedValues(Config& t_config,
+                              const std::string& t_key,
+                              const std::vector<std::size_t>& t_values) {
+  if constexpr (std::is_same_v<TContainer, sdsl::int_vector<>>) {
+    sdsl::int_vector<> packed(t_values.size());
+    for (std::size_t i = 0; i < t_values.size(); ++i)
+      packed[i] = t_values[i];
+    sdsl::util::bit_compress(packed);
+    sdsl::store_to_cache(packed, t_key, t_config, true);
+  } else {
+    std::vector<uint64_t> values(t_values.begin(), t_values.end());
+    TContainer packed(values);
+    sdsl::store_to_cache(packed, t_key, t_config, true);
+  }
+}
+
+// Backwards-compatible alias for the run_values use site. Default
+// TRunValues = sdsl::dac_vector<> matches the IlcpLikeSCore default.
+template <typename TRunValues = sdsl::dac_vector<>>
+inline void StoreRunValues(Config& t_config,
+                           const std::string& t_key,
+                           const std::vector<std::size_t>& t_run_values) {
+  StorePackedValues<TRunValues>(t_config, t_key, t_run_values);
+}
+
 // SADA construction: prev_doc + RMinQ.
 template <typename TStorage, uint8_t t_width, typename TRMQ, typename TBvDocEnds, typename TGetDoc>
 void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, Config& t_config) {
@@ -947,15 +981,17 @@ void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, C
 
 // SADA-S construction: same prev_doc + RMinQ as SADA, plus a persisted
 // prev_doc array (used by the depth-based recursion-stop at query time).
-template <typename TStorage, uint8_t t_width, typename TRMQ, typename TBvDocEnds, typename TGetDoc>
-void construct(SadaSCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, Config& t_config) {
+// TPrevDoc controls how that array is encoded on disk — int_vector is the
+// natural default (random SA positions don't compress much under DAC/VLC).
+template <typename TStorage, uint8_t t_width, typename TRMQ, typename TBvDocEnds, typename TGetDoc, typename TPrevDoc>
+void construct(SadaSCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc, TPrevDoc>& t_core, Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kSADA][kRmq].get<std::string>();
   auto key_prev_doc = t_config.keys[kSadaS][kPrevDoc].get<std::string>();
   if (!sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
-      || !sdsl::cache_file_exists<sdsl::int_vector<>>(key_prev_doc, t_config)) {
+      || !sdsl::cache_file_exists<TPrevDoc>(key_prev_doc, t_config)) {
     auto event = sdsl::memory_monitor::event(key_prev_doc);
 
     sdsl::int_vector<> da;
@@ -977,7 +1013,14 @@ void construct(SadaSCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, 
       TRMQ rmq(&prev_doc);
       sdsl::store_to_cache(rmq, key_rmq, t_config, true);
     }
-    sdsl::store_to_cache(prev_doc, key_prev_doc, t_config, true);
+    // Pack into the requested TPrevDoc container. For TPrevDoc =
+    // sdsl::int_vector<> (the SadaSCore default) StorePackedValues does
+    // bit_compress; for DAC / VLC / similar it constructs from a
+    // std::vector<uint64_t>.
+    std::vector<std::size_t> prev_doc_values(prev_doc.size());
+    for (std::size_t i = 0; i < prev_doc.size(); ++i)
+      prev_doc_values[i] = prev_doc[i];
+    StorePackedValues<TPrevDoc>(t_config, key_prev_doc, prev_doc_values);
   }
 
   construct(t_core.get_doc_policy(), t_config);
@@ -1075,34 +1118,8 @@ void construct(IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, 
   construct(t_core.get_doc_policy(), t_config);
 }
 
-// Helper: pack a std::vector<size_t> of run-min ILCP values into the
-// requested TRunValues container and persist it under t_key. Default
-// TRunValues is sdsl::dac_vector<> (direct access codes — variable-length
-// per element with O(1) random access; ideal for the long tail of small
-// ILCP values typical of repetitive corpora). Other plausible choices:
-//   sdsl::int_vector<>  -- fixed-width, bit-compressed to ceil(log2(max))
-//   sdsl::vlc_vector<>  -- variable-length codes (delta-style)
-// Compressed containers compress on construction; for int_vector we
-// explicitly call sdsl::util::bit_compress to avoid storing 64 bits per
-// entry. The query-time access is the same operator[] in all cases.
-template <typename TRunValues = sdsl::dac_vector<>>
-inline void StoreRunValues(Config& t_config,
-                           const std::string& t_key,
-                           const std::vector<std::size_t>& t_run_values) {
-  if constexpr (std::is_same_v<TRunValues, sdsl::int_vector<>>) {
-    sdsl::int_vector<> packed(t_run_values.size());
-    for (std::size_t i = 0; i < t_run_values.size(); ++i)
-      packed[i] = t_run_values[i];
-    sdsl::util::bit_compress(packed);
-    sdsl::store_to_cache(packed, t_key, t_config, true);
-  } else {
-    // dac_vector<>, vlc_vector<> and similar accept a std::vector<uint64_t>&
-    // by reference and compress at construction.
-    std::vector<uint64_t> values(t_run_values.begin(), t_run_values.end());
-    TRunValues packed(values);
-    sdsl::store_to_cache(packed, t_key, t_config, true);
-  }
-}
+// StorePackedValues / StoreRunValues are defined earlier in the file
+// (right before construct(SadaCore, ...) — see above).
 
 // ILCP-S construction: reuse the existing ILCP RLE (run_heads + rmq) and
 // additionally persist run_values for the depth-based stop. If the ILCP

@@ -52,6 +52,7 @@ class Factory {
   using BareSLPVariant   = bench::axes::BareSLPVariant;
   using DGCDASLPVariant  = bench::axes::DGCDASLPVariant;
   using RunValuesVariant = bench::axes::RunValuesVariant;
+  using PrevDocVariant   = bench::axes::PrevDocVariant;
 
   // Typed-index aliases for each family now live in benchmark/document_listing/
   // factories/{brute,gcda,dgcda,slp_ns,rmq,pdl}.h. The Factory facade simply
@@ -74,6 +75,10 @@ class Factory {
     // TRunValues axis for the -S families (ILCP-S / CILCP-S). Ignored by
     // every other index family. Default DV matches IlcpLikeSCore's default.
     RunValuesVariant run_values = RunValuesVariant::DV;
+    // TPrevDoc axis for SADA-S. Ignored by every other index family.
+    // Default IV matches SadaSCore's default (prev_doc values are random
+    // SA positions; int_vector with bit_compress is the natural choice).
+    PrevDocVariant prev_doc = PrevDocVariant::IV;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -96,7 +101,9 @@ class Factory {
         return pdl_storage_policy < t_c.pdl_storage_policy;
       if (dgcda_slp != t_c.dgcda_slp)
         return dgcda_slp < t_c.dgcda_slp;
-      return run_values < t_c.run_values;
+      if (run_values != t_c.run_values)
+        return run_values < t_c.run_values;
+      return prev_doc < t_c.prev_doc;
     }
   };
 
@@ -270,7 +277,8 @@ class Factory {
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::SADA_S,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp);
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
+            t_config.run_values, t_config.prev_doc);
         index = {idx, size};
         break;
       }

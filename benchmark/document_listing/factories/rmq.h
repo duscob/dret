@@ -95,12 +95,22 @@ using CilcpCore = dret::rmq::CilcpCore<TStorage,
 // recursion stop. SADA-S persists prev_doc; ILCP-S and CILCP-S persist
 // run_values. CILCP-S's RLE follows paper Def 1 (CILCP★) and is distinct
 // from existing CilcpCore.
-template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
+
+// TPrevDoc container choices for SADA-S. Independent of TGetDoc; controls
+// how the persisted per-SA-position prev_doc array is encoded on disk.
+using PrevDoc_IV = sdsl::int_vector<>;   // fixed-width, bit-compressed (default)
+using PrevDoc_DV = sdsl::dac_vector<>;
+using PrevDoc_VV = sdsl::vlc_vector<>;
+
+template <typename TStorage,
+          typename TGetDoc = GetDocDA<TStorage>,
+          typename TPrevDoc = PrevDoc_IV>
 using SadaSCore = dret::rmq::SadaSCore<TStorage,
                                         kWidth,
                                         sdsl::rmq_succinct_sct<true>,
                                         sdsl::sd_vector<>,
-                                        TGetDoc>;
+                                        TGetDoc,
+                                        TPrevDoc>;
 
 // TRunValues container choices for the -S families. Independent of TGetDoc;
 // controls how the persisted per-run min(VILCP) array is encoded on disk.
@@ -362,6 +372,33 @@ MakeOneS(TStorage t_storage, dret::Config& t_config,
   }
 }
 
+// SADA-S has TPrevDoc instead of TRunValues. Mirrors MakeOneS but
+// dispatches on PrevDocVariant; the inner T-dispatch reuses the existing
+// MakeXxx_S helpers (TCoreT here is a 3-arg <TStorage, TGetDoc, TPrevDoc>
+// template — same shape as IlcpSCore / CilcpSCore).
+template <template <typename, typename, typename> class TCoreT, typename TStorage>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeOneSada_S(TStorage t_storage, dret::Config& t_config,
+              uint32_t t_block_size, float t_storing_factor,
+              bench::axes::GetDocEnum t_get_doc,
+              bench::axes::GCDASLPVariant t_gcda_slp,
+              bench::axes::BareSLPVariant t_bare_slp,
+              bench::axes::PrevDocVariant t_prev_doc) {
+  using bench::axes::PrevDocVariant;
+  switch (t_prev_doc) {
+    case PrevDocVariant::DV:
+      return MakeOneS_T<TCoreT, TStorage, PrevDoc_DV>(
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+    case PrevDocVariant::VV:
+      return MakeOneS_T<TCoreT, TStorage, PrevDoc_VV>(
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+    case PrevDocVariant::IV:
+    default:
+      return MakeOneS_T<TCoreT, TStorage, PrevDoc_IV>(
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+  }
+}
+
 }  // namespace detail
 
 template <typename TStorage>
@@ -372,7 +409,8 @@ Make(TStorage t_storage, dret::Config& t_config,
      bench::axes::GetDocEnum t_get_doc,
      bench::axes::GCDASLPVariant t_gcda_slp,
      bench::axes::BareSLPVariant t_bare_slp,
-     bench::axes::RunValuesVariant t_run_values = bench::axes::RunValuesVariant::DV) {
+     bench::axes::RunValuesVariant t_run_values = bench::axes::RunValuesVariant::DV,
+     bench::axes::PrevDocVariant t_prev_doc = bench::axes::PrevDocVariant::IV) {
   switch (t_core) {
     case CoreKind::ILCP:
       return detail::MakeOne<IlcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
@@ -381,8 +419,8 @@ Make(TStorage t_storage, dret::Config& t_config,
       return detail::MakeOne<CilcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                          t_get_doc, t_gcda_slp, t_bare_slp);
     case CoreKind::SADA_S:
-      return detail::MakeOne<SadaSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                         t_get_doc, t_gcda_slp, t_bare_slp);
+      return detail::MakeOneSada_S<SadaSCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                               t_get_doc, t_gcda_slp, t_bare_slp, t_prev_doc);
     case CoreKind::ILCP_S:
       return detail::MakeOneS<IlcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                           t_get_doc, t_gcda_slp, t_bare_slp, t_run_values);
