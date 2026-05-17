@@ -323,6 +323,9 @@ int main(int argc, char* argv[]) {
       idx_configs.push_back({"SADA-DA", Factory<>::Config{Factory<>::IndexEnum::SADA}, false});
       idx_configs.push_back({"ILCP-DA", Factory<>::Config{Factory<>::IndexEnum::ILCP}, false});
       idx_configs.push_back({"CILCP-DA", Factory<>::Config{Factory<>::IndexEnum::CILCP}, false});
+      idx_configs.push_back({"SADA-S-DA", Factory<>::Config{Factory<>::IndexEnum::SADA_S}, false});
+      idx_configs.push_back({"ILCP-S-DA", Factory<>::Config{Factory<>::IndexEnum::ILCP_S}, false});
+      idx_configs.push_back({"CILCP-S-DA", Factory<>::Config{Factory<>::IndexEnum::CILCP_S}, false});
     }
     if (get_doc == Factory<>::GetDocEnum::SLP_NS) {
       // RMQ variants over the bare grammar::SLP<> cache (kSLPNS). No (bs, sf) axis —
@@ -341,9 +344,21 @@ int main(int argc, char* argv[]) {
         Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP, 0, 512, 4,
                                     Factory<>::GetDocEnum::SLP_NS,
                                     Factory<>::GCDASLPVariant::Light, bare_slp};
+        Factory<>::Config sada_s_cfg{Factory<>::IndexEnum::SADA_S, 0, 512, 4,
+                                     Factory<>::GetDocEnum::SLP_NS,
+                                     Factory<>::GCDASLPVariant::Light, bare_slp};
+        Factory<>::Config ilcp_s_cfg{Factory<>::IndexEnum::ILCP_S, 0, 512, 4,
+                                     Factory<>::GetDocEnum::SLP_NS,
+                                     Factory<>::GCDASLPVariant::Light, bare_slp};
+        Factory<>::Config cilcp_s_cfg{Factory<>::IndexEnum::CILCP_S, 0, 512, 4,
+                                      Factory<>::GetDocEnum::SLP_NS,
+                                      Factory<>::GCDASLPVariant::Light, bare_slp};
         idx_configs.push_back({"SADA-SLP-NS" + suffix, sada_cfg, false});
         idx_configs.push_back({"ILCP-SLP-NS" + suffix, ilcp_cfg, false});
         idx_configs.push_back({"CILCP-SLP-NS" + suffix, cilcp_cfg, false});
+        idx_configs.push_back({"SADA-S-SLP-NS" + suffix, sada_s_cfg, false});
+        idx_configs.push_back({"ILCP-S-SLP-NS" + suffix, ilcp_s_cfg, false});
+        idx_configs.push_back({"CILCP-S-SLP-NS" + suffix, cilcp_s_cfg, false});
       }
     }
   }
@@ -447,9 +462,18 @@ int main(int argc, char* argv[]) {
                                      static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
           Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP, 0,
                                       static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
+          Factory<>::Config sada_s_cfg{Factory<>::IndexEnum::SADA_S, 0,
+                                       static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
+          Factory<>::Config ilcp_s_cfg{Factory<>::IndexEnum::ILCP_S, 0,
+                                       static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
+          Factory<>::Config cilcp_s_cfg{Factory<>::IndexEnum::CILCP_S, 0,
+                                        static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
           idx_configs.push_back({"SADA" + suffix, sada_cfg, false});
           idx_configs.push_back({"ILCP" + suffix, ilcp_cfg, false});
           idx_configs.push_back({"CILCP" + suffix, cilcp_cfg, false});
+          idx_configs.push_back({"SADA-S" + suffix, sada_s_cfg, false});
+          idx_configs.push_back({"ILCP-S" + suffix, ilcp_s_cfg, false});
+          idx_configs.push_back({"CILCP-S" + suffix, cilcp_s_cfg, false});
         }
       }
     }

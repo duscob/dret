@@ -153,6 +153,19 @@ std::vector<std::string> CilcpKeyPrefixes() {
   return {"cilcp_rmq_", "cilcp_run_heads_", "rmq_n_doc_"};
 }
 
+// -S families. SADA-S reuses sada_rmq_, just wipes the extra prev_doc cache.
+// ILCP-S reuses ilcp_rmq_ + ilcp_run_heads_, just wipes the extra run_values.
+// CILCP-S owns its own complete set under cilcp_s_*.
+std::vector<std::string> SadaSKeyPrefixes() {
+  return {"sada_s_prev_doc_", "rmq_n_doc_"};
+}
+std::vector<std::string> IlcpSKeyPrefixes() {
+  return {"ilcp_s_run_values_", "rmq_n_doc_"};
+}
+std::vector<std::string> CilcpSKeyPrefixes() {
+  return {"cilcp_s_rmq_", "cilcp_s_run_heads_", "cilcp_s_run_values_", "rmq_n_doc_"};
+}
+
 // Warmth check: stderr-warn once per cell when --rebuild is off AND the
 // first construct() iteration returned under 1 ms (almost certainly a
 // cache-warm no-op, not a real measurement).
@@ -474,9 +487,12 @@ std::string NameSuffix(BareSLPVariant v) {
 
 const char* CoreName(fac::rmq::CoreKind c) {
   switch (c) {
-    case fac::rmq::CoreKind::SADA:  return "SADA";
-    case fac::rmq::CoreKind::ILCP:  return "ILCP";
-    case fac::rmq::CoreKind::CILCP: return "CILCP";
+    case fac::rmq::CoreKind::SADA:    return "SADA";
+    case fac::rmq::CoreKind::ILCP:    return "ILCP";
+    case fac::rmq::CoreKind::CILCP:   return "CILCP";
+    case fac::rmq::CoreKind::SADA_S:  return "SADA-S";
+    case fac::rmq::CoreKind::ILCP_S:  return "ILCP-S";
+    case fac::rmq::CoreKind::CILCP_S: return "CILCP-S";
   }
   return "UNKNOWN";
 }
@@ -543,9 +559,12 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
   for (auto core : sw.core) {
     Factory<>::IndexEnum core_idx{};
     switch (core) {
-      case fac::rmq::CoreKind::SADA:  core_idx = Factory<>::IndexEnum::SADA;  break;
-      case fac::rmq::CoreKind::ILCP:  core_idx = Factory<>::IndexEnum::ILCP;  break;
-      case fac::rmq::CoreKind::CILCP: core_idx = Factory<>::IndexEnum::CILCP; break;
+      case fac::rmq::CoreKind::SADA:    core_idx = Factory<>::IndexEnum::SADA;    break;
+      case fac::rmq::CoreKind::ILCP:    core_idx = Factory<>::IndexEnum::ILCP;    break;
+      case fac::rmq::CoreKind::CILCP:   core_idx = Factory<>::IndexEnum::CILCP;   break;
+      case fac::rmq::CoreKind::SADA_S:  core_idx = Factory<>::IndexEnum::SADA_S;  break;
+      case fac::rmq::CoreKind::ILCP_S:  core_idx = Factory<>::IndexEnum::ILCP_S;  break;
+      case fac::rmq::CoreKind::CILCP_S: core_idx = Factory<>::IndexEnum::CILCP_S; break;
     }
     for (auto gd : sw.get_doc) {
       const bool needs_bs_sf = (gd == GetDocEnum::SLP) || (gd == GetDocEnum::DSLP);
@@ -821,6 +840,21 @@ void RegisterConstructRMQ(const bench::spec::RMQSweep& sw, dret::Config& config,
       case CoreKind::CILCP: {
         auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, CilcpKeyPrefixes());
         RegisterRMQOneCore<CilcpCore>("DocListCILCP", sw, config, cc.memory_trace, hook);
+        break;
+      }
+      case CoreKind::SADA_S: {
+        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SadaSKeyPrefixes());
+        RegisterRMQOneCore<SadaSCore>("DocListSADA-S", sw, config, cc.memory_trace, hook);
+        break;
+      }
+      case CoreKind::ILCP_S: {
+        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, IlcpSKeyPrefixes());
+        RegisterRMQOneCore<IlcpSCore>("DocListILCP-S", sw, config, cc.memory_trace, hook);
+        break;
+      }
+      case CoreKind::CILCP_S: {
+        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, CilcpSKeyPrefixes());
+        RegisterRMQOneCore<CilcpSCore>("DocListCILCP-S", sw, config, cc.memory_trace, hook);
         break;
       }
     }

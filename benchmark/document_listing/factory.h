@@ -258,6 +258,36 @@ class Factory {
         index = {idx, size};
         break;
       }
+
+      case IndexEnum::SADA_S: {
+        auto [idx, size] = bench::factories::rmq::Make(
+            std::ref(storage_), config_,
+            t_config.block_size, t_config.storing_factor,
+            bench::factories::rmq::CoreKind::SADA_S,
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp);
+        index = {idx, size};
+        break;
+      }
+
+      case IndexEnum::ILCP_S: {
+        auto [idx, size] = bench::factories::rmq::Make(
+            std::ref(storage_), config_,
+            t_config.block_size, t_config.storing_factor,
+            bench::factories::rmq::CoreKind::ILCP_S,
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp);
+        index = {idx, size};
+        break;
+      }
+
+      case IndexEnum::CILCP_S: {
+        auto [idx, size] = bench::factories::rmq::Make(
+            std::ref(storage_), config_,
+            t_config.block_size, t_config.storing_factor,
+            bench::factories::rmq::CoreKind::CILCP_S,
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp);
+        index = {idx, size};
+        break;
+      }
     }
 
     if (index.idx) {

@@ -28,6 +28,11 @@ enum class IndexEnum {
   CILCP,    // RMinQ on doc-aware compressed backward-ILCP runs
   SLP_NS,   // Phase C: dret::DocListIdxSLP — non-sampled grammar::SLP<>
   PDL,      // Precomputed Document Listing — variant axis selects Plain/RP/BC
+  // -S families: same RMQ data, Sadakane-style canonical depth-based
+  // recursion-stop predicate from Cobas, Mäkinen, Rossi SPIRE 2020.
+  SADA_S,
+  ILCP_S,
+  CILCP_S,  // paper's CILCP★ Definition 1 (more aggressive single-doc RLE merging)
 };
 
 // PDL stored-set codec axis. The class template differs per value

@@ -60,6 +60,43 @@ void ListDocsRMQScheme(std::size_t bp,
   ListDocsRMQScheme<kStopOnReported>(k + 1, ep, rmq, get_doc, is_reported, report);
 }
 
+// Canonical Sadakane-style LEFTMOST RMQ traversal: recursion stops by an
+// explicit value-based predicate, not by marker state. This is the algorithm
+// used by the SADA, ILCP and CILCP★ papers (Sadakane 2007; Gagie, Navarro,
+// Puglisi 2014; Cobas, Mäkinen, Rossi SPIRE 2020).
+//
+// stop_pred(k, bp) -> bool returns true when the RMQ-min over the current
+// subrange [bp, ep) cannot contribute any new leftmost-doc occurrence:
+//   - SADA-S:   prev_doc[k] >= bp_subrange (no doc in [bp..k] has its
+//               previous occurrence before bp).
+//   - ILCP-S / CILCP-S: run_values[k] >= m (no position in the subrange
+//               has ILCP < m, so Lemma 1 / Lemma 2 give no leftmost-doc
+//               here).
+//
+// is_reported still gates the *emission* of doc d (same MarkedReported as
+// the original scheme) — multiple runs can share a leftmost-doc, and we
+// don't want to double-emit. It no longer gates the recursion.
+template <typename TRMQ, typename TGetDoc, typename TStopPred,
+          typename TIsReported, typename TReport>
+void ListDocsRMQSchemeDepth(std::size_t bp,
+                            std::size_t ep,
+                            const TRMQ& rmq,
+                            const TGetDoc& get_doc,
+                            const TStopPred& stop_pred,
+                            const TIsReported& is_reported,
+                            TReport& report) {
+  if (bp >= ep)
+    return;
+  const auto k = rmq(bp, ep - 1);
+  if (stop_pred(k, bp)) return;
+  const auto d = get_doc(k);
+  if (!is_reported(k, d)) {
+    report(k, d);
+  }
+  ListDocsRMQSchemeDepth(bp, k, rmq, get_doc, stop_pred, is_reported, report);
+  ListDocsRMQSchemeDepth(k + 1, ep, rmq, get_doc, stop_pred, is_reported, report);
+}
+
 //~~~~~~~
 
 

@@ -88,6 +88,33 @@ using CilcpCore = dret::rmq::CilcpCore<TStorage,
                                         sdsl::sd_vector<>,
                                         TGetDoc>;
 
+// Sadakane-style (-S) parallel cores: same RMQ data, canonical depth-based
+// recursion stop. SADA-S persists prev_doc; ILCP-S and CILCP-S persist
+// run_values. CILCP-S's RLE follows paper Def 1 (CILCP★) and is distinct
+// from existing CilcpCore.
+template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
+using SadaSCore = dret::rmq::SadaSCore<TStorage,
+                                        kWidth,
+                                        sdsl::rmq_succinct_sct<true>,
+                                        sdsl::sd_vector<>,
+                                        TGetDoc>;
+
+template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
+using IlcpSCore = dret::rmq::IlcpSCore<TStorage,
+                                        kWidth,
+                                        sdsl::sd_vector<>,
+                                        sdsl::rmq_succinct_sct<true>,
+                                        sdsl::sd_vector<>,
+                                        TGetDoc>;
+
+template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
+using CilcpSCore = dret::rmq::CilcpSCore<TStorage,
+                                          kWidth,
+                                          sdsl::sd_vector<>,
+                                          sdsl::rmq_succinct_sct<true>,
+                                          sdsl::sd_vector<>,
+                                          TGetDoc>;
+
 // Typed-index template alias. Storage and Core are both parametric.
 template <typename TStorage, typename TCore>
 using Idx = dret::rmq::DocListIdxRMQ<TStorage,
@@ -96,7 +123,7 @@ using Idx = dret::rmq::DocListIdxRMQ<TStorage,
                                       TCore>;
 
 // Which core to build.
-enum class CoreKind { SADA, ILCP, CILCP };
+enum class CoreKind { SADA, ILCP, CILCP, SADA_S, ILCP_S, CILCP_S };
 
 namespace detail {
 
@@ -214,6 +241,15 @@ Make(TStorage t_storage, dret::Config& t_config,
     case CoreKind::CILCP:
       return detail::MakeOne<CilcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                          t_get_doc, t_gcda_slp, t_bare_slp);
+    case CoreKind::SADA_S:
+      return detail::MakeOne<SadaSCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                         t_get_doc, t_gcda_slp, t_bare_slp);
+    case CoreKind::ILCP_S:
+      return detail::MakeOne<IlcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                         t_get_doc, t_gcda_slp, t_bare_slp);
+    case CoreKind::CILCP_S:
+      return detail::MakeOne<CilcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                          t_get_doc, t_gcda_slp, t_bare_slp);
     case CoreKind::SADA:
     default:
       return detail::MakeOne<SadaCore>(t_storage, t_config, t_block_size, t_storing_factor,
