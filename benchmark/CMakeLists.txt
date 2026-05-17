@@ -14,3 +14,4 @@ cxx_executable_with_flags(bm_query_doc_freq_index "" "${benchmark_LIBS}" documen
 
 cxx_executable_with_flags(bm_build_items "" "${benchmark_LIBS}" document_listing/bm_build_items.cpp)
 cxx_executable_with_flags(bm_query_doc_list "" "${benchmark_LIBS}" document_listing/bm_query_doc_list.cpp)
+cxx_executable_with_flags(bm_doc_list "" "${benchmark_LIBS}" document_listing/bm_doc_list.cpp)

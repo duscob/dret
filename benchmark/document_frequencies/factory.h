@@ -20,11 +20,11 @@
 #include <grammar/slp_helper.h>
 #include <grammar/sampled_slp.h>
 
-#include <doc_freq_index.h>
-#include <doc_freq_index_brute.h>
-#include <doc_freq_index_rmq.h>
-#include <doc_freq_index_gcda.h>
-#include <slp_tools.h>
+#include <dret/doc_freq/doc_freq_base.h>
+#include <dret/doc_freq/doc_freq_brute.h>
+#include <dret/doc_freq/doc_freq_rmq.h>
+#include <dret/doc_freq/doc_freq_gcda.h>
+#include <dret/slp/slp_tools.h>
 
 #include "../../tool/definitions.h"
 

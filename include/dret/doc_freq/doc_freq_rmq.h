@@ -12,8 +12,8 @@
 #include <utility>
 #include <vector>
 
-#include "doc_freq_index.h"
-#include "doc_index_rmq_common.h"
+#include "dret/doc_freq/doc_freq_base.h"
+#include "dret/rmq/doc_index_rmq_common.h"
 
 namespace dret {
 

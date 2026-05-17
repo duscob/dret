@@ -42,9 +42,9 @@
 #include "sr-index/r_index.h"
 #include "sr-index/sr_index.h"
 
-#include "construct_base.h"
-#include "doc_list_index.h"
-#include "index_base.h"
+#include "dret/construct_base.h"
+#include "dret/doc_list/doc_list_base.h"
+#include "dret/index_base.h"
 
 namespace dret {
 

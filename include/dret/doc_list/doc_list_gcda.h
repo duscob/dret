@@ -13,19 +13,28 @@
 
 #include "sr-index/r_index.h"
 
-#include "combined_slp_with_unit_cover.h"
-#include "compact_bp_slp.h"
-#include "compact_louds_slp.h"
-#include "construct_base.h"
-#include "doc_list_sampled_tree.h"
-#include "index_base.h"
-#include "slp_tools.h"
+#include "dret/slp/combined_slp_with_unit_cover.h"
+#include "dret/slp/compact_bp_slp.h"
+#include "dret/slp/compact_louds_slp.h"
+#include "dret/slp/differential_light_slp.h"
+#include "dret/construct_base.h"
+#include "dret/doc_list/doc_list_sampled_tree_base.h"
+#include "dret/index_base.h"
+#include "dret/slp/slp_tools.h"
 
 namespace dret {
 
 namespace gcda {
 
 class MergeSetsBinaryTreeFunctor;
+
+// SLP-variant trait GCDAVariantTraits<TSLP>: forward-declared here so
+// DocListIdxGCDA::loadInner() can reach ::kKey via dependent-name lookup.
+// The full definition (including constructSLP) lives below the
+// construct(SLPType&, ...) forward decls so its body sees them via ordinary
+// lookup at template-definition time.
+template <typename TSLP>
+struct GCDAVariantTraits;
 
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
@@ -126,9 +135,11 @@ class DocListIdxGCDA : public DLSampledTreeScheme<TMergeSets, typename TAlphabet
         t_source);
 
     auto key_prefix = std::format("{}-{}_", block_size_, storing_factor_);
-    slp_ = this->template loadItemPtr<TSLP>(key_prefix + t_keys[kGCDA][kSLP].get<std::string>(), t_source, true);
-    slp_sets_ =
-        this->template loadItemPtr<TSLPSets>(key_prefix + t_keys[kGCDA][kDocs].get<std::string>(), t_source, true);
+    constexpr auto kVariantKey = GCDAVariantTraits<TSLP>::kKey;
+    slp_ = this->template loadItemPtr<TSLP>(
+        key_prefix + t_keys[kVariantKey][kSLP].template get<std::string>(), t_source, true);
+    slp_sets_ = this->template loadItemPtr<TSLPSets>(
+        key_prefix + t_keys[kVariantKey][kDocs].template get<std::string>(), t_source, true);
   }
 
   TCountIdx count_idx_;
@@ -169,7 +180,7 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
                float t_storing_factor);
 
 // Compact-grammar TSLP variants (added in Phase A.0.3 upstream; the dret-side
-// shims at "compact_bp_slp.h" / "compact_louds_slp.h" re-export them as
+// shims at "dret/slp/compact_bp_slp.h" / "dret/slp/compact_louds_slp.h" re-export them as
 // dret::CompactBPSLP / dret::CompactLOUDSSLP). These forward declarations are
 // required so the unqualified `construct(slp, ...)` call inside the
 // `construct(DocListIdxGCDA&, ...)` template below resolves at the
@@ -204,6 +215,44 @@ void construct(grammar::CombinedSLPWithUnitCover<Ts...>& t_wrapped,
 //~~~~~~~
 
 
+// SLP-variant trait full definition. Lives below the construct(SLPType&, ...)
+// forward declarations so its constructSLP body sees them via ordinary lookup
+// at template-definition time. The primary template covers every
+// GCDA-family SLP (grammar::LightSLP, CompactBPSLP, CompactLOUDSSLP,
+// CombinedSLPWithUnitCover, ...): cache keys under conf::kGCDA and the
+// 5-arg SLP-build path with a datafile parameter. The DifferentialLightSLP
+// specialisation routes to the DGCDA cache namespace and the 4-arg
+// DifferentialLightSLP::construct().
+template <typename TSLP>
+struct GCDAVariantTraits {
+  static constexpr std::string_view kKey = conf::kGCDA;
+
+  static void constructSLP(TSLP& slp,
+                           Config& t_config,
+                           const std::string& t_datafile,
+                           uint32_t t_block_size,
+                           float t_storing_factor) {
+    construct(slp, t_config, t_datafile, t_block_size, t_storing_factor);
+  }
+};
+
+template <typename... Ts>
+struct GCDAVariantTraits<DifferentialLightSLP<Ts...>> {
+  static constexpr std::string_view kKey = conf::kDGCDA;
+
+  static void constructSLP(DifferentialLightSLP<Ts...>& slp,
+                           Config& t_config,
+                           const std::string& /*t_datafile_ignored*/,
+                           uint32_t t_block_size,
+                           float t_storing_factor) {
+    // DifferentialLightSLP::construct (defined in
+    // dret/slp/differential_light_slp.h) loads the DA from the config cache
+    // itself, so no datafile parameter.
+    construct(slp, t_config, t_block_size, t_storing_factor);
+  }
+};
+
+
 template <typename TStorage,
           typename TAlphabet,
           typename TCountIdx,
@@ -212,6 +261,7 @@ template <typename TStorage,
           typename TMergeSets>
 void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TMergeSets>& t_index, Config& t_config) {
   using namespace conf;
+  using Traits = GCDAVariantTraits<TSLP>;
 
   if (!cache_file_exists(t_config.keys[kText].get<std::string>(), t_config)) {
     auto event = sdsl::memory_monitor::event("Text");
@@ -238,22 +288,42 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TM
 
   const auto key_prefix = std::format("{}-{}_", t_index.block_size(), t_index.storing_factor());
 
-  if (const auto key = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
+  if (const auto key = key_prefix + t_config.keys[Traits::kKey][kSLP].template get<std::string>();
       !sdsl::cache_file_exists<TSLP>(key, t_config)) {
     auto event = sdsl::memory_monitor::event(key);
     auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
     TSLP slp;
-    construct(slp, t_config, filepath_da, t_index.block_size(), t_index.storing_factor());
+    Traits::constructSLP(slp, t_config, filepath_da, t_index.block_size(), t_index.storing_factor());
   }
 
   auto count_idx = t_index.count_idx();
   construct(count_idx, t_config.data_path, t_config);
 
-  if (const auto key = key_prefix + t_config.keys[kGCDA][kDocs].get<std::string>();
-      !sdsl::cache_file_exists<TSLPSets>(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    TSLPSets slp_sets;
-    construct(slp_sets, t_config, t_index.block_size(), t_index.storing_factor());
+  if (const auto key_docs = key_prefix + t_config.keys[Traits::kKey][kDocs].template get<std::string>();
+      !sdsl::cache_file_exists<TSLPSets>(key_docs, t_config)) {
+    auto event = sdsl::memory_monitor::event(key_docs);
+    if constexpr (Traits::kKey == conf::kDGCDA) {
+      // DifferentialLightSLP::construct stored a plain grammar::Chunks<> at
+      // key_docs as a side effect; build the GCChunks-of-Chunks from it
+      // directly. The GCDA dispatched path (else branch) hardcodes kGCDA in
+      // its cache lookups and so cannot serve the DGCDA key prefix.
+      grammar::Chunks<> cslp_docs;
+      sdsl::load_from_cache(cslp_docs, key_docs, t_config, true);
+
+      auto bit_compress = [](sdsl::int_vector<>& v) { sdsl::util::bit_compress(v); };
+      const auto& objs = cslp_docs.GetObjects();
+
+      grammar::GCChunks<grammar::SLP<>> gc_slp;
+      grammar::RePairEncoder<false> encoder_nslp;
+      gc_slp.Compute(objs.begin(), objs.end(), cslp_docs, encoder_nslp);
+      sdsl::store_to_cache(gc_slp, key_docs, t_config, true);
+
+      TSLPSets slp_sets(gc_slp, bit_compress, bit_compress, bit_compress, bit_compress);
+      sdsl::store_to_cache(slp_sets, key_docs, t_config, true);
+    } else {
+      TSLPSets slp_sets;
+      construct(slp_sets, t_config, t_index.block_size(), t_index.storing_factor());
+    }
   }
 
   t_index.load(t_config);
@@ -589,5 +659,25 @@ class MergeSetsBinaryTreeFunctor {
 
 //~~~~~~~
 
+// Backward-compatible alias. dret::dgcda::DocListIdxDGCDA locks TSLP to
+// DifferentialLightSLP<> and forwards every other template parameter and
+// default to gcda::DocListIdxGCDA. Existing consumers that wrote
+// dret::dgcda::DocListIdxDGCDA<...> keep working unchanged; ADL on a
+// DocListIdxGCDA<..., DifferentialLightSLP<>, ...> argument resolves to the
+// unified gcda::construct(DocListIdxGCDA&, Config&) above.
+namespace dgcda {
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TSLP = DifferentialLightSLP<>,
+          typename TSLPSets = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>,
+                                                  true,
+                                                  grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxDGCDA = gcda::DocListIdxGCDA<TStorage, TAlphabet, TCountIdx,
+                                              TSLP, TSLPSets, TMergeSets>;
+
+}  // namespace dgcda
 
 }  // namespace dret

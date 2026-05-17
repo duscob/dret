@@ -10,7 +10,7 @@
 #include <sdsl/config.hpp>
 #include <sdsl/int_vector_buffer.hpp>
 
-#include "config.h"
+#include "dret/config.h"
 
 #ifndef REPAIR_EXE
 #define REPAIR_EXE nullptr

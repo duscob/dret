@@ -48,7 +48,8 @@
 #include <sdsl/sd_vector.hpp>
 #include <sdsl/util.hpp>
 
-#include "../size_report.h"
+#include "dret/config.h"
+#include "dret/size_report.h"
 
 #ifndef VNMEXTRACT_EXE
 #define VNMEXTRACT_EXE "vnmextract"
@@ -140,6 +141,8 @@ template <typename TObjContainer = sdsl::int_vector<>,
           typename TPosContainer = sdsl::int_vector<>>
 class PlainCodec {
  public:
+  static constexpr std::string_view kVariantKey = conf::kPlain;
+
   using TStoredChunks = grammar::Chunks<TObjContainer, TPosContainer>;
 
   PlainCodec() = default;
@@ -224,6 +227,8 @@ template <typename TSLP = grammar::SLP<>,
           typename TChunks = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
 class RPCodec {
  public:
+  static constexpr std::string_view kVariantKey = conf::kRP;
+
   using TStoredChunks = grammar::GCChunks<TSLP, /*kExpand=*/true, TChunks>;
 
   RPCodec() = default;
@@ -246,7 +251,7 @@ class RPCodec {
     // necessary because grammar/slp_metadata.h:202 does
     // back_inserter(objs_) unqualified — ADL finds std::back_inserter only
     // when objs_ lives in std (i.e., std::vector). Mirrors the staged
-    // construct() path GCDA uses (doc_list_sampled_tree_gcda.h:474-516).
+    // construct() path GCDA uses (doc_list/doc_list_gcda.h:474-516).
     grammar::GCChunks<TSLP> intermediate;
     grammar::RePairEncoder<false> encoder;
     const auto& objs = tmp.GetObjects();
@@ -331,6 +336,8 @@ template <typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>>
 class BCCodec {
  public:
+  static constexpr std::string_view kVariantKey = conf::kBC;
+
   using TSelect1 = typename TBitvector::select_1_type;
 
   BCCodec() = default;
@@ -659,7 +666,7 @@ static_assert(SetCodec<BCCodec<>>,
 
 // collectSizes overloads — declared before any class-template that calls
 // them unqualified (per the two-phase-lookup discipline established for
-// grammar::CompactBPSLP etc. in include/dret/compact_bp_slp.h). Each
+// grammar::CompactBPSLP etc. in include/dret/slp/compact_bp_slp.h). Each
 // delegates to the codec's own GetSizeReport() and prepends the prefix.
 template <typename TObjContainer, typename TPosContainer>
 void collectSizes(SizeReport& out,

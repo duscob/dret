@@ -14,9 +14,9 @@
 
 #include <rindex/r_index.hpp>
 
-#include <doc_freq_index_brute.h>
-#include <doc_freq_index_sada.h>
-#include <doc_freq_index_rmq.h>
+#include <dret/doc_freq/doc_freq_brute.h>
+#include <dret/doc_freq/doc_freq_sada.h>
+#include <dret/doc_freq/doc_freq_rmq.h>
 
 DEFINE_string(data, "", "Data file basename. (MANDATORY)");
 DEFINE_string(patterns, "", "Patterns file. (MANDATORY)");

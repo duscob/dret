@@ -8,8 +8,8 @@
 #include <cstddef>
 #include <vector>
 
-#include "doc_freq_index.h"
-#include "tf.h"
+#include "dret/doc_freq/doc_freq_base.h"
+#include "dret/common/tf.h"
 
 namespace dret {
 

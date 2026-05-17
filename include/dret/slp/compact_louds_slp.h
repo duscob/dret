@@ -11,7 +11,7 @@
 //     instead delegates to `grammar::ExpandCompactSLPForward`, which
 //     uses excess tracking for an O(N) total scan of the requested range.
 //
-// Must be `#include`-d at the top of `doc_list_sampled_tree_gcda.h` so
+// Must be `#include`-d at the top of `doc_list/doc_list_gcda.h` so
 // `DocListIdxGCDA::getDocs` (unqualified `ExpandSLP(*slp_, ...)`) and
 // `GetSizeReport` (unqualified `collectSizes(*slp_, ...)`) resolve at
 // the template-definition point.
@@ -28,7 +28,7 @@
 #include <grammar/slp_compact.h>
 #include <sdsl/util.hpp>
 
-#include "size_report.h"
+#include "dret/size_report.h"
 
 namespace dret {
 

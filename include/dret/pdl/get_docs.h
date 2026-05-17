@@ -14,12 +14,30 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 #include <utility>
 
-#include "../config.h"
-#include "../rmq_get_doc_policies.h"
+#include <sdsl/int_vector.hpp>
+#include <sdsl/io.hpp>
+
+#include "dret/config.h"
+#include "dret/rmq/rmq_get_doc_policies.h"
 
 namespace dret::pdl {
+
+// Counts distinct documents in the cached text by counting the
+// kInternalDocDelim (\1) bytes. Same convention as internal::ReadNDoc in
+// doc_list/doc_list_rmq.h. Codec-agnostic helper used by the PDL
+// construct() path to size the per-slot doc-set bitvectors.
+inline std::size_t ReadNDocFromText(const Config& t_config) {
+  sdsl::int_vector_buffer<8> text_buf(
+      sdsl::cache_file_name(t_config.keys[conf::kText].get<std::string>(), t_config));
+  std::size_t n = 0;
+  for (std::size_t i = 0; i < text_buf.size(); ++i) {
+    if (text_buf[i] == 1) ++n;
+  }
+  return n;
+}
 
 // Wraps a raw-range source (DA, grammar-compressed DA, differential
 // grammar-compressed DA — anything exposing operator()(i) and

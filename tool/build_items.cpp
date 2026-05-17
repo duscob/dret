@@ -22,8 +22,8 @@
 #include <grammar/slp_helper.h>
 
 //#include <dret/diff_slp.h>
-#include <dret/doc_freq_index_sada.h>
-#include <dret/run_length_encode.h>
+#include <dret/doc_freq/doc_freq_sada.h>
+#include <dret/common/run_length_encode.h>
 
 #include "definitions.h"
 

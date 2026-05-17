@@ -8,7 +8,7 @@
 #include <functional>
 #include <vector>
 
-#include "doc_list_index.h"
+#include "dret/doc_list/doc_list_base.h"
 
 namespace dret {
 

@@ -28,9 +28,9 @@
 #include <sdsl/sd_vector.hpp>
 
 #include "dret/config.h"
-#include "dret/pdl/doc_list_pdl_bc.h"
-#include "dret/pdl/doc_list_pdl_plain.h"
-#include "dret/pdl/doc_list_pdl_rp.h"
+#include "dret/doc_list/doc_list_pdl.h"
+#include "dret/doc_list/doc_list_pdl.h"
+#include "dret/doc_list/doc_list_pdl.h"
 #include "dret/pdl/get_docs.h"
 #include "dret/pdl/set_codecs.h"
 #include "sr-index/r_index.h"
@@ -60,20 +60,22 @@ struct InstTraits {
   using Index = TIdx;
 };
 
+// The alias templates DocListIdxPDL{Plain,RP,BC} lock the codec at the 5th
+// position of the underlying DocListIdxPDL template, so each alias takes 7
+// parameters — the codec is implicit in the alias name.
+
 // --- Plain ---
 using PlainSdVector =
     dret::pdl::DocListIdxPDLPlain<ExternalGenericStorage,
                                   DefaultAlphabet,
                                   DefaultCount,
                                   DefaultGetDocs,
-                                  dret::pdl::PlainCodec<>,
                                   sdsl::sd_vector<>>;
 using PlainBitVector =
     dret::pdl::DocListIdxPDLPlain<ExternalGenericStorage,
                                   DefaultAlphabet,
                                   DefaultCount,
                                   DefaultGetDocs,
-                                  dret::pdl::PlainCodec<>,
                                   sdsl::bit_vector>;
 
 // --- RP ---
@@ -82,14 +84,12 @@ using RPSdVector =
                                DefaultAlphabet,
                                DefaultCount,
                                DefaultGetDocs,
-                               dret::pdl::RPCodec<>,
                                sdsl::sd_vector<>>;
 using RPBitVector =
     dret::pdl::DocListIdxPDLRP<ExternalGenericStorage,
                                DefaultAlphabet,
                                DefaultCount,
                                DefaultGetDocs,
-                               dret::pdl::RPCodec<>,
                                sdsl::bit_vector>;
 
 // --- BC ---
@@ -98,14 +98,12 @@ using BCSdVector =
                                DefaultAlphabet,
                                DefaultCount,
                                DefaultGetDocs,
-                               dret::pdl::BCCodec<>,
                                sdsl::sd_vector<>>;
 using BCBitVector =
     dret::pdl::DocListIdxPDLBC<ExternalGenericStorage,
                                DefaultAlphabet,
                                DefaultCount,
                                DefaultGetDocs,
-                               dret::pdl::BCCodec<>,
                                sdsl::bit_vector>;
 
 template <typename TTraits>

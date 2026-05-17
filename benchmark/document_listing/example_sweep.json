@@ -1,0 +1,57 @@
+{
+  "mode": "query",
+
+  "dataset": {
+    "dir": "/path/to/data",
+    "name": "wiki",
+    "patterns": "/path/to/queries.txt",
+    "data_width": 8
+  },
+
+  "workload": {
+    "reps": 10,
+    "min_time": 0.0,
+    "rebuild": false,
+    "memory_trace": false
+  },
+
+  "sweep": [
+    {
+      "family": "gcda",
+      "tslp": ["light", "compact_bp"],
+      "block_size": [256, 512, 1024],
+      "storing_factor": [2, 4, 8]
+    },
+    {
+      "family": "dgcda",
+      "tslp": ["default", "otf", "crl"],
+      "block_size": [512],
+      "storing_factor": [4]
+    },
+    {
+      "family": "rmq",
+      "core": ["sada", "ilcp", "cilcp"],
+      "get_doc": ["da", "slp"],
+      "gcda_slp": ["light"],
+      "block_size": [512],
+      "storing_factor": [4]
+    },
+    {
+      "family": "pdl",
+      "codec": ["plain", "rp"],
+      "get_doc": ["da"],
+      "policy": ["occurrence_weighted"],
+      "block_size": [512],
+      "storing_factor": [4]
+    },
+    {
+      "family": "slp_ns",
+      "tslp": ["iv", "dv"]
+    },
+    {
+      "family": "brute",
+      "kind": ["r-index", "sr-index"],
+      "sampling_size": [8, 16]
+    }
+  ]
+}

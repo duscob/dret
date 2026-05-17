@@ -7,10 +7,10 @@
 #include "sr-index/sr_idx_generic.h"
 #include "sr-index/sr_index.h"
 
-#include "config.h"
-#include "construct_base.h"
-#include "doc_list_index.h"
-#include "index_base.h"
+#include "dret/config.h"
+#include "dret/construct_base.h"
+#include "dret/doc_list/doc_list_base.h"
+#include "dret/index_base.h"
 
 namespace dret {
 

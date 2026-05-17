@@ -12,7 +12,7 @@
 #include <sdsl/sd_vector.hpp>
 #include <sdsl/rmq_succinct_sct.hpp>
 
-#include <dret/doc_freq_index_sada.h>
+#include <dret/doc_freq/doc_freq_sada.h>
 
 #include "definitions.h"
 

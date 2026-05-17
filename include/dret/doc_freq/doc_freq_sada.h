@@ -10,7 +10,7 @@
 
 #include <sdsl/int_vector.hpp>
 
-#include "doc_freq_index_rmq.h"
+#include "dret/doc_freq/doc_freq_rmq.h"
 
 
 namespace dret {
