@@ -111,6 +111,10 @@ struct RMQSweep {
   std::vector<axes::GetDocEnum> get_doc{axes::GetDocEnum::DA};
   std::vector<axes::GCDASLPVariant> gcda_slp{axes::GCDASLPVariant::Light};
   std::vector<axes::BareSLPVariant> bare_slp{axes::BareSLPVariant::IV};
+  // TRunValues axis for the -S sub-family (ILCP-S / CILCP-S). Default DV
+  // matches IlcpLikeSCore's default; other variants in {iv, dv, vv} fan
+  // the -S cores out across the run-values container.
+  std::vector<axes::RunValuesVariant> run_values{axes::RunValuesVariant::DV};
   std::vector<std::uint32_t> block_size{512};
   std::vector<float> storing_factor{4.0f};
 };
@@ -228,6 +232,7 @@ inline RMQSweep ParseRMQ(const nlohmann::json& j) {
   s.get_doc = ParseEnumList<axes::GetDocEnum>(j, "get_doc", s.get_doc);
   s.gcda_slp = ParseEnumList<axes::GCDASLPVariant>(j, "gcda_slp", s.gcda_slp);
   s.bare_slp = ParseEnumList<axes::BareSLPVariant>(j, "bare_slp", s.bare_slp);
+  s.run_values = ParseEnumList<axes::RunValuesVariant>(j, "run_values", s.run_values);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
   s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
   return s;

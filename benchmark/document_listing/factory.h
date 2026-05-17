@@ -51,6 +51,7 @@ class Factory {
   using GCDASLPVariant   = bench::axes::GCDASLPVariant;
   using BareSLPVariant   = bench::axes::BareSLPVariant;
   using DGCDASLPVariant  = bench::axes::DGCDASLPVariant;
+  using RunValuesVariant = bench::axes::RunValuesVariant;
 
   // Typed-index aliases for each family now live in benchmark/document_listing/
   // factories/{brute,gcda,dgcda,slp_ns,rmq,pdl}.h. The Factory facade simply
@@ -70,6 +71,9 @@ class Factory {
     // initialisers in the benchmark binaries keep landing in the correct
     // fields. New code should prefer designated init.
     DGCDASLPVariant dgcda_slp = DGCDASLPVariant::Default;
+    // TRunValues axis for the -S families (ILCP-S / CILCP-S). Ignored by
+    // every other index family. Default DV matches IlcpLikeSCore's default.
+    RunValuesVariant run_values = RunValuesVariant::DV;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -90,7 +94,9 @@ class Factory {
         return pdl_variant < t_c.pdl_variant;
       if (pdl_storage_policy != t_c.pdl_storage_policy)
         return pdl_storage_policy < t_c.pdl_storage_policy;
-      return dgcda_slp < t_c.dgcda_slp;
+      if (dgcda_slp != t_c.dgcda_slp)
+        return dgcda_slp < t_c.dgcda_slp;
+      return run_values < t_c.run_values;
     }
   };
 
@@ -274,7 +280,8 @@ class Factory {
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::ILCP_S,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp);
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
+            t_config.run_values);
         index = {idx, size};
         break;
       }
@@ -284,7 +291,8 @@ class Factory {
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::CILCP_S,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp);
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
+            t_config.run_values);
         index = {idx, size};
         break;
       }

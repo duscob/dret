@@ -161,6 +161,29 @@ struct EnumTraits<BareSLPVariant> {
 };
 
 template <>
+struct EnumTraits<RunValuesVariant> {
+  static constexpr const char* flag_name() { return "run_values_variants"; }
+  static constexpr bool has_default() { return true; }
+  static constexpr RunValuesVariant default_value() { return RunValuesVariant::DV; }
+
+  static std::optional<RunValuesVariant> TryParse(std::string_view s) {
+    if (s == "iv") return RunValuesVariant::IV;
+    if (s == "dv") return RunValuesVariant::DV;
+    if (s == "vv") return RunValuesVariant::VV;
+    return std::nullopt;
+  }
+
+  static const char* Name(RunValuesVariant v) {
+    switch (v) {
+      case RunValuesVariant::IV: return "IV";
+      case RunValuesVariant::DV: return "DV";
+      case RunValuesVariant::VV: return "VV";
+    }
+    return "UNKNOWN";
+  }
+};
+
+template <>
 struct EnumTraits<PDLVariant> {
   static constexpr const char* flag_name() { return "pdl_variants"; }
   // No default: when --pdl_variants is empty, PDL is disabled entirely.

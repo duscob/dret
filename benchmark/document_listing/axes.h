@@ -83,6 +83,17 @@ enum class BareSLPVariant {
   VV,       // grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>
 };
 
+// TRunValues container choice for the Sadakane-style (-S) doc-listing
+// families (ILCP-S / CILCP-S). The persisted per-run min(VILCP) array
+// can be encoded fixed-width and bit-compressed (IV) or with variable-
+// length per-element codes (DV / VV). SADA-S has no run_values axis —
+// its prev_doc array is per SA-position, not per run.
+enum class RunValuesVariant {
+  IV,       // sdsl::int_vector<>  — fixed-width, sdsl::util::bit_compress
+  DV,       // sdsl::dac_vector<>  — direct access codes (family default)
+  VV,       // sdsl::vlc_vector<>  — variable-length codes
+};
+
 // DGCDA's TSLP choice. Default = the standard DifferentialLightSLP<>; OTF /
 // CRL vary the BasicSLP span-length strategy; EV / DV / VV vary the inner
 // int-vector container for roots / span_sums / samples.

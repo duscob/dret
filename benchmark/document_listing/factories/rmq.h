@@ -17,9 +17,12 @@
 #include <memory>
 #include <utility>
 
+#include <sdsl/dac_vector.hpp>
+#include <sdsl/int_vector.hpp>
 #include <sdsl/rmq_support.hpp>
 #include <sdsl/sd_vector.hpp>
 #include <sdsl/util.hpp>
+#include <sdsl/vlc_vector.hpp>
 
 #include "sr-index/r_index.h"
 
@@ -99,21 +102,33 @@ using SadaSCore = dret::rmq::SadaSCore<TStorage,
                                         sdsl::sd_vector<>,
                                         TGetDoc>;
 
-template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
+// TRunValues container choices for the -S families. Independent of TGetDoc;
+// controls how the persisted per-run min(VILCP) array is encoded on disk.
+using RunValues_IV = sdsl::int_vector<>;   // fixed-width, bit-compressed
+using RunValues_DV = sdsl::dac_vector<>;   // direct access codes (default)
+using RunValues_VV = sdsl::vlc_vector<>;   // variable-length codes
+
+template <typename TStorage,
+          typename TGetDoc = GetDocDA<TStorage>,
+          typename TRunValues = RunValues_DV>
 using IlcpSCore = dret::rmq::IlcpSCore<TStorage,
                                         kWidth,
                                         sdsl::sd_vector<>,
                                         sdsl::rmq_succinct_sct<true>,
                                         sdsl::sd_vector<>,
-                                        TGetDoc>;
+                                        TGetDoc,
+                                        TRunValues>;
 
-template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
+template <typename TStorage,
+          typename TGetDoc = GetDocDA<TStorage>,
+          typename TRunValues = RunValues_DV>
 using CilcpSCore = dret::rmq::CilcpSCore<TStorage,
                                           kWidth,
                                           sdsl::sd_vector<>,
                                           sdsl::rmq_succinct_sct<true>,
                                           sdsl::sd_vector<>,
-                                          TGetDoc>;
+                                          TGetDoc,
+                                          TRunValues>;
 
 // Typed-index template alias. Storage and Core are both parametric.
 template <typename TStorage, typename TCore>
@@ -224,6 +239,129 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
   }
 }
 
+//~~~~~~~  -S family dispatch (3-arg TCoreT taking <TStorage, TGetDoc, TRunValues>)
+//
+// IlcpSCore / CilcpSCore take an extra TRunValues template parameter on top
+// of the standard 2-arg core template, so the existing 2-arg MakeOne path
+// doesn't fit. The MakeXxx_S helpers mirror MakeXxx but plumb TRunValues
+// through; MakeOneS_T dispatches on TGetDoc with TRunValues fixed; MakeOneS
+// fans out across TRunValues.
+
+template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeDA_S(TStorage t_storage, dret::Config& t_config) {
+  using TCore = TCoreT<TStorage, GetDocDA<TStorage>, TRunValues>;
+  using TIndex = Idx<TStorage, TCore>;
+  auto idx = std::make_shared<TIndex>(t_storage);
+  construct(*idx, t_config);
+  idx->load(t_config);
+  return {idx, sdsl::size_in_bytes(*idx)};
+}
+
+template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TSLP, typename TRunValues>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeSLP_S(TStorage t_storage, dret::Config& t_config,
+          uint32_t t_block_size, float t_storing_factor) {
+  using TCore = TCoreT<TStorage, GetDocSLP<TStorage, TSLP>, TRunValues>;
+  using TIndex = Idx<TStorage, TCore>;
+  TCore core(t_storage, t_block_size, t_storing_factor);
+  auto idx = std::make_shared<TIndex>(t_storage, core);
+  construct(*idx, t_config);
+  idx->load(t_config);
+  return {idx, sdsl::size_in_bytes(*idx)};
+}
+
+template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TSLP, typename TRunValues>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeSLP_NS_S(TStorage t_storage, dret::Config& t_config) {
+  using TCore = TCoreT<TStorage, GetDocSLP_NS<TStorage, TSLP>, TRunValues>;
+  using TIndex = Idx<TStorage, TCore>;
+  TCore core(t_storage);
+  auto idx = std::make_shared<TIndex>(t_storage, core);
+  construct(*idx, t_config);
+  idx->load(t_config);
+  return {idx, sdsl::size_in_bytes(*idx)};
+}
+
+template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeDSLP_S(TStorage t_storage, dret::Config& t_config,
+           uint32_t t_block_size, float t_storing_factor) {
+  using TCore = TCoreT<TStorage, GetDocDSLP<TStorage>, TRunValues>;
+  using TIndex = Idx<TStorage, TCore>;
+  TCore core(t_storage, t_block_size, t_storing_factor);
+  auto idx = std::make_shared<TIndex>(t_storage, core);
+  construct(*idx, t_config);
+  idx->load(t_config);
+  return {idx, sdsl::size_in_bytes(*idx)};
+}
+
+template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeOneS_T(TStorage t_storage, dret::Config& t_config,
+           uint32_t t_block_size, float t_storing_factor,
+           bench::axes::GetDocEnum t_get_doc,
+           bench::axes::GCDASLPVariant t_gcda_slp,
+           bench::axes::BareSLPVariant t_bare_slp) {
+  using bench::axes::GetDocEnum;
+  using bench::axes::GCDASLPVariant;
+  using bench::axes::BareSLPVariant;
+  switch (t_get_doc) {
+    case GetDocEnum::SLP:
+      switch (t_gcda_slp) {
+        case GCDASLPVariant::CompactBP:
+          return MakeSLP_S<TCoreT, TStorage, SLP_CompactBP, TRunValues>(t_storage, t_config, t_block_size, t_storing_factor);
+        case GCDASLPVariant::CompactLOUDS:
+          return MakeSLP_S<TCoreT, TStorage, SLP_CompactLOUDS, TRunValues>(t_storage, t_config, t_block_size, t_storing_factor);
+        case GCDASLPVariant::Combined:
+          return MakeSLP_S<TCoreT, TStorage, SLP_Combined, TRunValues>(t_storage, t_config, t_block_size, t_storing_factor);
+        case GCDASLPVariant::Light:
+        default:
+          return MakeSLP_S<TCoreT, TStorage, SLP_Light, TRunValues>(t_storage, t_config, t_block_size, t_storing_factor);
+      }
+    case GetDocEnum::SLP_NS:
+      switch (t_bare_slp) {
+        case BareSLPVariant::Raw:
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_Raw, TRunValues>(t_storage, t_config);
+        case BareSLPVariant::DV:
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DV, TRunValues>(t_storage, t_config);
+        case BareSLPVariant::VV:
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_VV, TRunValues>(t_storage, t_config);
+        case BareSLPVariant::IV:
+        default:
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_IV, TRunValues>(t_storage, t_config);
+      }
+    case GetDocEnum::DSLP:
+      return MakeDSLP_S<TCoreT, TStorage, TRunValues>(t_storage, t_config, t_block_size, t_storing_factor);
+    case GetDocEnum::DA:
+    default:
+      return MakeDA_S<TCoreT, TStorage, TRunValues>(t_storage, t_config);
+  }
+}
+
+template <template <typename, typename, typename> class TCoreT, typename TStorage>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeOneS(TStorage t_storage, dret::Config& t_config,
+         uint32_t t_block_size, float t_storing_factor,
+         bench::axes::GetDocEnum t_get_doc,
+         bench::axes::GCDASLPVariant t_gcda_slp,
+         bench::axes::BareSLPVariant t_bare_slp,
+         bench::axes::RunValuesVariant t_run_values) {
+  using bench::axes::RunValuesVariant;
+  switch (t_run_values) {
+    case RunValuesVariant::IV:
+      return MakeOneS_T<TCoreT, TStorage, RunValues_IV>(
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+    case RunValuesVariant::VV:
+      return MakeOneS_T<TCoreT, TStorage, RunValues_VV>(
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+    case RunValuesVariant::DV:
+    default:
+      return MakeOneS_T<TCoreT, TStorage, RunValues_DV>(
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+  }
+}
+
 }  // namespace detail
 
 template <typename TStorage>
@@ -233,7 +371,8 @@ Make(TStorage t_storage, dret::Config& t_config,
      CoreKind t_core,
      bench::axes::GetDocEnum t_get_doc,
      bench::axes::GCDASLPVariant t_gcda_slp,
-     bench::axes::BareSLPVariant t_bare_slp) {
+     bench::axes::BareSLPVariant t_bare_slp,
+     bench::axes::RunValuesVariant t_run_values = bench::axes::RunValuesVariant::DV) {
   switch (t_core) {
     case CoreKind::ILCP:
       return detail::MakeOne<IlcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
@@ -245,11 +384,11 @@ Make(TStorage t_storage, dret::Config& t_config,
       return detail::MakeOne<SadaSCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                          t_get_doc, t_gcda_slp, t_bare_slp);
     case CoreKind::ILCP_S:
-      return detail::MakeOne<IlcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                         t_get_doc, t_gcda_slp, t_bare_slp);
+      return detail::MakeOneS<IlcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                          t_get_doc, t_gcda_slp, t_bare_slp, t_run_values);
     case CoreKind::CILCP_S:
-      return detail::MakeOne<CilcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                          t_get_doc, t_gcda_slp, t_bare_slp);
+      return detail::MakeOneS<CilcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                           t_get_doc, t_gcda_slp, t_bare_slp, t_run_values);
     case CoreKind::SADA:
     default:
       return detail::MakeOne<SadaCore>(t_storage, t_config, t_block_size, t_storing_factor,

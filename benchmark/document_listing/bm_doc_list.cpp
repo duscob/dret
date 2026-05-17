@@ -589,21 +589,35 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
         }
         return {{GCDASLPVariant::Light, BareSLPVariant::IV}};
       }();
+      // ILCP-S / CILCP-S fan out across TRunValues; the other cores ignore
+      // this axis. Use a single-element {DV} for non-S cores so the loop
+      // doesn't duplicate their registrations.
+      const bool s_core = (core == fac::rmq::CoreKind::ILCP_S ||
+                           core == fac::rmq::CoreKind::CILCP_S);
+      const auto& rv_list = s_core
+          ? sw.run_values
+          : std::vector<bench::axes::RunValuesVariant>{bench::axes::RunValuesVariant::DV};
       for (auto bs : bs_list) {
         for (auto sf : sf_list) {
           for (auto pair : inner_vec) {
-            std::string name = std::string(CoreName(core)) + "-"
-                             + EnumTraits<GetDocEnum>::Name(gd)
-                             + inner_label(pair);
-            if (needs_bs_sf) name += BsSfSuffix(bs, sf);
-            Factory<>::Config cfg{};
-            cfg.index_t = core_idx;
-            cfg.get_doc = gd;
-            cfg.gcda_slp = pair.first;
-            cfg.bare_slp = pair.second;
-            cfg.block_size = needs_bs_sf ? bs : 512;
-            cfg.storing_factor = needs_bs_sf ? sf : 4.0f;
-            benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
+            for (auto rv : rv_list) {
+              std::string name = std::string(CoreName(core)) + "-"
+                               + EnumTraits<GetDocEnum>::Name(gd)
+                               + inner_label(pair);
+              if (needs_bs_sf) name += BsSfSuffix(bs, sf);
+              if (s_core) {
+                name += std::string("-") + EnumTraits<bench::axes::RunValuesVariant>::Name(rv);
+              }
+              Factory<>::Config cfg{};
+              cfg.index_t = core_idx;
+              cfg.get_doc = gd;
+              cfg.gcda_slp = pair.first;
+              cfg.bare_slp = pair.second;
+              cfg.block_size = needs_bs_sf ? bs : 512;
+              cfg.storing_factor = needs_bs_sf ? sf : 4.0f;
+              cfg.run_values = rv;
+              benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
+            }
           }
         }
       }
