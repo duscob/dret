@@ -29,7 +29,16 @@ namespace dret::rmq {
 // For SADA: pass MarkedReported as is_reported; a lambda that calls
 //   mr.mark(d) + user_report(d) as report.
 // For ILCP: report also fans out the rest of the run; see IlcpLikeCore.
-template <typename TRMQ, typename TGetDoc, typename TIsReported, typename TReport>
+//
+// kStopOnReported gates the marker-based recursion-stop. With true (default),
+// recursion halts whenever a subrange's RMQ-min has an already-reported doc —
+// a real ~10x speedup that is empirically sound for SADA (prev_doc-based RMQ)
+// and ILCP (ilcp-constant runs). With false, recursion always explores both
+// halves; needed for CILCP, whose Rule-2 RLE merges by doc-equality with min
+// tracking, breaking the marker-based stop invariant and silently dropping
+// docs in subranges whose RMQ-min coincides with an earlier-marked doc.
+template <bool kStopOnReported = true,
+          typename TRMQ, typename TGetDoc, typename TIsReported, typename TReport>
 void ListDocsRMQScheme(std::size_t bp,
                        std::size_t ep,
                        const TRMQ& rmq,
@@ -40,11 +49,15 @@ void ListDocsRMQScheme(std::size_t bp,
     return;
   const auto k = rmq(bp, ep - 1);
   const auto d = get_doc(k);
-  if (!is_reported(k, d)) {
+  const bool already = is_reported(k, d);
+  if (!already) {
     report(k, d);
-    ListDocsRMQScheme(bp, k, rmq, get_doc, is_reported, report);
-    ListDocsRMQScheme(k + 1, ep, rmq, get_doc, is_reported, report);
   }
+  if constexpr (kStopOnReported) {
+    if (already) return;
+  }
+  ListDocsRMQScheme<kStopOnReported>(bp, k, rmq, get_doc, is_reported, report);
+  ListDocsRMQScheme<kStopOnReported>(k + 1, ep, rmq, get_doc, is_reported, report);
 }
 
 //~~~~~~~

@@ -343,7 +343,13 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       }
     };
 
-    ListDocsRMQScheme(run_sp, run_ep, *rmq_, get_doc, mr, report);
+    // CILCP's Rule-2 RLE breaks the marker-based recursion-stop invariant
+    // (run-space subranges can have RMQ-min landing on an earlier-marked doc
+    // while pending docs remain in the same subrange). Force unconditional
+    // recursion for CILCP only; ILCP keeps the early-stop, which is sound
+    // for ilcp-constant runs and is a major query-time optimization.
+    constexpr bool kStopOnReported = (kVariant != IlcpVariant::CILCP);
+    ListDocsRMQScheme<kStopOnReported>(run_sp, run_ep, *rmq_, get_doc, mr, report);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
