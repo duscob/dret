@@ -14,6 +14,7 @@
 #include <functional>
 #include <limits>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <sdsl/bit_vectors.hpp>
@@ -574,7 +575,8 @@ template <IlcpVariantS kVariantS,
           typename TBvRunHeads,
           typename TRMQ,
           typename TBvDocEnds,
-          typename TGetDoc = GetDocDA<TStorage, t_width>>
+          typename TGetDoc = GetDocDA<TStorage, t_width>,
+          typename TRunValues = sdsl::dac_vector<>>
 class IlcpLikeSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
@@ -598,8 +600,6 @@ class IlcpLikeSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   }
 
   using Base::load;
-
-  using TRunValues = sdsl::dac_vector<>;
 
   template <typename TReport>
   void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t t_m, const TReport& t_report) const {
@@ -761,16 +761,18 @@ template <typename TStorage = GenericStorage,
           typename TBvRunHeads = sdsl::sd_vector<>,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
-          typename TGetDoc = GetDocDA<TStorage, t_width>>
-using IlcpSCore = IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>;
+          typename TGetDoc = GetDocDA<TStorage, t_width>,
+          typename TRunValues = sdsl::dac_vector<>>
+using IlcpSCore = IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>;
 
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TBvRunHeads = sdsl::sd_vector<>,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
-          typename TGetDoc = GetDocDA<TStorage, t_width>>
-using CilcpSCore = IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>;
+          typename TGetDoc = GetDocDA<TStorage, t_width>,
+          typename TRunValues = sdsl::dac_vector<>>
+using CilcpSCore = IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>;
 
 //~~~~~~~
 // DocListIdxRMQ
@@ -1073,22 +1075,33 @@ void construct(IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, 
   construct(t_core.get_doc_policy(), t_config);
 }
 
-// Helper: pack a std::vector<size_t> of run-min ILCP values into a
-// dac_vector<> and persist it under t_key. dac_vector is a direct-access-
-// codes encoding: variable-length per element, with O(1) random access.
-// ILCP values have a long tail of small numbers (typical for repetitive
-// corpora), so DAC compresses substantially better than a fixed-width
-// int_vector. The compressed array is consumed by
-// ListDocsRMQSchemeDepth at query time via operator[].
+// Helper: pack a std::vector<size_t> of run-min ILCP values into the
+// requested TRunValues container and persist it under t_key. Default
+// TRunValues is sdsl::dac_vector<> (direct access codes — variable-length
+// per element with O(1) random access; ideal for the long tail of small
+// ILCP values typical of repetitive corpora). Other plausible choices:
+//   sdsl::int_vector<>  -- fixed-width, bit-compressed to ceil(log2(max))
+//   sdsl::vlc_vector<>  -- variable-length codes (delta-style)
+// Compressed containers compress on construction; for int_vector we
+// explicitly call sdsl::util::bit_compress to avoid storing 64 bits per
+// entry. The query-time access is the same operator[] in all cases.
+template <typename TRunValues = sdsl::dac_vector<>>
 inline void StoreRunValues(Config& t_config,
                            const std::string& t_key,
                            const std::vector<std::size_t>& t_run_values) {
-  // dac_vector<>'s constructor takes std::vector<uint64_t>&; build a copy
-  // (it would also move from an int_vector<>, but the std::vector path is
-  // simplest and the temporary lives only for the construction call).
-  std::vector<uint64_t> values(t_run_values.begin(), t_run_values.end());
-  sdsl::dac_vector<> packed(values);
-  sdsl::store_to_cache(packed, t_key, t_config, true);
+  if constexpr (std::is_same_v<TRunValues, sdsl::int_vector<>>) {
+    sdsl::int_vector<> packed(t_run_values.size());
+    for (std::size_t i = 0; i < t_run_values.size(); ++i)
+      packed[i] = t_run_values[i];
+    sdsl::util::bit_compress(packed);
+    sdsl::store_to_cache(packed, t_key, t_config, true);
+  } else {
+    // dac_vector<>, vlc_vector<> and similar accept a std::vector<uint64_t>&
+    // by reference and compress at construction.
+    std::vector<uint64_t> values(t_run_values.begin(), t_run_values.end());
+    TRunValues packed(values);
+    sdsl::store_to_cache(packed, t_key, t_config, true);
+  }
 }
 
 // ILCP-S construction: reuse the existing ILCP RLE (run_heads + rmq) and
@@ -1100,8 +1113,9 @@ template <typename TStorage,
           typename TBvRunHeads,
           typename TRMQ,
           typename TBvDocEnds,
-          typename TGetDoc>
-void construct(IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
+          typename TGetDoc,
+          typename TRunValues>
+void construct(IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>& t_core,
                Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
@@ -1113,7 +1127,7 @@ void construct(IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHead
   const bool rle_missing =
       !sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
       || !sdsl::cache_file_exists<TBvRunHeads>(key_run_heads, t_config);
-  const bool values_missing = !sdsl::cache_file_exists<sdsl::dac_vector<>>(key_run_values, t_config);
+  const bool values_missing = !sdsl::cache_file_exists<TRunValues>(key_run_values, t_config);
 
   if (rle_missing || values_missing) {
     auto event = sdsl::memory_monitor::event(key_run_values);
@@ -1137,7 +1151,7 @@ void construct(IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHead
           t_config, key_run_heads, key_rmq, std::move(run_heads), run_values);
     }
     if (values_missing) {
-      StoreRunValues(t_config, key_run_values, run_values);
+      StoreRunValues<TRunValues>(t_config, key_run_values, run_values);
     }
   }
 
@@ -1153,8 +1167,9 @@ template <typename TStorage,
           typename TBvRunHeads,
           typename TRMQ,
           typename TBvDocEnds,
-          typename TGetDoc>
-void construct(IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
+          typename TGetDoc,
+          typename TRunValues>
+void construct(IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>& t_core,
                Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
@@ -1165,7 +1180,7 @@ void construct(IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHea
 
   if (!sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
       || !sdsl::cache_file_exists<TBvRunHeads>(key_run_heads, t_config)
-      || !sdsl::cache_file_exists<sdsl::dac_vector<>>(key_run_values, t_config)) {
+      || !sdsl::cache_file_exists<TRunValues>(key_run_values, t_config)) {
     auto event = sdsl::memory_monitor::event(key_rmq);
 
     std::size_t n_doc = internal::ReadNDoc(t_config);
@@ -1228,7 +1243,7 @@ void construct(IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHea
 
     internal::StoreRunHeadsAndRMQ<TBvRunHeads, TRMQ>(
         t_config, key_run_heads, key_rmq, std::move(run_heads), run_values);
-    StoreRunValues(t_config, key_run_values, run_values);
+    StoreRunValues<TRunValues>(t_config, key_run_values, run_values);
   }
 
   construct(t_core.get_doc_policy(), t_config);
