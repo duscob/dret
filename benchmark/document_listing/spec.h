@@ -104,10 +104,20 @@ struct RMQSweep {
   std::vector<factories::rmq::CoreKind> core{
       factories::rmq::CoreKind::SADA,
       factories::rmq::CoreKind::ILCP,
-      factories::rmq::CoreKind::CILCP};
+      factories::rmq::CoreKind::CILCP,
+      factories::rmq::CoreKind::SADA_S,
+      factories::rmq::CoreKind::ILCP_S,
+      factories::rmq::CoreKind::CILCP_S};
   std::vector<axes::GetDocEnum> get_doc{axes::GetDocEnum::DA};
   std::vector<axes::GCDASLPVariant> gcda_slp{axes::GCDASLPVariant::Light};
   std::vector<axes::BareSLPVariant> bare_slp{axes::BareSLPVariant::IV};
+  // TRunValues axis for the -S sub-family (ILCP-S / CILCP-S). Default DV
+  // matches IlcpLikeSCore's default; other variants in {iv, dv, vv} fan
+  // the -S cores out across the run-values container.
+  std::vector<axes::RunValuesVariant> run_values{axes::RunValuesVariant::DV};
+  // TPrevDoc axis for SADA-S. Default IV matches SadaSCore's default;
+  // other variants in {iv, dv, vv}.
+  std::vector<axes::PrevDocVariant> prev_doc{axes::PrevDocVariant::IV};
   std::vector<std::uint32_t> block_size{512};
   std::vector<float> storing_factor{4.0f};
 };
@@ -147,10 +157,13 @@ inline Mode ParseMode(const std::string& s) {
 }
 
 inline factories::rmq::CoreKind ParseRmqCore(const std::string& s) {
-  if (s == "sada")  return factories::rmq::CoreKind::SADA;
-  if (s == "ilcp")  return factories::rmq::CoreKind::ILCP;
-  if (s == "cilcp") return factories::rmq::CoreKind::CILCP;
-  throw std::invalid_argument("rmq.core: must be 'sada' / 'ilcp' / 'cilcp', got '" + s + "'");
+  if (s == "sada")    return factories::rmq::CoreKind::SADA;
+  if (s == "ilcp")    return factories::rmq::CoreKind::ILCP;
+  if (s == "cilcp")   return factories::rmq::CoreKind::CILCP;
+  if (s == "sada-s")  return factories::rmq::CoreKind::SADA_S;
+  if (s == "ilcp-s")  return factories::rmq::CoreKind::ILCP_S;
+  if (s == "cilcp-s") return factories::rmq::CoreKind::CILCP_S;
+  throw std::invalid_argument("rmq.core: must be 'sada' / 'ilcp' / 'cilcp' / 'sada-s' / 'ilcp-s' / 'cilcp-s', got '" + s + "'");
 }
 
 inline BruteSweep::Kind ParseBruteKind(const std::string& s) {
@@ -222,6 +235,8 @@ inline RMQSweep ParseRMQ(const nlohmann::json& j) {
   s.get_doc = ParseEnumList<axes::GetDocEnum>(j, "get_doc", s.get_doc);
   s.gcda_slp = ParseEnumList<axes::GCDASLPVariant>(j, "gcda_slp", s.gcda_slp);
   s.bare_slp = ParseEnumList<axes::BareSLPVariant>(j, "bare_slp", s.bare_slp);
+  s.run_values = ParseEnumList<axes::RunValuesVariant>(j, "run_values", s.run_values);
+  s.prev_doc = ParseEnumList<axes::PrevDocVariant>(j, "prev_doc", s.prev_doc);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
   s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
   return s;

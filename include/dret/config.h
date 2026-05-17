@@ -39,7 +39,20 @@ constexpr std::string_view kILCP = "ilcp";
 constexpr std::string_view kCILCP = "cilcp";
 constexpr std::string_view kRmq = "rmq";
 constexpr std::string_view kRunHeads = "runHeads";
+constexpr std::string_view kRunValues = "runValues";
+constexpr std::string_view kPrevDoc = "prevDoc";
 constexpr std::string_view kRmqNDoc = "rmq_n_doc";
+
+// Sadakane-style ("canonical depth-based stop") parallel families. Each is
+// a sibling of the corresponding non-S core (SADA / ILCP / CILCP) and uses
+// the same RMQ when possible. SADA-S and ILCP-S reuse the existing sada_rmq
+// and ilcp_run_heads / ilcp_rmq caches respectively; the -S keys only carry
+// the extra value-array files needed by the depth-based stop. CILCP-S is
+// independent — its RLE matches the paper's CILCP★ (Def. 1) and differs
+// from dret's existing CILCP construction.
+constexpr std::string_view kSadaS = "sada_s";
+constexpr std::string_view kIlcpS = "ilcp_s";
+constexpr std::string_view kCilcpS = "cilcp_s";
 
 // PDL (precomputed document listing) — sparse suffix-tree indexes with
 // per-variant stored-set codecs. kPDL is the umbrella; kTree is the
@@ -95,6 +108,26 @@ struct Keys {
             {
                 {conf::kRmq, "cilcp_rmq"},
                 {conf::kRunHeads, "cilcp_run_heads"},
+            },
+        },
+        {
+            conf::kSadaS,
+            {
+                {conf::kPrevDoc, "sada_s_prev_doc"},
+            },
+        },
+        {
+            conf::kIlcpS,
+            {
+                {conf::kRunValues, "ilcp_s_run_values"},
+            },
+        },
+        {
+            conf::kCilcpS,
+            {
+                {conf::kRmq, "cilcp_s_rmq"},
+                {conf::kRunHeads, "cilcp_s_run_heads"},
+                {conf::kRunValues, "cilcp_s_run_values"},
             },
         },
         {conf::kRmqNDoc, "rmq_n_doc"},
