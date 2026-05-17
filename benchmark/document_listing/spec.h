@@ -75,6 +75,10 @@ struct Workload {
   // SLP-NS, PDL — see bm_doc_list.cpp for the per-family glob patterns.
   // Default false (warm-cache fast-path, identical to bm_build_items.cpp).
   bool rebuild = false;
+  // Construct mode only: write construction-<bench>.{html,json} memory-monitor
+  // traces and sizes-<bench>.json size sidecars next to the working directory
+  // for every benchmark cell — matches bm_build_items' always-on behaviour.
+  bool memory_trace = false;
   // Pattern coding for query mode: "PLAIN" | "BASE64".
   std::string pattern_code = "PLAIN";
   int pattern_delim = '\n';
@@ -278,6 +282,7 @@ inline Workload ParseWorkload(const nlohmann::json& j) {
   if (j.contains("report_stats")) w.report_stats = j.at("report_stats").get<bool>();
   if (j.contains("print_result")) w.print_result = j.at("print_result").get<bool>();
   if (j.contains("rebuild")) w.rebuild = j.at("rebuild").get<bool>();
+  if (j.contains("memory_trace")) w.memory_trace = j.at("memory_trace").get<bool>();
   if (j.contains("pattern_code")) w.pattern_code = j.at("pattern_code").get<std::string>();
   if (j.contains("pattern_delim")) w.pattern_delim = j.at("pattern_delim").get<int>();
   return w;

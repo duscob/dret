@@ -58,6 +58,15 @@ Switch the spec's `mode` to `"construct"` to time `construct()` instead of `Sear
 
 - **Stderr warmth warning** — when `rebuild` is off and the first iteration returns in under 1 ms, the binary prints a one-line warning to stderr identifying the cell. Quick visual signal that the measurement is bogus.
 
+### Construct-mode `memory_trace` (sdsl memory log + size sidecar)
+
+Set `"memory_trace": true` in the workload block to make `bm_doc_list` emit, for every construct-mode benchmark cell:
+
+- `construction-<bench>.html` and `construction-<bench>.json` — the sdsl memory-monitor traces (an event-by-event log of allocations during `construct()`).
+- `sizes-<bench>.json` — the per-component size breakdown produced by `GetSizeReport()` (also available as inline GBenchmark counters, but the JSON sidecar is convenient for post-processing).
+
+Files land in the working directory keyed by the GBenchmark cell name (e.g. `DocListGCDA-CompactBP-bs1024-sf4`). This is the same artefact set `bm_build_items` emits unconditionally, gated here on the spec flag so a large sweep doesn't litter the working directory. Default is `false`.
+
 ## Legacy: `bm_query_doc_list` / `bm_build_items`
 
 These older binaries take gflags directly (one comma-separated list per axis). They predate the JSON spec; kept alongside for one cycle.

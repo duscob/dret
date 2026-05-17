@@ -11,7 +11,8 @@
   "workload": {
     "reps": 10,
     "min_time": 0.0,
-    "rebuild": false
+    "rebuild": false,
+    "memory_trace": false
   },
 
   "sweep": [
