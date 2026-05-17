@@ -52,7 +52,9 @@ Switch the spec's `mode` to `"construct"` to time `construct()` instead of `Sear
   "workload": { "rebuild": true, "min_time": 0.0 }
   ```
 
-  Supported for the **GCDA**, **DGCDA**, **SLP-NS**, **PDL** families. RMQ and Brute families ignore `rebuild` and emit no hook — RMQ's SLP cache is shared with GCDA via SDSL type-hashing, so naively deleting it would corrupt the GCDA cache; Brute's r-index caches are managed externally.
+  Supported for the **GCDA**, **DGCDA**, **SLP-NS**, **PDL**, and **RMQ** families. Brute baselines ignore `rebuild` — their r-index caches are managed externally.
+
+  **RMQ scope:** each RMQ cell wipes only the per-core RMQ artefacts it builds (`<basename>_sada_rmq_*` / `<basename>_ilcp_rmq_*` + `<basename>_ilcp_run_heads_*` / `<basename>_cilcp_rmq_*` + `<basename>_cilcp_run_heads_*`, plus `<basename>_rmq_n_doc_*`). The SLP / DSLP / DA caches are shared with the corresponding GCDA / DGCDA / brute builds via SDSL type-hashing and stay warm. The reported time is therefore "RMQ-core construction overhead on top of an already-built SLP / DA", which is the right thing to compare across RMQ variants — the SLP build is amortised across the wider sweep.
 
 - **`first_construct_ns` counter** — every construct-mode cell records the wall-clock time of its *first* `construct()` iteration as a Google Benchmark counter, so it shows up in the CSV/JSON output regardless of how many iterations GBenchmark's auto-tuner picked.
 

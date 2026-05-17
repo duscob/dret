@@ -96,17 +96,22 @@ void DeleteByPrefix(const std::filesystem::path& cache_dir,
 }
 
 // Build a rebuild closure for one construct-mode cell. Empty when disabled
-// (operator bool() returns false). The closure deletes any cache file whose
-// filename starts with <basename>_<key_prefix>.
+// or when no prefixes are given. The closure deletes every cache file whose
+// filename starts with <basename>_<key_prefix> for any prefix in the list.
+// Multi-prefix support: RMQ cells need to wipe both the per-core RMQ cache
+// (e.g. "sada_rmq_") and the shared rmq_n_doc helper (a one-element file
+// rebuilt almost for free), but never the SLP cache (shared with GCDA).
 std::function<void()> MakeHook(bool enable,
                                std::filesystem::path cache_dir,
                                std::string basename,
-                               std::string key_prefix) {
-  if (!enable) return {};
-  std::string file_prefix = basename + "_" + key_prefix;
+                               std::vector<std::string> key_prefixes) {
+  if (!enable || key_prefixes.empty()) return {};
+  std::vector<std::string> file_prefixes;
+  file_prefixes.reserve(key_prefixes.size());
+  for (auto& kp : key_prefixes) file_prefixes.push_back(basename + "_" + kp);
   return [cache_dir = std::move(cache_dir),
-          file_prefix = std::move(file_prefix)]() {
-    DeleteByPrefix(cache_dir, file_prefix);
+          file_prefixes = std::move(file_prefixes)]() {
+    for (const auto& fp : file_prefixes) DeleteByPrefix(cache_dir, fp);
   };
 }
 
@@ -131,6 +136,21 @@ std::string PDLKeyPrefix(std::uint32_t bs, float sf,
                                                        : "bc";
   const int policy_int = static_cast<int>(bench::axes::toPDLStoragePolicy(policy));
   return std::format("{}-{}_pdl_{}_{}_", bs, sf, codec_key, policy_int);
+}
+
+// Per-core RMQ key prefixes — the structures dret::rmq::DocListIdxRMQ::construct
+// actually writes. The SLP / DSLP / DA caches are SHARED with the corresponding
+// GCDA / DGCDA / brute paths and are intentionally NOT deleted; what we wipe
+// is only the RMQ-core-specific data. rmq_n_doc is a one-element int_vector
+// that every RMQ build trivially regenerates, so we include it for cleanliness.
+std::vector<std::string> SadaKeyPrefixes() {
+  return {"sada_rmq_", "rmq_n_doc_"};
+}
+std::vector<std::string> IlcpKeyPrefixes() {
+  return {"ilcp_rmq_", "ilcp_run_heads_", "rmq_n_doc_"};
+}
+std::vector<std::string> CilcpKeyPrefixes() {
+  return {"cilcp_rmq_", "cilcp_run_heads_", "rmq_n_doc_"};
 }
 
 // Warmth check: stderr-warn once per cell when --rebuild is off AND the
@@ -644,7 +664,7 @@ void RegisterOneConstructGCDA(const std::string& family_name,
     for (auto sf : sf_list) {
       const auto cell_name = family_name + BsSfSuffix(bs, sf);
       auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                          prefix_for_cell(bs, sf));
+                                          {prefix_for_cell(bs, sf)});
       benchmark::RegisterBenchmark(cell_name, BM_ConstructGCDAFamily<TIndex>,
                                     config, bs, sf, hook, cc.memory_trace);
     }
@@ -692,7 +712,7 @@ void RegisterConstructDGCDA(const bench::spec::DGCDASweep& sw, dret::Config& con
 void RegisterConstructSLPNS(const bench::spec::SLPNSSweep& sw, dret::Config& config,
                              const ConstructCtx& cc) {
   using namespace fac::slp_ns;
-  auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SLPNSKeyPrefix());
+  auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, {SLPNSKeyPrefix()});
   for (auto tslp : sw.tslp) {
     const auto name = "DocListSLP-NS" + NameSuffix(tslp);
     switch (tslp) {
@@ -712,7 +732,8 @@ void RegisterRMQOneTriple(const std::string& core_name, const std::string& suffi
                           dret::Config& config,
                           const std::vector<std::uint32_t>& bs,
                           const std::vector<float>& sf,
-                          bool memory_trace) {
+                          bool memory_trace,
+                          const std::function<void()>& rebuild_hook) {
   using TCore = TCoreT<GS, TGetDoc>;
   using TIndex = fac::rmq::Idx<GS, TCore>;
   const auto name = core_name + suffix;
@@ -720,18 +741,19 @@ void RegisterRMQOneTriple(const std::string& core_name, const std::string& suffi
     std::vector<std::int64_t> bs_i64(bs.begin(), bs.end());
     std::vector<std::int64_t> sf_i64(sf.begin(), sf.end());
     benchmark::RegisterBenchmark(name, BM_ConstructRMQ<TIndex, TCore>, config,
-                                  std::function<void()>{}, memory_trace)
+                                  rebuild_hook, memory_trace)
         ->ArgsProduct({bs_i64, sf_i64});
   } else {
     benchmark::RegisterBenchmark(name, BM_ConstructRMQ_NS<TIndex, TCore>, config,
-                                  std::function<void()>{}, memory_trace);
+                                  rebuild_hook, memory_trace);
   }
 }
 
 template <template <typename, typename> class TCoreT>
 void RegisterRMQOneCore(const std::string& core_name,
                          const bench::spec::RMQSweep& sw, dret::Config& config,
-                         bool memory_trace) {
+                         bool memory_trace,
+                         const std::function<void()>& rebuild_hook) {
   using namespace fac::rmq;
   for (auto gd : sw.get_doc) {
     switch (gd) {
@@ -740,18 +762,18 @@ void RegisterRMQOneCore(const std::string& core_name,
         using TCore = TCoreT<GS, GetDocDA<GS>>;
         using TIndex = Idx<GS, TCore>;
         benchmark::RegisterBenchmark(core_name + "-DA",
-            BM_ConstructBrute<TIndex>, config, std::function<void()>{}, memory_trace);
+            BM_ConstructBrute<TIndex>, config, rebuild_hook, memory_trace);
         break;
       }
       case GetDocEnum::SLP: {
         for (auto tslp : sw.gcda_slp) {
           const auto suffix = std::string("-SLP") + NameSuffix(tslp);
           switch (tslp) {
-            case GCDASLPVariant::CompactBP:    RegisterRMQOneTriple<TCoreT, GetDocSLP<GS, SLP_CompactBP>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace); break;
-            case GCDASLPVariant::CompactLOUDS: RegisterRMQOneTriple<TCoreT, GetDocSLP<GS, SLP_CompactLOUDS>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace); break;
-            case GCDASLPVariant::Combined:     RegisterRMQOneTriple<TCoreT, GetDocSLP<GS, SLP_Combined>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace); break;
+            case GCDASLPVariant::CompactBP:    RegisterRMQOneTriple<TCoreT, GetDocSLP<GS, SLP_CompactBP>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
+            case GCDASLPVariant::CompactLOUDS: RegisterRMQOneTriple<TCoreT, GetDocSLP<GS, SLP_CompactLOUDS>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
+            case GCDASLPVariant::Combined:     RegisterRMQOneTriple<TCoreT, GetDocSLP<GS, SLP_Combined>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
             case GCDASLPVariant::Light:
-            default:                           RegisterRMQOneTriple<TCoreT, GetDocSLP<GS>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace); break;
+            default:                           RegisterRMQOneTriple<TCoreT, GetDocSLP<GS>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
           }
         }
         break;
@@ -760,17 +782,17 @@ void RegisterRMQOneCore(const std::string& core_name,
         for (auto tslp : sw.bare_slp) {
           const auto suffix = std::string("-SLP-NS") + NameSuffix(tslp);
           switch (tslp) {
-            case BareSLPVariant::Raw: RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_Raw>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace); break;
-            case BareSLPVariant::DV:  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_DV>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace); break;
-            case BareSLPVariant::VV:  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_VV>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace); break;
+            case BareSLPVariant::Raw: RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_Raw>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
+            case BareSLPVariant::DV:  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_DV>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
+            case BareSLPVariant::VV:  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_VV>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
             case BareSLPVariant::IV:
-            default:                  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace); break;
+            default:                  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
           }
         }
         break;
       }
       case GetDocEnum::DSLP: {
-        RegisterRMQOneTriple<TCoreT, GetDocDSLP<GS>, true>(core_name, "-DSLP", config, sw.block_size, sw.storing_factor, memory_trace);
+        RegisterRMQOneTriple<TCoreT, GetDocDSLP<GS>, true>(core_name, "-DSLP", config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook);
         break;
       }
     }
@@ -779,15 +801,28 @@ void RegisterRMQOneCore(const std::string& core_name,
 
 void RegisterConstructRMQ(const bench::spec::RMQSweep& sw, dret::Config& config,
                             const ConstructCtx& cc) {
-  // TODO: --rebuild not implemented for RMQ — its SLP cache files are shared
-  // with the GCDA family via SDSL type-hashing; deleting them would corrupt
-  // the GCDA cache. Empty hook is used for all RMQ cells.
+  // Per-core rebuild scope: wipe only the RMQ-specific cache files for that
+  // core. The SLP / DSLP / DA caches are shared with the GCDA / DGCDA / brute
+  // paths via SDSL type-hashing and stay warm — the reported time measures
+  // RMQ-core construction overhead on top of an already-built SLP / DA.
   using namespace fac::rmq;
   for (auto core : sw.core) {
     switch (core) {
-      case CoreKind::SADA:  RegisterRMQOneCore<SadaCore>("DocListSADA", sw, config, cc.memory_trace);  break;
-      case CoreKind::ILCP:  RegisterRMQOneCore<IlcpCore>("DocListILCP", sw, config, cc.memory_trace);  break;
-      case CoreKind::CILCP: RegisterRMQOneCore<CilcpCore>("DocListCILCP", sw, config, cc.memory_trace); break;
+      case CoreKind::SADA: {
+        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SadaKeyPrefixes());
+        RegisterRMQOneCore<SadaCore>("DocListSADA", sw, config, cc.memory_trace, hook);
+        break;
+      }
+      case CoreKind::ILCP: {
+        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, IlcpKeyPrefixes());
+        RegisterRMQOneCore<IlcpCore>("DocListILCP", sw, config, cc.memory_trace, hook);
+        break;
+      }
+      case CoreKind::CILCP: {
+        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, CilcpKeyPrefixes());
+        RegisterRMQOneCore<CilcpCore>("DocListCILCP", sw, config, cc.memory_trace, hook);
+        break;
+      }
     }
   }
 }
@@ -808,7 +843,7 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
             for (auto sf : sw.storing_factor) {
               const auto cell_name = base_name + BsSfSuffix(bs, sf);
               auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                                  PDLKeyPrefix(bs, sf, codec, policy));
+                                                  {PDLKeyPrefix(bs, sf, codec, policy)});
               benchmark::RegisterBenchmark(cell_name, BM_ConstructPDL<TIndex>,
                                             config, lib_policy, bs, sf, hook, cc.memory_trace);
             }
