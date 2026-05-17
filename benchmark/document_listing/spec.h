@@ -69,6 +69,12 @@ struct Workload {
   double min_time = 0.0;
   bool report_stats = false;
   bool print_result = false;
+  // Construct mode only: delete the cell's variant-specific cache files
+  // before each timed construct() iteration. The shared cache artefacts
+  // (Text, SA, DocEnds, DA, LCP) are kept. Supported for GCDA, DGCDA,
+  // SLP-NS, PDL — see bm_doc_list.cpp for the per-family glob patterns.
+  // Default false (warm-cache fast-path, identical to bm_build_items.cpp).
+  bool rebuild = false;
   // Pattern coding for query mode: "PLAIN" | "BASE64".
   std::string pattern_code = "PLAIN";
   int pattern_delim = '\n';
@@ -271,6 +277,7 @@ inline Workload ParseWorkload(const nlohmann::json& j) {
   if (j.contains("min_time")) w.min_time = j.at("min_time").get<double>();
   if (j.contains("report_stats")) w.report_stats = j.at("report_stats").get<bool>();
   if (j.contains("print_result")) w.print_result = j.at("print_result").get<bool>();
+  if (j.contains("rebuild")) w.rebuild = j.at("rebuild").get<bool>();
   if (j.contains("pattern_code")) w.pattern_code = j.at("pattern_code").get<std::string>();
   if (j.contains("pattern_delim")) w.pattern_delim = j.at("pattern_delim").get<int>();
   return w;

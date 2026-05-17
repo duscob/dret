@@ -12,12 +12,17 @@
 //
 
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
+#include <format>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -67,6 +72,79 @@ using bench::axes::PDLVariant;
 using bench::axes::EnumTraits;
 using GS = dret::GenericStorage;
 using ExternalGS = std::reference_wrapper<sri::GenericStorage>;
+
+//~~~~~~~  Cache helpers for the construct-mode --rebuild plumbing ~~~~~~~
+
+namespace cache_clean {
+
+// Delete every regular file under cache_dir whose filename starts with
+// file_prefix. Used to wipe a cell's variant-specific cache artefacts.
+// The shared artefacts (Text / SA / DocEnds / DA / LCP) don't start with
+// the per-cell prefix, so they survive.
+void DeleteByPrefix(const std::filesystem::path& cache_dir,
+                    const std::string& file_prefix) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  if (!fs::is_directory(cache_dir, ec)) return;
+  for (const auto& entry : fs::directory_iterator(cache_dir, ec)) {
+    if (ec) break;
+    const auto name = entry.path().filename().string();
+    if (name.rfind(file_prefix, 0) == 0) {  // starts_with
+      fs::remove(entry.path(), ec);
+    }
+  }
+}
+
+// Build a rebuild closure for one construct-mode cell. Empty when disabled
+// (operator bool() returns false). The closure deletes any cache file whose
+// filename starts with <basename>_<key_prefix>.
+std::function<void()> MakeHook(bool enable,
+                               std::filesystem::path cache_dir,
+                               std::string basename,
+                               std::string key_prefix) {
+  if (!enable) return {};
+  std::string file_prefix = basename + "_" + key_prefix;
+  return [cache_dir = std::move(cache_dir),
+          file_prefix = std::move(file_prefix)]() {
+    DeleteByPrefix(cache_dir, file_prefix);
+  };
+}
+
+}  // namespace cache_clean
+
+// Per-family cache-key prefix builders — mirror the strings dret::*::construct()
+// uses inside the library, so the glob picks up exactly the cell's cache files.
+// Shared artefacts (Text / SA / DocEnds / DA / LCP) don't match these prefixes.
+std::string GCDAKeyPrefix(std::uint32_t bs, float sf) {
+  return std::format("{}-{}_gcda_", bs, sf);
+}
+std::string DGCDAKeyPrefix(std::uint32_t bs, float sf) {
+  return std::format("{}-{}_dgcda_", bs, sf);
+}
+std::string SLPNSKeyPrefix() {
+  return "slp_ns_";  // conf::kSLPNS = "slpNS" → stored cache-key string is "slp_ns".
+}
+std::string PDLKeyPrefix(std::uint32_t bs, float sf,
+                          PDLVariant codec, PDLStoragePolicy policy) {
+  std::string codec_key = (codec == PDLVariant::Plain) ? "plain"
+                       : (codec == PDLVariant::RP)    ? "rp"
+                                                       : "bc";
+  const int policy_int = static_cast<int>(bench::axes::toPDLStoragePolicy(policy));
+  return std::format("{}-{}_pdl_{}_{}_", bs, sf, codec_key, policy_int);
+}
+
+// Warmth check: stderr-warn once per cell when --rebuild is off AND the
+// first construct() iteration returned under 1 ms (almost certainly a
+// cache-warm no-op, not a real measurement).
+void WarnIfWarm(const benchmark::State& t_state,
+                std::int64_t first_iter_ns, bool rebuild_enabled) {
+  constexpr std::int64_t kThresholdNs = 1'000'000;  // 1 ms
+  if (rebuild_enabled || first_iter_ns < 0 || first_iter_ns >= kThresholdNs) return;
+  std::cerr << "WARNING: " << t_state.name()
+            << " construct() returned in " << first_iter_ns
+            << " ns on the first iteration — cache was likely warm. "
+            << "Set workload.rebuild=true in the spec for clean timing.\n";
+}
 
 //~~~~~~~  Query-mode result containers (vector of doc ids) ~~~~~~~
 
@@ -137,28 +215,55 @@ void SetupConstructCounters(benchmark::State& t_state, const dret::Config& t_con
 }
 
 template <typename TIndex>
-void BM_ConstructBrute(benchmark::State& t_state, dret::Config t_config) {
+void BM_ConstructBrute(benchmark::State& t_state, dret::Config t_config,
+                       std::function<void()> rebuild_hook) {
   TIndex index;
+  std::int64_t first_iter_ns = -1;
   for (auto _ : t_state) {
+    if (rebuild_hook) {
+      t_state.PauseTiming();
+      rebuild_hook();
+      t_state.ResumeTiming();
+    }
+    const auto t0 = std::chrono::steady_clock::now();
     sdsl::memory_monitor::start();
     construct(index, t_config);
     sdsl::memory_monitor::stop();
+    const auto t1 = std::chrono::steady_clock::now();
+    if (first_iter_ns < 0) {
+      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    }
   }
+  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
   SetupConstructCounters(t_state, t_config, 0, 0);
+  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
 }
 
 template <typename TIndex>
-void BM_ConstructGCDAFamily(benchmark::State& t_state, dret::Config t_config) {
-  const auto bs = static_cast<std::uint32_t>(t_state.range(0));
-  const auto sf = static_cast<float>(t_state.range(1));
+void BM_ConstructGCDAFamily(benchmark::State& t_state, dret::Config t_config,
+                             std::uint32_t bs, float sf,
+                             std::function<void()> rebuild_hook) {
   GS storage;
   TIndex index(storage, bs, sf);
+  std::int64_t first_iter_ns = -1;
   for (auto _ : t_state) {
+    if (rebuild_hook) {
+      t_state.PauseTiming();
+      rebuild_hook();
+      t_state.ResumeTiming();
+    }
+    const auto t0 = std::chrono::steady_clock::now();
     sdsl::memory_monitor::start();
     construct(index, t_config);
     sdsl::memory_monitor::stop();
+    const auto t1 = std::chrono::steady_clock::now();
+    if (first_iter_ns < 0) {
+      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    }
   }
+  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
   SetupConstructCounters(t_state, t_config, bs, sf);
+  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
   index.load(t_config);
   const auto sizes = index.GetSizeReport();
   appendCounters(t_state, sizes);
@@ -166,34 +271,67 @@ void BM_ConstructGCDAFamily(benchmark::State& t_state, dret::Config t_config) {
 }
 
 template <typename TIndex>
-void BM_ConstructSLPNS(benchmark::State& t_state, dret::Config t_config) {
+void BM_ConstructSLPNS(benchmark::State& t_state, dret::Config t_config,
+                        std::function<void()> rebuild_hook) {
   GS storage;
   TIndex index(storage);
+  std::int64_t first_iter_ns = -1;
   for (auto _ : t_state) {
+    if (rebuild_hook) {
+      t_state.PauseTiming();
+      rebuild_hook();
+      t_state.ResumeTiming();
+    }
+    const auto t0 = std::chrono::steady_clock::now();
     sdsl::memory_monitor::start();
     construct(index, t_config);
     sdsl::memory_monitor::stop();
+    const auto t1 = std::chrono::steady_clock::now();
+    if (first_iter_ns < 0) {
+      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    }
   }
+  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
   SetupConstructCounters(t_state, t_config, 0, 0);
+  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
   index.load(t_config);
   const auto sizes = index.GetSizeReport();
   appendCounters(t_state, sizes);
   t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
 }
 
+// RMQ kernels accept a rebuild hook for signature consistency with the other
+// families, but pass an empty hook today — the RMQ-SLP / RMQ-DSLP cache files
+// are SHARED with the corresponding GCDA / DGCDA builds via SDSL type-hashing,
+// so naively deleting them would corrupt the GCDA cache. RMQ rebuild support
+// is a TODO; see the README.
 template <typename TIndex, typename TCore>
-void BM_ConstructRMQ(benchmark::State& t_state, dret::Config t_config) {
+void BM_ConstructRMQ(benchmark::State& t_state, dret::Config t_config,
+                     std::function<void()> rebuild_hook) {
   const auto bs = static_cast<std::uint32_t>(t_state.range(0));
   const auto sf = static_cast<float>(t_state.range(1));
   GS storage;
   TCore core(storage, bs, sf);
   TIndex index(storage, core);
+  std::int64_t first_iter_ns = -1;
   for (auto _ : t_state) {
+    if (rebuild_hook) {
+      t_state.PauseTiming();
+      rebuild_hook();
+      t_state.ResumeTiming();
+    }
+    const auto t0 = std::chrono::steady_clock::now();
     sdsl::memory_monitor::start();
     construct(index, t_config);
     sdsl::memory_monitor::stop();
+    const auto t1 = std::chrono::steady_clock::now();
+    if (first_iter_ns < 0) {
+      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    }
   }
+  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
   SetupConstructCounters(t_state, t_config, bs, sf);
+  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
   index.load(t_config);
   const auto sizes = index.GetSizeReport();
   appendCounters(t_state, sizes);
@@ -201,16 +339,30 @@ void BM_ConstructRMQ(benchmark::State& t_state, dret::Config t_config) {
 }
 
 template <typename TIndex, typename TCore>
-void BM_ConstructRMQ_NS(benchmark::State& t_state, dret::Config t_config) {
+void BM_ConstructRMQ_NS(benchmark::State& t_state, dret::Config t_config,
+                        std::function<void()> rebuild_hook) {
   GS storage;
   TCore core(storage);
   TIndex index(storage, core);
+  std::int64_t first_iter_ns = -1;
   for (auto _ : t_state) {
+    if (rebuild_hook) {
+      t_state.PauseTiming();
+      rebuild_hook();
+      t_state.ResumeTiming();
+    }
+    const auto t0 = std::chrono::steady_clock::now();
     sdsl::memory_monitor::start();
     construct(index, t_config);
     sdsl::memory_monitor::stop();
+    const auto t1 = std::chrono::steady_clock::now();
+    if (first_iter_ns < 0) {
+      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    }
   }
+  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
   SetupConstructCounters(t_state, t_config, 0, 0);
+  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
   index.load(t_config);
   const auto sizes = index.GetSizeReport();
   appendCounters(t_state, sizes);
@@ -219,17 +371,30 @@ void BM_ConstructRMQ_NS(benchmark::State& t_state, dret::Config t_config) {
 
 template <typename TIndex>
 void BM_ConstructPDL(benchmark::State& t_state, dret::Config t_config,
-                     dret::pdl::StoragePolicy t_policy) {
-  const auto bs = static_cast<std::uint32_t>(t_state.range(0));
-  const auto sf = static_cast<float>(t_state.range(1));
+                     dret::pdl::StoragePolicy t_policy,
+                     std::uint32_t bs, float sf,
+                     std::function<void()> rebuild_hook) {
   GS storage;
   TIndex index(storage, bs, sf, t_policy);
+  std::int64_t first_iter_ns = -1;
   for (auto _ : t_state) {
+    if (rebuild_hook) {
+      t_state.PauseTiming();
+      rebuild_hook();
+      t_state.ResumeTiming();
+    }
+    const auto t0 = std::chrono::steady_clock::now();
     sdsl::memory_monitor::start();
     construct(index, t_config);
     sdsl::memory_monitor::stop();
+    const auto t1 = std::chrono::steady_clock::now();
+    if (first_iter_ns < 0) {
+      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    }
   }
+  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
   SetupConstructCounters(t_state, t_config, bs, sf);
+  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
   index.load(t_config);
   const auto sizes = index.GetSizeReport();
   appendCounters(t_state, sizes);
@@ -426,60 +591,84 @@ void RegisterQueryBrute(const bench::spec::BruteSweep& sw, Factory<>& factory,
 
 //~~~~~~~  Construct-mode register functions (one per family) ~~~~~~~
 
-template <typename TIndex>
-void RegisterOneConstructGCDA(const std::string& name, dret::Config& config,
-                               const std::vector<std::uint32_t>& bs,
-                               const std::vector<float>& sf) {
-  std::vector<std::int64_t> bs_i64(bs.begin(), bs.end());
-  std::vector<std::int64_t> sf_i64(sf.begin(), sf.end());
-  benchmark::RegisterBenchmark(name, BM_ConstructGCDAFamily<TIndex>, config)
-      ->ArgsProduct({bs_i64, sf_i64});
+struct RebuildCtx {
+  bool enabled = false;
+  std::filesystem::path cache_dir;
+  std::string basename;
+};
+
+// Per-cell GCDA-family register: one benchmark per (variant, bs, sf), each
+// with its own rebuild hook computed from the cell's cache-key prefix. bs/sf
+// are bound to the kernel directly (no GBenchmark ArgsProduct) so the
+// benchmark name reads as "DocListGCDA-<variant>-bs<N>-sf<N>".
+template <typename TIndex, typename PrefixFn>
+void RegisterOneConstructGCDA(const std::string& family_name,
+                               dret::Config& config,
+                               const std::vector<std::uint32_t>& bs_list,
+                               const std::vector<float>& sf_list,
+                               const RebuildCtx& rb,
+                               PrefixFn prefix_for_cell) {
+  for (auto bs : bs_list) {
+    for (auto sf : sf_list) {
+      const auto cell_name = family_name + BsSfSuffix(bs, sf);
+      auto hook = cache_clean::MakeHook(rb.enabled, rb.cache_dir, rb.basename,
+                                          prefix_for_cell(bs, sf));
+      benchmark::RegisterBenchmark(cell_name, BM_ConstructGCDAFamily<TIndex>,
+                                    config, bs, sf, hook);
+    }
+  }
 }
 
-void RegisterConstructGCDA(const bench::spec::GCDASweep& sw, dret::Config& config) {
+void RegisterConstructGCDA(const bench::spec::GCDASweep& sw, dret::Config& config,
+                            const RebuildCtx& rb) {
   using namespace fac::gcda;
+  auto prefix_fn = [](std::uint32_t bs, float sf) { return GCDAKeyPrefix(bs, sf); };
   for (auto tslp : sw.tslp) {
     const auto name = "DocListGCDA" + NameSuffix(tslp);
     switch (tslp) {
       case GCDASLPVariant::CompactBP:
-        RegisterOneConstructGCDA<Idx<GS, SLP_CompactBP>>(name, config, sw.block_size, sw.storing_factor); break;
+        RegisterOneConstructGCDA<Idx<GS, SLP_CompactBP>>(name, config, sw.block_size, sw.storing_factor, rb, prefix_fn); break;
       case GCDASLPVariant::CompactLOUDS:
-        RegisterOneConstructGCDA<Idx<GS, SLP_CompactLOUDS>>(name, config, sw.block_size, sw.storing_factor); break;
+        RegisterOneConstructGCDA<Idx<GS, SLP_CompactLOUDS>>(name, config, sw.block_size, sw.storing_factor, rb, prefix_fn); break;
       case GCDASLPVariant::Combined:
-        RegisterOneConstructGCDA<Idx<GS, SLP_Combined>>(name, config, sw.block_size, sw.storing_factor); break;
+        RegisterOneConstructGCDA<Idx<GS, SLP_Combined>>(name, config, sw.block_size, sw.storing_factor, rb, prefix_fn); break;
       case GCDASLPVariant::Light:
       default:
-        RegisterOneConstructGCDA<Idx<GS>>(name, config, sw.block_size, sw.storing_factor); break;
+        RegisterOneConstructGCDA<Idx<GS>>(name, config, sw.block_size, sw.storing_factor, rb, prefix_fn); break;
     }
   }
 }
 
-void RegisterConstructDGCDA(const bench::spec::DGCDASweep& sw, dret::Config& config) {
+void RegisterConstructDGCDA(const bench::spec::DGCDASweep& sw, dret::Config& config,
+                             const RebuildCtx& rb) {
   using namespace fac::dgcda;
+  auto prefix_fn = [](std::uint32_t bs, float sf) { return DGCDAKeyPrefix(bs, sf); };
   for (auto tslp : sw.tslp) {
     const auto name = "DocListDGCDA" + NameSuffix(tslp);
     switch (tslp) {
-      case DGCDASLPVariant::OTF: RegisterOneConstructGCDA<Idx<GS, SLP_OTF>>(name, config, sw.block_size, sw.storing_factor); break;
-      case DGCDASLPVariant::CRL: RegisterOneConstructGCDA<Idx<GS, SLP_CRL>>(name, config, sw.block_size, sw.storing_factor); break;
-      case DGCDASLPVariant::EV:  RegisterOneConstructGCDA<Idx<GS, SLP_EV>>(name, config, sw.block_size, sw.storing_factor); break;
-      case DGCDASLPVariant::DV:  RegisterOneConstructGCDA<Idx<GS, SLP_DV>>(name, config, sw.block_size, sw.storing_factor); break;
-      case DGCDASLPVariant::VV:  RegisterOneConstructGCDA<Idx<GS, SLP_VV>>(name, config, sw.block_size, sw.storing_factor); break;
+      case DGCDASLPVariant::OTF: RegisterOneConstructGCDA<Idx<GS, SLP_OTF>>(name, config, sw.block_size, sw.storing_factor, rb, prefix_fn); break;
+      case DGCDASLPVariant::CRL: RegisterOneConstructGCDA<Idx<GS, SLP_CRL>>(name, config, sw.block_size, sw.storing_factor, rb, prefix_fn); break;
+      case DGCDASLPVariant::EV:  RegisterOneConstructGCDA<Idx<GS, SLP_EV>>(name, config, sw.block_size, sw.storing_factor, rb, prefix_fn); break;
+      case DGCDASLPVariant::DV:  RegisterOneConstructGCDA<Idx<GS, SLP_DV>>(name, config, sw.block_size, sw.storing_factor, rb, prefix_fn); break;
+      case DGCDASLPVariant::VV:  RegisterOneConstructGCDA<Idx<GS, SLP_VV>>(name, config, sw.block_size, sw.storing_factor, rb, prefix_fn); break;
       case DGCDASLPVariant::Default:
-      default:                   RegisterOneConstructGCDA<Idx<GS>>(name, config, sw.block_size, sw.storing_factor); break;
+      default:                   RegisterOneConstructGCDA<Idx<GS>>(name, config, sw.block_size, sw.storing_factor, rb, prefix_fn); break;
     }
   }
 }
 
-void RegisterConstructSLPNS(const bench::spec::SLPNSSweep& sw, dret::Config& config) {
+void RegisterConstructSLPNS(const bench::spec::SLPNSSweep& sw, dret::Config& config,
+                             const RebuildCtx& rb) {
   using namespace fac::slp_ns;
+  auto hook = cache_clean::MakeHook(rb.enabled, rb.cache_dir, rb.basename, SLPNSKeyPrefix());
   for (auto tslp : sw.tslp) {
     const auto name = "DocListSLP-NS" + NameSuffix(tslp);
     switch (tslp) {
-      case BareSLPVariant::Raw: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_Raw>>, config); break;
-      case BareSLPVariant::DV:  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DV>>, config); break;
-      case BareSLPVariant::VV:  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_VV>>, config); break;
+      case BareSLPVariant::Raw: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_Raw>>, config, hook); break;
+      case BareSLPVariant::DV:  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DV>>, config, hook); break;
+      case BareSLPVariant::VV:  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_VV>>, config, hook); break;
       case BareSLPVariant::IV:
-      default:                  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS>>, config); break;
+      default:                  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS>>, config, hook); break;
     }
   }
 }
@@ -497,10 +686,12 @@ void RegisterRMQOneTriple(const std::string& core_name, const std::string& suffi
   if constexpr (NeedsBsSf) {
     std::vector<std::int64_t> bs_i64(bs.begin(), bs.end());
     std::vector<std::int64_t> sf_i64(sf.begin(), sf.end());
-    benchmark::RegisterBenchmark(name, BM_ConstructRMQ<TIndex, TCore>, config)
+    benchmark::RegisterBenchmark(name, BM_ConstructRMQ<TIndex, TCore>, config,
+                                  std::function<void()>{})
         ->ArgsProduct({bs_i64, sf_i64});
   } else {
-    benchmark::RegisterBenchmark(name, BM_ConstructRMQ_NS<TIndex, TCore>, config);
+    benchmark::RegisterBenchmark(name, BM_ConstructRMQ_NS<TIndex, TCore>, config,
+                                  std::function<void()>{});
   }
 }
 
@@ -516,7 +707,7 @@ void RegisterRMQOneCore(const std::string& core_name,
         using TCore = TCoreT<GS, GetDocDA<GS>>;
         using TIndex = Idx<GS, TCore>;
         benchmark::RegisterBenchmark(core_name + "-DA",
-            BM_ConstructBrute<TIndex>, config);
+            BM_ConstructBrute<TIndex>, config, std::function<void()>{});
         break;
       }
       case GetDocEnum::SLP: {
@@ -553,7 +744,11 @@ void RegisterRMQOneCore(const std::string& core_name,
   }
 }
 
-void RegisterConstructRMQ(const bench::spec::RMQSweep& sw, dret::Config& config) {
+void RegisterConstructRMQ(const bench::spec::RMQSweep& sw, dret::Config& config,
+                            const RebuildCtx& /*rb*/) {
+  // TODO: --rebuild not implemented for RMQ — its SLP cache files are shared
+  // with the GCDA family via SDSL type-hashing; deleting them would corrupt
+  // the GCDA cache. Empty hook is used for all RMQ cells.
   using namespace fac::rmq;
   for (auto core : sw.core) {
     switch (core) {
@@ -564,21 +759,27 @@ void RegisterConstructRMQ(const bench::spec::RMQSweep& sw, dret::Config& config)
   }
 }
 
-void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config) {
+void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
+                           const RebuildCtx& rb) {
   using namespace fac::pdl;
-  std::vector<std::int64_t> bs_i64(sw.block_size.begin(), sw.block_size.end());
-  std::vector<std::int64_t> sf_i64(sw.storing_factor.begin(), sw.storing_factor.end());
   for (auto codec : sw.codec) {
     for (auto gd : sw.get_doc) {
       for (auto policy : sw.policy) {
         const auto lib_policy = bench::axes::toPDLStoragePolicy(policy);
-        const auto name = std::string("DocListPDL-")
+        const auto base_name = std::string("DocListPDL-")
                         + EnumTraits<PDLVariant>::Name(codec) + "-"
                         + EnumTraits<GetDocEnum>::Name(gd) + "-"
                         + EnumTraits<PDLStoragePolicy>::Name(policy);
         auto reg = [&]<typename TIndex>() {
-          benchmark::RegisterBenchmark(name, BM_ConstructPDL<TIndex>, config, lib_policy)
-              ->ArgsProduct({bs_i64, sf_i64});
+          for (auto bs : sw.block_size) {
+            for (auto sf : sw.storing_factor) {
+              const auto cell_name = base_name + BsSfSuffix(bs, sf);
+              auto hook = cache_clean::MakeHook(rb.enabled, rb.cache_dir, rb.basename,
+                                                  PDLKeyPrefix(bs, sf, codec, policy));
+              benchmark::RegisterBenchmark(cell_name, BM_ConstructPDL<TIndex>,
+                                            config, lib_policy, bs, sf, hook);
+            }
+          }
         };
         switch (codec) {
           case PDLVariant::Plain:
@@ -612,12 +813,16 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config)
 }
 
 void RegisterConstructBrute(const bench::spec::BruteSweep& sw, dret::Config& config,
-                            const std::string& data_path) {
+                            const std::string& /*data_path*/,
+                            const RebuildCtx& /*rb*/) {
+  // TODO: --rebuild not implemented for brute — its underlying sri::RIndex
+  // caches are managed externally and shared across the wider workflow.
   using bench::spec::BruteSweep;
   for (auto kind : sw.kind) {
     if (kind == BruteSweep::Kind::RIndex) {
       benchmark::RegisterBenchmark("DocListIdxBrute",
-          BM_ConstructBrute<dret::DocListIdxBrute<>>, config);
+          BM_ConstructBrute<dret::DocListIdxBrute<>>, config,
+          std::function<void()>{});
     }
     // sr-index construct path is not exposed today; skip.
   }
@@ -692,13 +897,20 @@ int main(int argc, char** argv) {
         else if constexpr (std::is_same_v<T, bench::spec::BruteSweep>) RegisterQueryBrute(sw, *factory, &patterns, seq_size);
       }, fs);
     } else {
+      // Cache directory: in construct mode the dret::Config above sets it to
+      // CWD (std::filesystem::current_path()). Basename = spec.dataset.name.
+      RebuildCtx rb{
+        spec.workload.rebuild,
+        std::filesystem::current_path(),
+        spec.dataset.name,
+      };
       std::visit([&]<typename T>(const T& sw) {
-        if constexpr (std::is_same_v<T, bench::spec::GCDASweep>) RegisterConstructGCDA(sw, config);
-        else if constexpr (std::is_same_v<T, bench::spec::DGCDASweep>) RegisterConstructDGCDA(sw, config);
-        else if constexpr (std::is_same_v<T, bench::spec::SLPNSSweep>) RegisterConstructSLPNS(sw, config);
-        else if constexpr (std::is_same_v<T, bench::spec::RMQSweep>) RegisterConstructRMQ(sw, config);
-        else if constexpr (std::is_same_v<T, bench::spec::PDLSweep>) RegisterConstructPDL(sw, config);
-        else if constexpr (std::is_same_v<T, bench::spec::BruteSweep>) RegisterConstructBrute(sw, config, data_path);
+        if constexpr (std::is_same_v<T, bench::spec::GCDASweep>) RegisterConstructGCDA(sw, config, rb);
+        else if constexpr (std::is_same_v<T, bench::spec::DGCDASweep>) RegisterConstructDGCDA(sw, config, rb);
+        else if constexpr (std::is_same_v<T, bench::spec::SLPNSSweep>) RegisterConstructSLPNS(sw, config, rb);
+        else if constexpr (std::is_same_v<T, bench::spec::RMQSweep>) RegisterConstructRMQ(sw, config, rb);
+        else if constexpr (std::is_same_v<T, bench::spec::PDLSweep>) RegisterConstructPDL(sw, config, rb);
+        else if constexpr (std::is_same_v<T, bench::spec::BruteSweep>) RegisterConstructBrute(sw, config, data_path, rb);
       }, fs);
     }
   }

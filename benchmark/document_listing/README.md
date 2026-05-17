@@ -42,6 +42,22 @@ Missing axes default to the family's canonical value (`light`, `default`, `iv`, 
 
 Switch the spec's `mode` to `"construct"` to time `construct()` instead of `Search()` — same sweep, same expansion logic.
 
+### Construct-mode `rebuild` (clean timing)
+
+`dret::*::construct()` is idempotent: on the second run with a warm cache it short-circuits in microseconds, which makes the reported time meaningless. Two safeguards in construct mode:
+
+- **`workload.rebuild = true`** in the spec — for each cell, the binary deletes that cell's variant-specific cache files (via a per-cell prefix glob like `<basename>_<bs>-<sf>_gcda_*`) before each timed `construct()` iteration. Shared artefacts (`Text` / `SA` / `DocEnds` / `DA` / `LCP`) are kept, so the (expensive) shared infrastructure isn't rebuilt every iteration. Deletion happens under `state.PauseTiming()` so it doesn't count toward the measurement.
+
+  ```json
+  "workload": { "rebuild": true, "min_time": 0.0 }
+  ```
+
+  Supported for the **GCDA**, **DGCDA**, **SLP-NS**, **PDL** families. RMQ and Brute families ignore `rebuild` and emit no hook — RMQ's SLP cache is shared with GCDA via SDSL type-hashing, so naively deleting it would corrupt the GCDA cache; Brute's r-index caches are managed externally.
+
+- **`first_construct_ns` counter** — every construct-mode cell records the wall-clock time of its *first* `construct()` iteration as a Google Benchmark counter, so it shows up in the CSV/JSON output regardless of how many iterations GBenchmark's auto-tuner picked.
+
+- **Stderr warmth warning** — when `rebuild` is off and the first iteration returns in under 1 ms, the binary prints a one-line warning to stderr identifying the cell. Quick visual signal that the measurement is bogus.
+
 ## Legacy: `bm_query_doc_list` / `bm_build_items`
 
 These older binaries take gflags directly (one comma-separated list per axis). They predate the JSON spec; kept alongside for one cycle.
