@@ -22,8 +22,7 @@
 #include "dret/doc_list/doc_list_slp.h"
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/doc_list/doc_list_pdl.h"
-#include "dret/doc_list/doc_list_pdl.h"
-#include "dret/doc_list/doc_list_pdl.h"
+#include "dret/pdl/get_docs.h"
 
 #include "base_test.h"
 
@@ -264,6 +263,17 @@ template <typename TStorage>
 using RMQCilcpSLPNSVVIndex =
     dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQCilcpSLPNSVVCore<TStorage>>;
 
+// PDL codec aliases parameterised on the get-doc backend, so the type lists can
+// exercise the SLP / bare-SLP / differential get-doc paths (not just the DA
+// default). The bare path (PDLGetDocsSLP_NS) is the newest; SLP / DSLP were
+// previously only covered by the benchmark.
+template <typename TStorage, typename TGetDocs>
+using PDLPlainBk = dret::pdl::DocListIdxPDLPlain<
+    TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, TGetDocs>;
+template <typename TStorage, typename TGetDocs>
+using PDLRPBk = dret::pdl::DocListIdxPDLRP<
+    TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, TGetDocs>;
+
 //~~~~~~~
 
 
@@ -358,7 +368,13 @@ using DocListIndexConstructTypes = ::testing::Types<
     RMQCilcpDSLPIndex<dret::GenericStorage>,
     dret::pdl::DocListIdxPDLPlain<dret::GenericStorage>,
     dret::pdl::DocListIdxPDLRP<dret::GenericStorage>,
-    dret::pdl::DocListIdxPDLBC<dret::GenericStorage>>;
+    dret::pdl::DocListIdxPDLBC<dret::GenericStorage>,
+    PDLPlainBk<dret::GenericStorage, dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>,
+    PDLPlainBk<dret::GenericStorage, dret::pdl::PDLGetDocsSLP_NS<dret::GenericStorage>>,
+    PDLPlainBk<dret::GenericStorage, dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>,
+    PDLRPBk<dret::GenericStorage, dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>,
+    PDLRPBk<dret::GenericStorage, dret::pdl::PDLGetDocsSLP_NS<dret::GenericStorage>>,
+    PDLRPBk<dret::GenericStorage, dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>;
 
 TYPED_TEST_SUITE(DocListIndexConstructTypedTests, DocListIndexConstructTypes);
 
@@ -487,7 +503,13 @@ using DocListIndexSearchTypes = ::testing::Types<
     RMQCilcpDSLPIndex<ExternalGenericStorage>,
     dret::pdl::DocListIdxPDLPlain<ExternalGenericStorage>,
     dret::pdl::DocListIdxPDLRP<ExternalGenericStorage>,
-    dret::pdl::DocListIdxPDLBC<ExternalGenericStorage>>;
+    dret::pdl::DocListIdxPDLBC<ExternalGenericStorage>,
+    PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsSLP<ExternalGenericStorage>>,
+    PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsSLP_NS<ExternalGenericStorage>>,
+    PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>>,
+    PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsSLP<ExternalGenericStorage>>,
+    PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsSLP_NS<ExternalGenericStorage>>,
+    PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>>>;
 
 TYPED_TEST_SUITE(DocListIndexSearchTypedTests, DocListIndexSearchTypes);
 
