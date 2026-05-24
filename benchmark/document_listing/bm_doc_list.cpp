@@ -238,18 +238,31 @@ auto BM_Query = [](benchmark::State& t_state,
   }
 
   SetupQueryCounters(t_state);
-  t_state.counters["Size(bytes)"] = idx_size;
-  t_state.counters["Bits_x_Symbol"] = idx_size * 8.0 / t_seq_size;
+
+  // Headline size = the *resident* (in-memory) footprint from GetSizeReport,
+  // which includes the rank/select/BP supports that serialize() rebuilds on
+  // load (e.g. CompactBP's bp_support, CompactLOUDS's leaf_rank) and so are
+  // absent from the serialized size. This keeps the cross-family Bits_x_Symbol
+  // comparison apples-to-apples — families that rebuild supports on load would
+  // otherwise be undercounted. The serialized (on-disk) size is still reported
+  // as `serialized_bytes`. Brute baselines have no GetSizeReport (total == 0),
+  // so they fall back to the serialized size.
+  std::size_t resident = idx_size;
+  if (idx) {
+    const auto sizes = idx->GetSizeReport();
+    appendCounters(t_state, sizes);
+    const auto report_total = dret::totalBytes(sizes);
+    t_state.counters["total_index_bytes"] = static_cast<double>(report_total);
+    if (report_total > 0) resident = report_total;
+  }
+
+  t_state.counters["Size(bytes)"] = static_cast<double>(resident);
+  t_state.counters["Bits_x_Symbol"] = resident * 8.0 / t_seq_size;
+  t_state.counters["serialized_bytes"] = static_cast<double>(idx_size);
   t_state.counters["Patterns"] = t_patterns->size();
   t_state.counters["Time_x_Pattern"] = benchmark::Counter(
       t_patterns->size(),
       benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kInvert);
-
-  if (idx) {
-    const auto sizes = idx->GetSizeReport();
-    appendCounters(t_state, sizes);
-    t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
-  }
 };
 
 //~~~~~~~  Construct benchmark kernels ~~~~~~~
