@@ -501,6 +501,111 @@ std::string BsSfSuffix(std::uint32_t bs, float sf) {
   return "-bs" + std::to_string(bs) + "-sf" + std::to_string(static_cast<int>(sf));
 }
 
+//~~~~~~~  Keyed-name helpers — FAMILY[k=v|k=v], canonical key order ~~~~~~~
+// Keys are emitted in the order pushed; callers follow the canonical order
+// codec · get-doc · slp · span-length · slp-container · policy · tree ·
+// block-size · storing-factor · prev-doc · run-values · sampling.
+
+using KV = std::vector<std::pair<std::string, std::string>>;
+
+std::string KeyedName(const std::string& family, const KV& kvs) {
+  std::string s = family;
+  bool first = true;
+  for (const auto& [k, v] : kvs) {
+    if (v.empty()) continue;
+    s += first ? '[' : '|';
+    s += k;
+    s += '=';
+    s += v;
+    first = false;
+  }
+  if (!first) s += ']';
+  return s;
+}
+
+const char* SlpPlainValue(GCDASLPVariant v) {
+  switch (v) {
+    case GCDASLPVariant::CompactBP:    return "compact-bp";
+    case GCDASLPVariant::CompactLOUDS: return "compact-louds";
+    case GCDASLPVariant::Combined:     return "combined";
+    case GCDASLPVariant::Light:
+    default:                           return "light";
+  }
+}
+
+// A differential SLP variant decomposes into (span-length, slp-container).
+std::pair<std::string, std::string> DiffParts(DGCDASLPVariant v) {
+  switch (v) {
+    case DGCDASLPVariant::OTF: return {"on-the-fly", "iv"};
+    case DGCDASLPVariant::CRL: return {"cached-root", "iv"};
+    case DGCDASLPVariant::EV:  return {"full", "ev"};
+    case DGCDASLPVariant::DV:  return {"full", "dv"};
+    case DGCDASLPVariant::VV:  return {"full", "vv"};
+    case DGCDASLPVariant::Default:
+    default:                   return {"full", "iv"};
+  }
+}
+
+const char* BareValue(BareSLPVariant v) {
+  switch (v) {
+    case BareSLPVariant::Raw: return "raw";
+    case BareSLPVariant::DV:  return "dv";
+    case BareSLPVariant::VV:  return "vv";
+    case BareSLPVariant::IV:
+    default:                  return "iv";
+  }
+}
+
+const char* RunValuesValue(bench::axes::RunValuesVariant v) {
+  switch (v) {
+    case bench::axes::RunValuesVariant::DV: return "dv";
+    case bench::axes::RunValuesVariant::VV: return "vv";
+    case bench::axes::RunValuesVariant::IV:
+    default:                                return "iv";
+  }
+}
+
+const char* PrevDocValue(bench::axes::PrevDocVariant v) {
+  switch (v) {
+    case bench::axes::PrevDocVariant::DV: return "dv";
+    case bench::axes::PrevDocVariant::VV: return "vv";
+    case bench::axes::PrevDocVariant::IV:
+    default:                              return "iv";
+  }
+}
+
+const char* CodecValue(PDLVariant v) {
+  switch (v) {
+    case PDLVariant::RP: return "rp";
+    case PDLVariant::BC: return "bc";
+    case PDLVariant::Plain:
+    default:             return "plain";
+  }
+}
+
+const char* PolicyValue(PDLStoragePolicy v) {
+  switch (v) {
+    case PDLStoragePolicy::LeavesOnly:       return "leaves-only";
+    case PDLStoragePolicy::StoreAllInternal: return "store-all";
+    case PDLStoragePolicy::OccurrenceWeighted:
+    default:                                 return "occ-weighted";
+  }
+}
+
+// get-doc backend kind in keyed form: da / gcda / gcda-bare / gcda-diff.
+const char* GetDocValue(GetDocEnum g) {
+  switch (g) {
+    case GetDocEnum::SLP:    return "gcda";
+    case GetDocEnum::SLP_NS: return "gcda-bare";
+    case GetDocEnum::DSLP:   return "gcda-diff";
+    case GetDocEnum::DA:
+    default:                 return "da";
+  }
+}
+
+std::string IntStr(std::uint32_t x) { return std::to_string(x); }
+std::string SfStr(float sf) { return std::to_string(static_cast<int>(sf)); }
+
 std::vector<std::int64_t> ArgsRange(const std::vector<std::uint32_t>& bs,
                                      const std::vector<float>& sf) {
   // Google Benchmark's ArgsProduct takes vector<vector<int64_t>>.
@@ -514,7 +619,12 @@ void RegisterQueryGCDA(const bench::spec::GCDASweep& sw, Factory<>& factory,
   for (auto tslp : sw.tslp) {
     for (auto bs : sw.block_size) {
       for (auto sf : sw.storing_factor) {
-        const auto name = "DocListGCDA" + NameSuffix(tslp) + BsSfSuffix(bs, sf);
+        const auto name = KeyedName("GCDA", {
+            {"slp", SlpPlainValue(tslp)},
+            {"tree", "sampled"},
+            {"block-size", IntStr(bs)},
+            {"storing-factor", SfStr(sf)},
+        });
         Factory<>::Config cfg{};
         cfg.index_t = Factory<>::IndexEnum::GCDA;
         cfg.block_size = bs;
@@ -531,7 +641,15 @@ void RegisterQueryDGCDA(const bench::spec::DGCDASweep& sw, Factory<>& factory,
   for (auto tslp : sw.tslp) {
     for (auto bs : sw.block_size) {
       for (auto sf : sw.storing_factor) {
-        const auto name = "DocListDGCDA" + NameSuffix(tslp) + BsSfSuffix(bs, sf);
+        auto [span, cont] = DiffParts(tslp);
+        const auto name = KeyedName("GCDA", {
+            {"slp", "diff"},
+            {"span-length", span},
+            {"slp-container", cont},
+            {"tree", "sampled"},
+            {"block-size", IntStr(bs)},
+            {"storing-factor", SfStr(sf)},
+        });
         Factory<>::Config cfg{};
         cfg.index_t = Factory<>::IndexEnum::DGCDA;
         cfg.block_size = bs;
@@ -546,7 +664,11 @@ void RegisterQueryDGCDA(const bench::spec::DGCDASweep& sw, Factory<>& factory,
 void RegisterQuerySLPNS(const bench::spec::SLPNSSweep& sw, Factory<>& factory,
                         const std::vector<std::string>* patterns, std::size_t seq_size) {
   for (auto tslp : sw.tslp) {
-    const auto name = "DocListSLP-NS" + NameSuffix(tslp);
+    const auto name = KeyedName("GCDA", {
+        {"slp", "bare"},
+        {"slp-container", BareValue(tslp)},
+        {"tree", "none"},
+    });
     Factory<>::Config cfg{};
     cfg.index_t = Factory<>::IndexEnum::SLP_NS;
     cfg.bare_slp = tslp;
@@ -571,11 +693,6 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
       auto bs_list = needs_bs_sf ? sw.block_size : std::vector<std::uint32_t>{0};
       auto sf_list = needs_bs_sf ? sw.storing_factor : std::vector<float>{0.0f};
       // Inner SLP axis: gcda_slp for get_doc=slp; bare_slp for slp_ns; ignored otherwise.
-      auto inner_label = [&](auto variant) -> std::string {
-        if (gd == GetDocEnum::SLP)    return NameSuffix(std::get<0>(variant));
-        if (gd == GetDocEnum::SLP_NS) return NameSuffix(std::get<1>(variant));
-        return {};
-      };
       auto inner_vec = [&]() -> std::vector<std::pair<GCDASLPVariant, BareSLPVariant>> {
         if (gd == GetDocEnum::SLP) {
           std::vector<std::pair<GCDASLPVariant, BareSLPVariant>> v;
@@ -588,6 +705,12 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
           return v;
         }
         return {{GCDASLPVariant::Light, BareSLPVariant::IV}};
+      }();
+      // DGCDA variant axis: only meaningful for the differential get-doc.
+      auto dslp_vec = [&]() -> std::vector<bench::axes::DGCDASLPVariant> {
+        if (gd == GetDocEnum::DSLP)
+          return {sw.dgcda_slp.begin(), sw.dgcda_slp.end()};
+        return {bench::axes::DGCDASLPVariant::Default};
       }();
       // ILCP-S / CILCP-S fan out across TRunValues; SADA-S fans across
       // TPrevDoc; non-S cores ignore both axes. Use single-element default
@@ -605,28 +728,39 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
       for (auto bs : bs_list) {
         for (auto sf : sf_list) {
           for (auto pair : inner_vec) {
-            for (auto rv : rv_list) {
-              for (auto pd : pd_list) {
-                std::string name = std::string(CoreName(core)) + "-"
-                                 + EnumTraits<GetDocEnum>::Name(gd)
-                                 + inner_label(pair);
-                if (needs_bs_sf) name += BsSfSuffix(bs, sf);
-                if (ilcp_s_like) {
-                  name += std::string("-") + EnumTraits<bench::axes::RunValuesVariant>::Name(rv);
+            for (auto dslp : dslp_vec) {
+              for (auto rv : rv_list) {
+                for (auto pd : pd_list) {
+                  KV kv;
+                  kv.push_back({"get-doc", GetDocValue(gd)});
+                  if (gd == GetDocEnum::SLP) {
+                    kv.push_back({"slp", SlpPlainValue(pair.first)});
+                  } else if (gd == GetDocEnum::SLP_NS) {
+                    kv.push_back({"slp-container", BareValue(pair.second)});
+                  } else if (gd == GetDocEnum::DSLP) {
+                    auto [span, cont] = DiffParts(dslp);
+                    kv.push_back({"span-length", span});
+                    kv.push_back({"slp-container", cont});
+                  }
+                  if (needs_bs_sf) {
+                    kv.push_back({"block-size", IntStr(bs)});
+                    kv.push_back({"storing-factor", SfStr(sf)});
+                  }
+                  if (sada_s)      kv.push_back({"prev-doc", PrevDocValue(pd)});
+                  if (ilcp_s_like) kv.push_back({"run-values", RunValuesValue(rv)});
+                  std::string name = KeyedName(CoreName(core), kv);
+                  Factory<>::Config cfg{};
+                  cfg.index_t = core_idx;
+                  cfg.get_doc = gd;
+                  cfg.gcda_slp = pair.first;
+                  cfg.bare_slp = pair.second;
+                  cfg.dgcda_slp = dslp;
+                  cfg.block_size = needs_bs_sf ? bs : 512;
+                  cfg.storing_factor = needs_bs_sf ? sf : 4.0f;
+                  cfg.run_values = rv;
+                  cfg.prev_doc = pd;
+                  benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
                 }
-                if (sada_s) {
-                  name += std::string("-") + EnumTraits<bench::axes::PrevDocVariant>::Name(pd);
-                }
-                Factory<>::Config cfg{};
-                cfg.index_t = core_idx;
-                cfg.get_doc = gd;
-                cfg.gcda_slp = pair.first;
-                cfg.bare_slp = pair.second;
-                cfg.block_size = needs_bs_sf ? bs : 512;
-                cfg.storing_factor = needs_bs_sf ? sf : 4.0f;
-                cfg.run_values = rv;
-                cfg.prev_doc = pd;
-                benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
               }
             }
           }
@@ -640,24 +774,55 @@ void RegisterQueryPDL(const bench::spec::PDLSweep& sw, Factory<>& factory,
                       const std::vector<std::string>* patterns, std::size_t seq_size) {
   for (auto codec : sw.codec) {
     for (auto gd : sw.get_doc) {
-      for (auto policy : sw.policy) {
-        for (auto bs : sw.block_size) {
-          for (auto sf : sw.storing_factor) {
-            std::string name = std::string("DocListPDL-")
-                             + EnumTraits<PDLVariant>::Name(codec) + "-"
-                             + EnumTraits<GetDocEnum>::Name(gd) + "-"
-                             + EnumTraits<PDLStoragePolicy>::Name(policy)
-                             + BsSfSuffix(bs, sf);
-            Factory<>::Config cfg{};
-            cfg.index_t = Factory<>::IndexEnum::PDL;
-            cfg.block_size = bs;
-            cfg.storing_factor = sf;
-            cfg.get_doc = gd;
-            cfg.pdl_variant = codec;
-            cfg.pdl_storage_policy = policy;
-            benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
+      // Register every (policy, bs, sf) for one fixed get-doc backend variant.
+      auto emit = [&](const KV& variant_kv, GCDASLPVariant gslp,
+                      BareSLPVariant bslp, DGCDASLPVariant dslp) {
+        for (auto policy : sw.policy) {
+          for (auto bs : sw.block_size) {
+            for (auto sf : sw.storing_factor) {
+              KV kv;
+              kv.push_back({"codec", CodecValue(codec)});
+              kv.push_back({"get-doc", GetDocValue(gd)});
+              for (const auto& p : variant_kv) kv.push_back(p);
+              kv.push_back({"policy", PolicyValue(policy)});
+              kv.push_back({"block-size", IntStr(bs)});
+              kv.push_back({"storing-factor", SfStr(sf)});
+              Factory<>::Config cfg{};
+              cfg.index_t = Factory<>::IndexEnum::PDL;
+              cfg.block_size = bs;
+              cfg.storing_factor = sf;
+              cfg.get_doc = gd;
+              cfg.pdl_variant = codec;
+              cfg.pdl_storage_policy = policy;
+              cfg.gcda_slp = gslp;
+              cfg.bare_slp = bslp;
+              cfg.dgcda_slp = dslp;
+              benchmark::RegisterBenchmark(KeyedName("PDL", kv), BM_Query,
+                                            &factory, cfg, patterns, seq_size);
+            }
           }
         }
+      };
+      switch (gd) {
+        case GetDocEnum::SLP:
+          for (auto v : sw.gcda_slp)
+            emit({{"slp", SlpPlainValue(v)}}, v, BareSLPVariant::IV, DGCDASLPVariant::Default);
+          break;
+        case GetDocEnum::SLP_NS:
+          for (auto v : sw.bare_slp)
+            emit({{"slp-container", BareValue(v)}}, GCDASLPVariant::Light, v, DGCDASLPVariant::Default);
+          break;
+        case GetDocEnum::DSLP:
+          for (auto v : sw.dgcda_slp) {
+            auto [span, cont] = DiffParts(v);
+            emit({{"span-length", span}, {"slp-container", cont}},
+                 GCDASLPVariant::Light, BareSLPVariant::IV, v);
+          }
+          break;
+        case GetDocEnum::DA:
+        default:
+          emit({}, GCDASLPVariant::Light, BareSLPVariant::IV, DGCDASLPVariant::Default);
+          break;
       }
     }
   }
@@ -670,14 +835,14 @@ void RegisterQueryBrute(const bench::spec::BruteSweep& sw, Factory<>& factory,
     if (kind == BruteSweep::Kind::RIndex) {
       Factory<>::Config cfg{};
       cfg.index_t = Factory<>::IndexEnum::BRUTE_R_INDEX;
-      benchmark::RegisterBenchmark("DocListBrute-RIndex", BM_Query,
+      benchmark::RegisterBenchmark("BruteRI", BM_Query,
                                     &factory, cfg, patterns, seq_size);
     } else {
       for (auto s : sw.sampling_size) {
         Factory<>::Config cfg{};
         cfg.index_t = Factory<>::IndexEnum::BRUTE_SR_INDEX;
         cfg.sampling_size = s;
-        const auto name = "DocListBrute-SRIndex-s" + std::to_string(s);
+        const auto name = KeyedName("BruteSRI", {{"sampling", std::to_string(s)}});
         benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
       }
     }
@@ -720,7 +885,7 @@ void RegisterConstructGCDA(const bench::spec::GCDASweep& sw, dret::Config& confi
   using namespace fac::gcda;
   auto prefix_fn = [](std::uint32_t bs, float sf) { return GCDAKeyPrefix(bs, sf); };
   for (auto tslp : sw.tslp) {
-    const auto name = "DocListGCDA" + NameSuffix(tslp);
+    const auto name = "GCDA" + NameSuffix(tslp);
     switch (tslp) {
       case GCDASLPVariant::CompactBP:
         RegisterOneConstructGCDA<Idx<GS, SLP_CompactBP>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
@@ -740,7 +905,7 @@ void RegisterConstructDGCDA(const bench::spec::DGCDASweep& sw, dret::Config& con
   using namespace fac::dgcda;
   auto prefix_fn = [](std::uint32_t bs, float sf) { return DGCDAKeyPrefix(bs, sf); };
   for (auto tslp : sw.tslp) {
-    const auto name = "DocListDGCDA" + NameSuffix(tslp);
+    const auto name = "DGCDA" + NameSuffix(tslp);
     switch (tslp) {
       case DGCDASLPVariant::OTF: RegisterOneConstructGCDA<Idx<GS, SLP_OTF>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
       case DGCDASLPVariant::CRL: RegisterOneConstructGCDA<Idx<GS, SLP_CRL>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
@@ -758,7 +923,7 @@ void RegisterConstructSLPNS(const bench::spec::SLPNSSweep& sw, dret::Config& con
   using namespace fac::slp_ns;
   auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, {SLPNSKeyPrefix()});
   for (auto tslp : sw.tslp) {
-    const auto name = "DocListSLP-NS" + NameSuffix(tslp);
+    const auto name = "SLP-NS" + NameSuffix(tslp);
     switch (tslp) {
       case BareSLPVariant::Raw: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_Raw>>, config, hook, cc.memory_trace); break;
       case BareSLPVariant::DV:  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DV>>, config, hook, cc.memory_trace); break;
@@ -854,32 +1019,32 @@ void RegisterConstructRMQ(const bench::spec::RMQSweep& sw, dret::Config& config,
     switch (core) {
       case CoreKind::SADA: {
         auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SadaKeyPrefixes());
-        RegisterRMQOneCore<SadaCore>("DocListSADA", sw, config, cc.memory_trace, hook);
+        RegisterRMQOneCore<SadaCore>("SADA", sw, config, cc.memory_trace, hook);
         break;
       }
       case CoreKind::ILCP: {
         auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, IlcpKeyPrefixes());
-        RegisterRMQOneCore<IlcpCore>("DocListILCP", sw, config, cc.memory_trace, hook);
+        RegisterRMQOneCore<IlcpCore>("ILCP", sw, config, cc.memory_trace, hook);
         break;
       }
       case CoreKind::CILCP: {
         auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, CilcpKeyPrefixes());
-        RegisterRMQOneCore<CilcpCore>("DocListCILCP", sw, config, cc.memory_trace, hook);
+        RegisterRMQOneCore<CilcpCore>("CILCP", sw, config, cc.memory_trace, hook);
         break;
       }
       case CoreKind::SADA_S: {
         auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SadaSKeyPrefixes());
-        RegisterRMQOneCore<SadaSCore>("DocListSADA-S", sw, config, cc.memory_trace, hook);
+        RegisterRMQOneCore<SadaSCore>("SADA-S", sw, config, cc.memory_trace, hook);
         break;
       }
       case CoreKind::ILCP_S: {
         auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, IlcpSKeyPrefixes());
-        RegisterRMQOneCore<IlcpSCore>("DocListILCP-S", sw, config, cc.memory_trace, hook);
+        RegisterRMQOneCore<IlcpSCore>("ILCP-S", sw, config, cc.memory_trace, hook);
         break;
       }
       case CoreKind::CILCP_S: {
         auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, CilcpSKeyPrefixes());
-        RegisterRMQOneCore<CilcpSCore>("DocListCILCP-S", sw, config, cc.memory_trace, hook);
+        RegisterRMQOneCore<CilcpSCore>("CILCP-S", sw, config, cc.memory_trace, hook);
         break;
       }
     }
@@ -893,7 +1058,7 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
     for (auto gd : sw.get_doc) {
       for (auto policy : sw.policy) {
         const auto lib_policy = bench::axes::toPDLStoragePolicy(policy);
-        const auto base_name = std::string("DocListPDL-")
+        const auto base_name = std::string("PDL-")
                         + EnumTraits<PDLVariant>::Name(codec) + "-"
                         + EnumTraits<GetDocEnum>::Name(gd) + "-"
                         + EnumTraits<PDLStoragePolicy>::Name(policy);
@@ -947,7 +1112,7 @@ void RegisterConstructBrute(const bench::spec::BruteSweep& sw, dret::Config& con
   using bench::spec::BruteSweep;
   for (auto kind : sw.kind) {
     if (kind == BruteSweep::Kind::RIndex) {
-      benchmark::RegisterBenchmark("DocListIdxBrute",
+      benchmark::RegisterBenchmark("BruteRI",
           BM_ConstructBrute<dret::DocListIdxBrute<>>, config,
           std::function<void()>{}, cc.memory_trace);
     }
