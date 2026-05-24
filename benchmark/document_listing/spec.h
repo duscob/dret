@@ -111,6 +111,8 @@ struct RMQSweep {
   std::vector<axes::GetDocEnum> get_doc{axes::GetDocEnum::DA};
   std::vector<axes::GCDASLPVariant> gcda_slp{axes::GCDASLPVariant::Light};
   std::vector<axes::BareSLPVariant> bare_slp{axes::BareSLPVariant::IV};
+  // DGCDA variant axis for get_doc=dslp (the differential get-doc backend).
+  std::vector<axes::DGCDASLPVariant> dgcda_slp{axes::DGCDASLPVariant::Default};
   // TRunValues axis for the -S sub-family (ILCP-S / CILCP-S). Default DV
   // matches IlcpLikeSCore's default; other variants in {iv, dv, vv} fan
   // the -S cores out across the run-values container.
@@ -126,6 +128,12 @@ struct PDLSweep {
   std::vector<axes::PDLVariant> codec;  // No default — PDL disabled if list empty.
   std::vector<axes::GetDocEnum> get_doc{axes::GetDocEnum::DA};
   std::vector<axes::PDLStoragePolicy> policy{axes::PDLStoragePolicy::OccurrenceWeighted};
+  // GCDA-family backend sub-axes, consulted per get_doc kind: gcda_slp for
+  // get_doc=slp, bare_slp for get_doc=slp_ns, dgcda_slp for get_doc=dslp.
+  // Defaults reproduce the pre-existing single-backend PDL behaviour.
+  std::vector<axes::GCDASLPVariant> gcda_slp{axes::GCDASLPVariant::Light};
+  std::vector<axes::BareSLPVariant> bare_slp{axes::BareSLPVariant::IV};
+  std::vector<axes::DGCDASLPVariant> dgcda_slp{axes::DGCDASLPVariant::Default};
   std::vector<std::uint32_t> block_size{512};
   std::vector<float> storing_factor{4.0f};
 };
@@ -235,6 +243,7 @@ inline RMQSweep ParseRMQ(const nlohmann::json& j) {
   s.get_doc = ParseEnumList<axes::GetDocEnum>(j, "get_doc", s.get_doc);
   s.gcda_slp = ParseEnumList<axes::GCDASLPVariant>(j, "gcda_slp", s.gcda_slp);
   s.bare_slp = ParseEnumList<axes::BareSLPVariant>(j, "bare_slp", s.bare_slp);
+  s.dgcda_slp = ParseEnumList<axes::DGCDASLPVariant>(j, "dgcda_slp", s.dgcda_slp);
   s.run_values = ParseEnumList<axes::RunValuesVariant>(j, "run_values", s.run_values);
   s.prev_doc = ParseEnumList<axes::PrevDocVariant>(j, "prev_doc", s.prev_doc);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
@@ -246,13 +255,10 @@ inline PDLSweep ParsePDL(const nlohmann::json& j) {
   PDLSweep s;
   s.codec = ParseEnumList<axes::PDLVariant>(j, "codec", s.codec);
   s.get_doc = ParseEnumList<axes::GetDocEnum>(j, "get_doc", s.get_doc);
-  // PDL allows only DA / SLP / DSLP, never SLP_NS.
-  for (auto v : s.get_doc) {
-    if (v == axes::GetDocEnum::SLP_NS) {
-      throw std::invalid_argument("pdl.get_doc: 'slp_ns' is not a valid PDL backing");
-    }
-  }
   s.policy = ParseEnumList<axes::PDLStoragePolicy>(j, "policy", s.policy);
+  s.gcda_slp = ParseEnumList<axes::GCDASLPVariant>(j, "gcda_slp", s.gcda_slp);
+  s.bare_slp = ParseEnumList<axes::BareSLPVariant>(j, "bare_slp", s.bare_slp);
+  s.dgcda_slp = ParseEnumList<axes::DGCDASLPVariant>(j, "dgcda_slp", s.dgcda_slp);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
   s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
   return s;

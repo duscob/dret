@@ -64,8 +64,10 @@ using GetDocSLP = dret::rmq::GetDocSLP<TStorage, kWidth, TSLP>;
 template <typename TStorage, typename TSLP = BareSLP_IV>
 using GetDocSLP_NS = dret::rmq::GetDocSLP_NS<TStorage, kWidth, TSLP>;
 
-template <typename TStorage>
-using GetDocDSLP = dret::rmq::GetDocDSLP<TStorage, kWidth>;
+// TDSLP defaults to the DGCDA default so the kDSLP cache is shared with the
+// DGCDA build; other DGCDA variants (OTF/CRL/EV/DV/VV) select their own cache.
+template <typename TStorage, typename TDSLP = dgcda::SLP_Default>
+using GetDocDSLP = dret::rmq::GetDocDSLP<TStorage, kWidth, TDSLP>;
 
 // Core template aliases. TGetDoc defaults to the DA backing.
 template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
@@ -193,11 +195,12 @@ MakeSLP_NS(TStorage t_storage, dret::Config& t_config) {
   return {idx, sdsl::size_in_bytes(*idx)};
 }
 
-template <template <typename, typename> class TCoreT, typename TStorage>
+template <template <typename, typename> class TCoreT, typename TStorage,
+          typename TDSLP = dgcda::SLP_Default>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
 MakeDSLP(TStorage t_storage, dret::Config& t_config,
          uint32_t t_block_size, float t_storing_factor) {
-  using TCore = TCoreT<TStorage, GetDocDSLP<TStorage>>;
+  using TCore = TCoreT<TStorage, GetDocDSLP<TStorage, TDSLP>>;
   using TIndex = Idx<TStorage, TCore>;
   TCore core(t_storage, t_block_size, t_storing_factor);
   auto idx = std::make_shared<TIndex>(t_storage, core);
@@ -212,10 +215,12 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
         uint32_t t_block_size, float t_storing_factor,
         bench::axes::GetDocEnum t_get_doc,
         bench::axes::GCDASLPVariant t_gcda_slp,
-        bench::axes::BareSLPVariant t_bare_slp) {
+        bench::axes::BareSLPVariant t_bare_slp,
+        bench::axes::DGCDASLPVariant t_dgcda_slp) {
   using bench::axes::GetDocEnum;
   using bench::axes::GCDASLPVariant;
   using bench::axes::BareSLPVariant;
+  using bench::axes::DGCDASLPVariant;
   switch (t_get_doc) {
     case GetDocEnum::SLP:
       switch (t_gcda_slp) {
@@ -242,7 +247,15 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
           return MakeSLP_NS<TCoreT, TStorage, BareSLP_IV>(t_storage, t_config);
       }
     case GetDocEnum::DSLP:
-      return MakeDSLP<TCoreT, TStorage>(t_storage, t_config, t_block_size, t_storing_factor);
+      switch (t_dgcda_slp) {
+        case DGCDASLPVariant::OTF: return MakeDSLP<TCoreT, TStorage, dgcda::SLP_OTF>(t_storage, t_config, t_block_size, t_storing_factor);
+        case DGCDASLPVariant::CRL: return MakeDSLP<TCoreT, TStorage, dgcda::SLP_CRL>(t_storage, t_config, t_block_size, t_storing_factor);
+        case DGCDASLPVariant::EV:  return MakeDSLP<TCoreT, TStorage, dgcda::SLP_EV>(t_storage, t_config, t_block_size, t_storing_factor);
+        case DGCDASLPVariant::DV:  return MakeDSLP<TCoreT, TStorage, dgcda::SLP_DV>(t_storage, t_config, t_block_size, t_storing_factor);
+        case DGCDASLPVariant::VV:  return MakeDSLP<TCoreT, TStorage, dgcda::SLP_VV>(t_storage, t_config, t_block_size, t_storing_factor);
+        case DGCDASLPVariant::Default:
+        default:                   return MakeDSLP<TCoreT, TStorage, dgcda::SLP_Default>(t_storage, t_config, t_block_size, t_storing_factor);
+      }
     case GetDocEnum::DA:
     default:
       return MakeDA<TCoreT, TStorage>(t_storage, t_config);
@@ -293,11 +306,12 @@ MakeSLP_NS_S(TStorage t_storage, dret::Config& t_config) {
   return {idx, sdsl::size_in_bytes(*idx)};
 }
 
-template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
+template <template <typename, typename, typename> class TCoreT, typename TStorage,
+          typename TRunValues, typename TDSLP = dgcda::SLP_Default>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
 MakeDSLP_S(TStorage t_storage, dret::Config& t_config,
            uint32_t t_block_size, float t_storing_factor) {
-  using TCore = TCoreT<TStorage, GetDocDSLP<TStorage>, TRunValues>;
+  using TCore = TCoreT<TStorage, GetDocDSLP<TStorage, TDSLP>, TRunValues>;
   using TIndex = Idx<TStorage, TCore>;
   TCore core(t_storage, t_block_size, t_storing_factor);
   auto idx = std::make_shared<TIndex>(t_storage, core);
@@ -312,10 +326,12 @@ MakeOneS_T(TStorage t_storage, dret::Config& t_config,
            uint32_t t_block_size, float t_storing_factor,
            bench::axes::GetDocEnum t_get_doc,
            bench::axes::GCDASLPVariant t_gcda_slp,
-           bench::axes::BareSLPVariant t_bare_slp) {
+           bench::axes::BareSLPVariant t_bare_slp,
+           bench::axes::DGCDASLPVariant t_dgcda_slp) {
   using bench::axes::GetDocEnum;
   using bench::axes::GCDASLPVariant;
   using bench::axes::BareSLPVariant;
+  using bench::axes::DGCDASLPVariant;
   switch (t_get_doc) {
     case GetDocEnum::SLP:
       switch (t_gcda_slp) {
@@ -342,7 +358,15 @@ MakeOneS_T(TStorage t_storage, dret::Config& t_config,
           return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_IV, TRunValues>(t_storage, t_config);
       }
     case GetDocEnum::DSLP:
-      return MakeDSLP_S<TCoreT, TStorage, TRunValues>(t_storage, t_config, t_block_size, t_storing_factor);
+      switch (t_dgcda_slp) {
+        case DGCDASLPVariant::OTF: return MakeDSLP_S<TCoreT, TStorage, TRunValues, dgcda::SLP_OTF>(t_storage, t_config, t_block_size, t_storing_factor);
+        case DGCDASLPVariant::CRL: return MakeDSLP_S<TCoreT, TStorage, TRunValues, dgcda::SLP_CRL>(t_storage, t_config, t_block_size, t_storing_factor);
+        case DGCDASLPVariant::EV:  return MakeDSLP_S<TCoreT, TStorage, TRunValues, dgcda::SLP_EV>(t_storage, t_config, t_block_size, t_storing_factor);
+        case DGCDASLPVariant::DV:  return MakeDSLP_S<TCoreT, TStorage, TRunValues, dgcda::SLP_DV>(t_storage, t_config, t_block_size, t_storing_factor);
+        case DGCDASLPVariant::VV:  return MakeDSLP_S<TCoreT, TStorage, TRunValues, dgcda::SLP_VV>(t_storage, t_config, t_block_size, t_storing_factor);
+        case DGCDASLPVariant::Default:
+        default:                   return MakeDSLP_S<TCoreT, TStorage, TRunValues, dgcda::SLP_Default>(t_storage, t_config, t_block_size, t_storing_factor);
+      }
     case GetDocEnum::DA:
     default:
       return MakeDA_S<TCoreT, TStorage, TRunValues>(t_storage, t_config);
@@ -356,19 +380,20 @@ MakeOneS(TStorage t_storage, dret::Config& t_config,
          bench::axes::GetDocEnum t_get_doc,
          bench::axes::GCDASLPVariant t_gcda_slp,
          bench::axes::BareSLPVariant t_bare_slp,
+         bench::axes::DGCDASLPVariant t_dgcda_slp,
          bench::axes::RunValuesVariant t_run_values) {
   using bench::axes::RunValuesVariant;
   switch (t_run_values) {
     case RunValuesVariant::IV:
       return MakeOneS_T<TCoreT, TStorage, RunValues_IV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
     case RunValuesVariant::VV:
       return MakeOneS_T<TCoreT, TStorage, RunValues_VV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
     case RunValuesVariant::DV:
     default:
       return MakeOneS_T<TCoreT, TStorage, RunValues_DV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
   }
 }
 
@@ -383,19 +408,20 @@ MakeOneSada_S(TStorage t_storage, dret::Config& t_config,
               bench::axes::GetDocEnum t_get_doc,
               bench::axes::GCDASLPVariant t_gcda_slp,
               bench::axes::BareSLPVariant t_bare_slp,
+              bench::axes::DGCDASLPVariant t_dgcda_slp,
               bench::axes::PrevDocVariant t_prev_doc) {
   using bench::axes::PrevDocVariant;
   switch (t_prev_doc) {
     case PrevDocVariant::DV:
       return MakeOneS_T<TCoreT, TStorage, PrevDoc_DV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
     case PrevDocVariant::VV:
       return MakeOneS_T<TCoreT, TStorage, PrevDoc_VV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
     case PrevDocVariant::IV:
     default:
       return MakeOneS_T<TCoreT, TStorage, PrevDoc_IV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
   }
 }
 
@@ -409,28 +435,29 @@ Make(TStorage t_storage, dret::Config& t_config,
      bench::axes::GetDocEnum t_get_doc,
      bench::axes::GCDASLPVariant t_gcda_slp,
      bench::axes::BareSLPVariant t_bare_slp,
+     bench::axes::DGCDASLPVariant t_dgcda_slp = bench::axes::DGCDASLPVariant::Default,
      bench::axes::RunValuesVariant t_run_values = bench::axes::RunValuesVariant::DV,
      bench::axes::PrevDocVariant t_prev_doc = bench::axes::PrevDocVariant::IV) {
   switch (t_core) {
     case CoreKind::ILCP:
       return detail::MakeOne<IlcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                        t_get_doc, t_gcda_slp, t_bare_slp);
+                                        t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
     case CoreKind::CILCP:
       return detail::MakeOne<CilcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                         t_get_doc, t_gcda_slp, t_bare_slp);
+                                         t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
     case CoreKind::SADA_S:
       return detail::MakeOneSada_S<SadaSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                               t_get_doc, t_gcda_slp, t_bare_slp, t_prev_doc);
+                                               t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_prev_doc);
     case CoreKind::ILCP_S:
       return detail::MakeOneS<IlcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                          t_get_doc, t_gcda_slp, t_bare_slp, t_run_values);
+                                          t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values);
     case CoreKind::CILCP_S:
       return detail::MakeOneS<CilcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                           t_get_doc, t_gcda_slp, t_bare_slp, t_run_values);
+                                           t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values);
     case CoreKind::SADA:
     default:
       return detail::MakeOne<SadaCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                        t_get_doc, t_gcda_slp, t_bare_slp);
+                                        t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
   }
 }
 

@@ -150,7 +150,8 @@ class Factory {
  public:
 
   std::pair<dret::DocListIndex<>*, std::size_t> Make(const Config& t_config) {
-    return MakeInner(t_config);
+    auto index = MakeIndex(t_config);
+    return {index.idx.get(), index.size};
   }
 
   [[nodiscard]] auto SequenceSize() const {
@@ -231,7 +232,7 @@ class Factory {
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::SADA,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp);
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp);
         index = {idx, size};
         break;
       }
@@ -241,7 +242,7 @@ class Factory {
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::ILCP,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp);
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp);
         index = {idx, size};
         break;
       }
@@ -250,7 +251,8 @@ class Factory {
         auto [idx, size] = bench::factories::pdl::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            t_config.pdl_variant, t_config.get_doc, t_config.pdl_storage_policy);
+            t_config.pdl_variant, t_config.get_doc, t_config.pdl_storage_policy,
+            t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp);
         index = {idx, size};
         break;
       }
@@ -267,7 +269,7 @@ class Factory {
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::CILCP,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp);
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp);
         index = {idx, size};
         break;
       }
@@ -278,7 +280,7 @@ class Factory {
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::SADA_S,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
-            t_config.run_values, t_config.prev_doc);
+            t_config.dgcda_slp, t_config.run_values, t_config.prev_doc);
         index = {idx, size};
         break;
       }
@@ -289,7 +291,7 @@ class Factory {
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::ILCP_S,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
-            t_config.run_values);
+            t_config.dgcda_slp, t_config.run_values);
         index = {idx, size};
         break;
       }
@@ -300,7 +302,7 @@ class Factory {
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::CILCP_S,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
-            t_config.run_values);
+            t_config.dgcda_slp, t_config.run_values);
         index = {idx, size};
         break;
       }

@@ -99,6 +99,14 @@ template <typename TStorage = GenericStorage,
           typename TDSLP = DifferentialLightSLP<>>
 using PDLGetDocsDSLP = PDLRawRangePolicy<rmq::GetDocDSLP<TStorage, t_width, TDSLP>>;
 
+// Bare grammar::SLP-backed (get-doc=gcda-bare). Mirrors the RMQ SLP-NS path;
+// the default TSLP matches rmq::GetDocSLP_NS<>'s default so the kSLPNS typed
+// cache file is shared with the RMQ-NS / SLP-NS document-listing indexes.
+template <typename TStorage = GenericStorage,
+          uint8_t t_width = 8,
+          typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>
+using PDLGetDocsSLP_NS = PDLRawRangePolicy<rmq::GetDocSLP_NS<TStorage, t_width, TSLP>>;
+
 // Free-function construct() that forwards to the inner rmq::GetDoc*
 // construct() so PDL indexes can build their raw get-doc cache through
 // the project's normal construction API. DA-backed is a no-op (the DA
