@@ -138,6 +138,23 @@ sdsl::int_vector<> ComputeIlcpBackward(Config& t_config, std::size_t t_n_doc) {
   return ilcp;
 }
 
+// Load the cached backward-ILCP array, or compute it once and cache it. The array
+// is collection-level (independent of core, get-doc, run encoding), so all four
+// ILCP-family cores (ILCP / CILCP / ILCP-S / CILCP-S) share one computation
+// instead of recomputing the expensive per-document LCP up to 4x on a cold build.
+template <uint8_t t_width>
+sdsl::int_vector<> LoadOrComputeIlcp(Config& t_config, std::size_t t_n_doc) {
+  const auto key = t_config.keys[conf::kIlcpArray].get<std::string>();
+  sdsl::int_vector<> ilcp;
+  if (sdsl::cache_file_exists<sdsl::int_vector<>>(key, t_config)) {
+    sdsl::load_from_cache(ilcp, key, t_config, true);
+    return ilcp;
+  }
+  ilcp = ComputeIlcpBackward<t_width>(t_config, t_n_doc);
+  sdsl::store_to_cache(ilcp, key, t_config, true);
+  return ilcp;
+}
+
 }  // namespace internal
 
 //~~~~~~~
@@ -1045,7 +1062,7 @@ void construct(IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads, T
     auto event = sdsl::memory_monitor::event(key_rmq);
 
     std::size_t n_doc = internal::ReadNDoc(t_config);
-    auto ilcp = internal::ComputeIlcpBackward<t_width>(t_config, n_doc);
+    auto ilcp = internal::LoadOrComputeIlcp<t_width>(t_config, n_doc);
 
     sdsl::bit_vector run_heads(ilcp.size(), 0);
     std::vector<std::size_t> run_values;
@@ -1084,7 +1101,7 @@ void construct(IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, 
     auto event = sdsl::memory_monitor::event(key_rmq);
 
     std::size_t n_doc = internal::ReadNDoc(t_config);
-    auto ilcp = internal::ComputeIlcpBackward<t_width>(t_config, n_doc);
+    auto ilcp = internal::LoadOrComputeIlcp<t_width>(t_config, n_doc);
 
     sdsl::int_vector<> da;
     sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
@@ -1150,7 +1167,7 @@ void construct(IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHead
     auto event = sdsl::memory_monitor::event(key_run_values);
 
     std::size_t n_doc = internal::ReadNDoc(t_config);
-    auto ilcp = internal::ComputeIlcpBackward<t_width>(t_config, n_doc);
+    auto ilcp = internal::LoadOrComputeIlcp<t_width>(t_config, n_doc);
 
     sdsl::bit_vector run_heads(ilcp.size(), 0);
     std::vector<std::size_t> run_values;
@@ -1201,7 +1218,7 @@ void construct(IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHea
     auto event = sdsl::memory_monitor::event(key_rmq);
 
     std::size_t n_doc = internal::ReadNDoc(t_config);
-    auto ilcp = internal::ComputeIlcpBackward<t_width>(t_config, n_doc);
+    auto ilcp = internal::LoadOrComputeIlcp<t_width>(t_config, n_doc);
 
     sdsl::int_vector<> da;
     sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
