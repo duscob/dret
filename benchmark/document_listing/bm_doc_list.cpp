@@ -59,6 +59,10 @@
 #include "spec.h"
 
 DEFINE_string(spec, "", "Path to the JSON sweep spec (MANDATORY).");
+DEFINE_string(print_results_dir, "",
+              "If set, write each query index's per-pattern sorted doc-id lists to "
+              "<dir>/<sanitized-name>.txt — all indexes must produce identical files "
+              "(cross-index correctness verification; brute is the ground truth).");
 
 namespace {
 
@@ -234,6 +238,25 @@ auto BM_Query = [](benchmark::State& t_state,
       idx->Search(pattern, std::ref(result));
       result();
       benchmark::DoNotOptimize(result);
+    }
+  }
+
+  // Optional correctness dump: each index's per-pattern sorted-unique doc set,
+  // one line per pattern. Identical files across indexes ⇒ same answers.
+  if (!FLAGS_print_results_dir.empty() && idx) {
+    std::string fname = t_state.name();
+    for (char& c : fname)
+      if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '.'))
+        c = '_';
+    std::ofstream os(FLAGS_print_results_dir + "/" + fname + ".txt");
+    for (const auto& pattern : *t_patterns) {
+      DocListResult result;
+      idx->Search(pattern, std::ref(result));
+      result();
+      for (std::size_t i = 0; i < result.docs.size(); ++i)
+        os << (i ? " " : "") << result.docs[i];
+      os << '\n';
     }
   }
 
