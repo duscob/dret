@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include <cstddef>
+#include <vector>
+
 #include "sr-index/sr_idx_generic.h"
 #include "sr-index/sr_index.h"
 
@@ -44,8 +47,20 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, TAlphabet> {
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
     auto occurrences = locate_idx_.Locate(t_pattern);
 
+    // Document listing reports the *set* of documents. Locate yields one entry
+    // per occurrence, so a frequent pattern produces many duplicate doc ids;
+    // dedup them here (the index owns set-semantics, the benchmark sink does
+    // not). A boolean marker keyed by doc id dedups in O(occ + max_doc) and
+    // reports in ascending doc order — cheaper than sort+unique for the
+    // high-occurrence patterns this brute baseline is meant to stress.
+    std::vector<bool> seen;
     for (const auto& item : occurrences) {
-      t_report(get_doc_(item));
+      std::size_t d = get_doc_(item);
+      if (d >= seen.size()) seen.resize(d + 1, false);
+      seen[d] = true;
+    }
+    for (std::size_t d = 0; d < seen.size(); ++d) {
+      if (seen[d]) t_report(static_cast<TDocId>(d));
     }
   }
 

@@ -205,13 +205,16 @@ void WriteSizesSidecar(const benchmark::State& t_state, const dret::SizeReport& 
 
 //~~~~~~~  Query-mode result containers (vector of doc ids) ~~~~~~~
 
+// Pure collecting sink. Under the set-semantics output contract, document
+// listing returns the *set* of documents in unspecified order, and every index
+// already delivers a distinct set from Search (RMQ dedups via its marked
+// bitvector; the sampled-tree families sort+unique internally; Brute dedups in
+// its own Search). So the benchmark neither sorts nor dedups in the timed loop
+// — it just materialises the reported ids. (The correctness dump below applies
+// its own sort+unique to get a canonical form for cross-index comparison.)
 struct DocListResult {
   std::vector<std::size_t> docs;
   void operator()(std::size_t d) { docs.push_back(d); }
-  void operator()() {
-    std::sort(docs.begin(), docs.end());
-    docs.erase(std::unique(docs.begin(), docs.end()), docs.end());
-  }
 };
 
 //~~~~~~~  Counter helpers (inlined to avoid pulling in bm_query.h's BM_WarmUp) ~~~~~~~
@@ -236,13 +239,19 @@ auto BM_Query = [](benchmark::State& t_state,
     for (const auto& pattern : *t_patterns) {
       DocListResult result;
       idx->Search(pattern, std::ref(result));
-      result();
       benchmark::DoNotOptimize(result);
     }
   }
 
-  // Optional correctness dump: each index's per-pattern sorted-unique doc set,
-  // one line per pattern. Identical files across indexes ⇒ same answers.
+  // Optional correctness dump: each index's per-pattern doc set, one line per
+  // pattern, in canonical (sorted) order so identical answer sets compare equal
+  // across families regardless of each index's native report order.
+  //
+  // We deliberately sort but do NOT deduplicate: every index must report each
+  // document at most once, so erasing duplicates here would *hide* a buggy
+  // index that double-reports a doc (it would still match the others). Keeping
+  // duplicates makes such a bug surface as a file/md5 mismatch, and we also
+  // count them for a direct, self-contained signal on stderr.
   if (!FLAGS_print_results_dir.empty() && idx) {
     std::string fname = t_state.name();
     for (char& c : fname)
@@ -250,14 +259,25 @@ auto BM_Query = [](benchmark::State& t_state,
             (c >= '0' && c <= '9') || c == '-' || c == '.'))
         c = '_';
     std::ofstream os(FLAGS_print_results_dir + "/" + fname + ".txt");
+    std::size_t dup_count = 0;
+    std::size_t patterns_with_dups = 0;
     for (const auto& pattern : *t_patterns) {
       DocListResult result;
       idx->Search(pattern, std::ref(result));
-      result();
+      std::sort(result.docs.begin(), result.docs.end());
+      std::size_t dups_here = 0;
+      for (std::size_t i = 1; i < result.docs.size(); ++i)
+        if (result.docs[i] == result.docs[i - 1]) ++dups_here;
+      dup_count += dups_here;
+      patterns_with_dups += (dups_here > 0);
       for (std::size_t i = 0; i < result.docs.size(); ++i)
         os << (i ? " " : "") << result.docs[i];
       os << '\n';
     }
+    if (dup_count)
+      std::cerr << "[VALIDATE] " << t_state.name() << ": reported " << dup_count
+                << " duplicate doc-id(s) across " << patterns_with_dups
+                << " pattern(s) (expected 0 — possible index bug)\n";
   }
 
   SetupQueryCounters(t_state);
