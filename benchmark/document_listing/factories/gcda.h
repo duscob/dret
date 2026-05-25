@@ -42,7 +42,13 @@ using SLP_Light     = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
                                           grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>;
 using SLP_CompactBP   = grammar::CompactBPSLP<>;
 using SLP_CompactLOUDS = grammar::CompactLOUDSSLP<>;
-using SLP_Combined        = grammar::CombinedSLPWithUnitCover<>;
+// Bit-compressed (int_vector) rules, lengths, and leaves — matches light/compact.
+// The all-default grammar::CombinedSLPWithUnitCover<> would store these as
+// uncompressed std::vector<uint32_t> (~8x larger grammar base).
+using SLP_Combined        = grammar::CombinedSLPWithUnitCover<
+    grammar::CombinedSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>,
+                         grammar::SampledSLP<>,
+                         sdsl::int_vector<>>>;
 
 // Storage-parameterised typed-index template alias. The default TSLP matches
 // the dret::gcda::DocListIdxGCDA default (SLP_Light = grammar::LightSLP<...>).

@@ -26,21 +26,21 @@ namespace dret {
 template<typename... Ts>
 using CombinedSLPWithUnitCover = grammar::CombinedSLPWithUnitCover<Ts...>;
 
-template<typename... Ts>
+// Deduces the actual SLP / SampledSLP / leaves container types from the wrapped
+// grammar::CombinedSLP so the report reflects whatever containers the variant
+// uses (e.g. bit-compressed sdsl::int_vector<>), not a hardcoded grammar::SLP<>.
+template<typename TSLP, typename TSampledSLP, typename TLeaves>
 void collectSizes(SizeReport& out,
-                  const grammar::CombinedSLPWithUnitCover<Ts...>& slp,
+                  const grammar::CombinedSLPWithUnitCover<
+                      grammar::CombinedSLP<TSLP, TSampledSLP, TLeaves>>& slp,
                   const std::string& prefix = "") {
   // The wrapper has no data of its own — all storage is in the inherited
-  // grammar::CombinedSLP base, which is itself a SLP base + a SampledSLP
-  // base + a leaves vector. Report them as the underlying CSLP would, so
-  // the GCDA-CSLP size report stays comparable to GCDA-Default's CSLP
-  // scaffold.
-  using BaseCSLP = typename grammar::CombinedSLPWithUnitCover<Ts...>::Base;
+  // grammar::CombinedSLP base: a SLP base + a SampledSLP base + a leaves vector.
+  using BaseCSLP = grammar::CombinedSLP<TSLP, TSampledSLP, TLeaves>;
   const BaseCSLP& base = static_cast<const BaseCSLP&>(slp);
-  append(out, prefix + "base_slp", sdsl::size_in_bytes(static_cast<const grammar::SLP<>&>(base)));
-  append(out, prefix + "leaves",   sdsl::size_in_bytes(base.GetLeaves()));
-  append(out, prefix + "sampled_slp",
-         sdsl::size_in_bytes(static_cast<const grammar::SampledSLP<>&>(base)));
+  append(out, prefix + "base_slp",   sdsl::size_in_bytes(static_cast<const TSLP&>(base)));
+  append(out, prefix + "leaves",     sdsl::size_in_bytes(base.GetLeaves()));
+  append(out, prefix + "sampled_slp", sdsl::size_in_bytes(static_cast<const TSampledSLP&>(base)));
 }
 
 }  // namespace dret

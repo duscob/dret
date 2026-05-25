@@ -502,12 +502,12 @@ void construct(grammar::CompactLOUDSSLP<Ts...>& t_compact,
 }
 
 // Phase B: CombinedSLP-with-unit-cover construct. Builds/loads a default
-// `grammar::CombinedSLP<>` via the existing CSLP construct overload (which
-// writes the `gcda_docs` cache), slices it into the wrapper's CombinedSLP
-// base (the wrapper has no extra fields so this is a clean upcast), then
-// stores the wrapper under the same logical SLP key. Type-hashing makes
-// the wrapper's on-disk file a sibling of the underlying CSLP's; their
-// byte contents are equal but cache lookups are kept distinct.
+// std::vector-backed `grammar::CombinedSLP<>` via the existing CSLP construct
+// overload (which writes the `gcda_docs` cache), converts it into the wrapper's
+// (possibly bit-compressed) CombinedSLP base — applying `bit_compress` to the
+// SLP rules, lengths, and leaves — slices that into the wrapper, then stores the
+// wrapper under the same logical SLP key. Type-hashing keeps the wrapper's
+// on-disk file distinct from the raw CSLP's.
 template <typename... Ts>
 void construct(grammar::CombinedSLPWithUnitCover<Ts...>& t_wrapped,
                Config& t_config,
@@ -516,22 +516,29 @@ void construct(grammar::CombinedSLPWithUnitCover<Ts...>& t_wrapped,
                float t_storing_factor) {
   using namespace conf;
   using BaseCSLP = typename grammar::CombinedSLPWithUnitCover<Ts...>::Base;
-  static_assert(std::is_same_v<BaseCSLP, grammar::CombinedSLP<>>,
-                "Phase B fixes the underlying CSLP to grammar::CombinedSLP<> "
-                "to match the delegated construct(CombinedSLP&,...) overload.");
+  using RawCSLP = grammar::CombinedSLP<>;  // std::vector intermediate built by construct(CombinedSLP&,...)
 
   std::string key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
   auto key_slp = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
 
-  BaseCSLP cslp;
-  if (!sdsl::cache_file_exists<BaseCSLP>(key_slp, t_config)) {
-    construct(cslp, t_config, t_datafile, t_block_size, t_storing_factor);
+  RawCSLP raw;
+  if (!sdsl::cache_file_exists<RawCSLP>(key_slp, t_config)) {
+    construct(raw, t_config, t_datafile, t_block_size, t_storing_factor);
   } else {
-    sdsl::load_from_cache(cslp, key_slp, t_config, true);
+    sdsl::load_from_cache(raw, key_slp, t_config, true);
   }
 
   auto event = sdsl::memory_monitor::event(
       sdsl::cache_file_name<grammar::CombinedSLPWithUnitCover<Ts...>>(key_slp, t_config));
+
+  // Convert raw (std::vector) -> BaseCSLP, bit-compressing rules, lengths, leaves.
+  // The production SLP_Combined uses sdsl::int_vector<> containers; the action is a
+  // no-op for any non-int_vector container (e.g. the default std::vector base).
+  auto bit_compress = [](auto& v) {
+    if constexpr (std::is_same_v<std::decay_t<decltype(v)>, sdsl::int_vector<>>)
+      sdsl::util::bit_compress(v);
+  };
+  BaseCSLP cslp(raw, bit_compress, bit_compress, bit_compress);
 
   static_cast<BaseCSLP&>(t_wrapped) = cslp;
   sdsl::store_to_cache(t_wrapped, key_slp, t_config, true);
