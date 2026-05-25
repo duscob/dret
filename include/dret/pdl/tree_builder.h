@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -91,6 +92,28 @@ class BuilderPool {
   }
 
   std::size_t size() const { return nodes_.size(); }
+
+  // Free every node not reachable from t_root. The arena otherwise keeps all
+  // ever-created nodes alive; calling this right after CollapseSubtreesByBlockSize
+  // (which detaches collapsed subtrees via first_child = nullptr) reclaims the dead
+  // interval nodes before the memory-heavy doc-set phase. t_root and its live
+  // descendants are preserved; their raw pointers stay valid.
+  void retain(const BuilderNode* t_root) {
+    std::unordered_set<const BuilderNode*> live;
+    std::vector<const BuilderNode*> stack;
+    if (t_root) stack.push_back(t_root);
+    while (!stack.empty()) {
+      const auto* n = stack.back();
+      stack.pop_back();
+      if (!n || !live.insert(n).second) continue;
+      for (const auto* c = n->first_child; c; c = c->next_sibling) stack.push_back(c);
+    }
+    nodes_.erase(std::remove_if(nodes_.begin(), nodes_.end(),
+                                [&live](const std::unique_ptr<BuilderNode>& p) {
+                                  return live.find(p.get()) == live.end();
+                                }),
+                 nodes_.end());
+  }
 
  private:
   std::vector<std::unique_ptr<BuilderNode>> nodes_;

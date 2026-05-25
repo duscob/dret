@@ -311,6 +311,9 @@ void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
     };
     auto* root = BuildSparseSuffixTree(pool, lcp_fn, n);
     CollapseSubtreesByBlockSize(root, t_index.block_size());
+    // Reclaim the interval nodes just detached by the collapse before the
+    // memory-heavy doc-set phase (the arena keeps all nodes alive otherwise).
+    pool.retain(root);
     InsertExplicitLeaves(pool, root);
     ComputeDocSetsBottomUp(
         root, n_doc, [&da](std::size_t i) { return static_cast<std::size_t>(da[i]); });

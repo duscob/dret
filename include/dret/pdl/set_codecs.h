@@ -160,7 +160,13 @@ class PlainCodec {
         tmp.Insert(set.docs.begin(), set.docs.end());
       }
     }
-    chunks_ = TStoredChunks(tmp);
+    // Bit-compress the int_vector-backed objs/pos on convert (no-op for other
+    // containers). Without an action the chunks stay at the default 64-bit width.
+    auto bit_compress = [](auto& v) {
+      if constexpr (std::is_same_v<std::decay_t<decltype(v)>, sdsl::int_vector<>>)
+        sdsl::util::bit_compress(v);
+    };
+    chunks_ = TStoredChunks(tmp, bit_compress, bit_compress);
   }
 
   template <typename TReport>
