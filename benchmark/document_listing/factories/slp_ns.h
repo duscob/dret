@@ -12,6 +12,7 @@
 #include <utility>
 
 #include <sdsl/dac_vector.hpp>
+#include <sdsl/enc_vector.hpp>
 #include <sdsl/int_vector.hpp>
 #include <sdsl/util.hpp>
 #include <sdsl/vlc_vector.hpp>
@@ -34,6 +35,15 @@ using BareSLP_IV = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>;
 using BareSLP_Raw     = grammar::SLP<>;
 using BareSLP_DV      = grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>;
 using BareSLP_VV      = grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>;
+// bare-diff: base differential SLP, non-sampled (no GCChunks). Fixed internal
+// sample block_size; cached under conf::kDSLPNS. The container axis (roots/
+// span_sums/samples) mirrors the DGCDA sampled-diff EV/DV/VV variants.
+// Base SLP rules/lengths are bit-compressed (int_vector, = BareSLP_IV); the
+// container suffix varies the per-field roots/span_sums/samples encoding.
+using BareSLP_Diff    = dret::DifferentialSLP<BareSLP_IV>;  // int_vector (iv)
+using BareSLP_DiffEV  = dret::DifferentialSLP<BareSLP_IV, sdsl::enc_vector<>, sdsl::enc_vector<>, sdsl::enc_vector<>>;
+using BareSLP_DiffDV  = dret::DifferentialSLP<BareSLP_IV, sdsl::dac_vector<>, sdsl::dac_vector<>, sdsl::dac_vector<>>;
+using BareSLP_DiffVV  = dret::DifferentialSLP<BareSLP_IV, sdsl::vlc_vector<>, sdsl::vlc_vector<>, sdsl::vlc_vector<>>;
 
 // Storage-parameterised typed-index template alias. Default TSLP matches
 // dret::DocListIdxSLP<>::TSLP (BareSLP_IV).
@@ -63,13 +73,21 @@ Make(TStorage t_storage,
   struct T_Raw     { using type = Idx<TStorage, BareSLP_Raw>; };
   struct T_DV      { using type = Idx<TStorage, BareSLP_DV>; };
   struct T_VV      { using type = Idx<TStorage, BareSLP_VV>; };
+  struct T_Diff    { using type = Idx<TStorage, BareSLP_Diff>; };
+  struct T_DiffEV  { using type = Idx<TStorage, BareSLP_DiffEV>; };
+  struct T_DiffDV  { using type = Idx<TStorage, BareSLP_DiffDV>; };
+  struct T_DiffVV  { using type = Idx<TStorage, BareSLP_DiffVV>; };
 
   switch (t_slp) {
-    case bench::axes::BareSLPVariant::Raw: build(T_Raw{}); break;
-    case bench::axes::BareSLPVariant::DV:  build(T_DV{});  break;
-    case bench::axes::BareSLPVariant::VV:  build(T_VV{});  break;
+    case bench::axes::BareSLPVariant::Raw:    build(T_Raw{});    break;
+    case bench::axes::BareSLPVariant::DV:     build(T_DV{});     break;
+    case bench::axes::BareSLPVariant::VV:     build(T_VV{});     break;
+    case bench::axes::BareSLPVariant::Diff:   build(T_Diff{});   break;
+    case bench::axes::BareSLPVariant::DiffEV: build(T_DiffEV{}); break;
+    case bench::axes::BareSLPVariant::DiffDV: build(T_DiffDV{}); break;
+    case bench::axes::BareSLPVariant::DiffVV: build(T_DiffVV{}); break;
     case bench::axes::BareSLPVariant::IV:
-    default:                               build(T_IV{}); break;
+    default:                                  build(T_IV{});    break;
   }
   return result;
 }

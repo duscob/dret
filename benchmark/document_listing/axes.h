@@ -81,6 +81,16 @@ enum class BareSLPVariant {
   Raw,      // grammar::SLP<> — library defaults (std::vector<uint32_t>); DRL-equivalent
   DV,       // grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>
   VV,       // grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>
+  // bare-diff: base dret::DifferentialSLP<> (non-sampled differential SLP, no
+  // GCChunks), with the differential int-container axis on roots/span_sums/
+  // samples — Diff=int_vector(iv), DiffEV=enc_vector, DiffDV=dac_vector,
+  // DiffVV=vlc_vector (mirrors the DGCDA sampled-diff EV/DV/VV variants). Only
+  // the SLP-NS *listing* family consumes these; RMQ/PDL bare get-doc backends
+  // are plain-only and ignore them.
+  Diff,
+  DiffEV,
+  DiffDV,
+  DiffVV,
 };
 
 // TRunValues container choice for the Sadakane-style (-S) doc-listing

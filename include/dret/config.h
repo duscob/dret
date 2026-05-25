@@ -33,6 +33,11 @@ constexpr std::string_view kDGCDA = "dgcda";
 // don't share a logical key (their type-hashes are already distinct,
 // but a separate prefix makes the on-disk files easier to inspect).
 constexpr std::string_view kSLPNS = "slpNS";
+// Non-sampled *differential* SLP cache (bare-diff): base dret::DifferentialSLP,
+// no sampled tree / GCChunks. Distinct key from the (bs/sf-keyed) DGCDA
+// DifferentialLightSLP cache — bare-diff has a single fixed internal sample
+// block_size and no storing_factor.
+constexpr std::string_view kDSLPNS = "dslpNS";
 
 constexpr std::string_view kSADA = "sada";
 constexpr std::string_view kILCP = "ilcp";
@@ -42,6 +47,10 @@ constexpr std::string_view kRunHeads = "runHeads";
 constexpr std::string_view kRunValues = "runValues";
 constexpr std::string_view kPrevDoc = "prevDoc";
 constexpr std::string_view kRmqNDoc = "rmq_n_doc";
+// Backward interleaved-LCP array (ComputeIlcpBackward). Collection-level and
+// shared by all ILCP-family cores (ILCP / CILCP / ILCP-S / CILCP-S), so it is
+// cached once instead of recomputed per core.
+constexpr std::string_view kIlcpArray = "ilcp_array";
 
 // Sadakane-style ("canonical depth-based stop") parallel families. Each is
 // a sibling of the corresponding non-S core (SADA / ILCP / CILCP) and uses
@@ -76,6 +85,7 @@ struct Keys {
         {conf::kDocEnds, "doc_end"},
         {conf::kDA, "da"},
         {conf::kSLPNS, "slp_ns"},
+        {conf::kDSLPNS, "dslp_ns"},
         {
             conf::kGCDA,
             {
@@ -131,6 +141,7 @@ struct Keys {
             },
         },
         {conf::kRmqNDoc, "rmq_n_doc"},
+        {conf::kIlcpArray, "ilcp_array"},
         {
             conf::kPDL,
             {

@@ -142,19 +142,27 @@ struct EnumTraits<BareSLPVariant> {
   static constexpr BareSLPVariant default_value() { return BareSLPVariant::IV; }
 
   static std::optional<BareSLPVariant> TryParse(std::string_view s) {
-    if (s == "iv")  return BareSLPVariant::IV;
-    if (s == "raw") return BareSLPVariant::Raw;
-    if (s == "dv")  return BareSLPVariant::DV;
-    if (s == "vv")  return BareSLPVariant::VV;
+    if (s == "iv")      return BareSLPVariant::IV;
+    if (s == "raw")     return BareSLPVariant::Raw;
+    if (s == "dv")      return BareSLPVariant::DV;
+    if (s == "vv")      return BareSLPVariant::VV;
+    if (s == "diff")    return BareSLPVariant::Diff;
+    if (s == "diff-ev") return BareSLPVariant::DiffEV;
+    if (s == "diff-dv") return BareSLPVariant::DiffDV;
+    if (s == "diff-vv") return BareSLPVariant::DiffVV;
     return std::nullopt;
   }
 
   static const char* Name(BareSLPVariant v) {
     switch (v) {
-      case BareSLPVariant::IV:  return "IV";
-      case BareSLPVariant::Raw: return "Raw";
-      case BareSLPVariant::DV:  return "DV";
-      case BareSLPVariant::VV:  return "VV";
+      case BareSLPVariant::IV:     return "IV";
+      case BareSLPVariant::Raw:    return "Raw";
+      case BareSLPVariant::DV:     return "DV";
+      case BareSLPVariant::VV:     return "VV";
+      case BareSLPVariant::Diff:   return "Diff";
+      case BareSLPVariant::DiffEV: return "DiffEV";
+      case BareSLPVariant::DiffDV: return "DiffDV";
+      case BareSLPVariant::DiffVV: return "DiffVV";
     }
     return "UNKNOWN";
   }

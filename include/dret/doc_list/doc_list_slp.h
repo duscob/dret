@@ -45,8 +45,77 @@
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/index_base.h"
+#include "dret/slp/differential_slp.h"
 
 namespace dret {
+
+// Forward decl of the plain bare-SLP RePair build (defined at end of file).
+template <typename TVarsContainer, typename TLengthsContainer>
+void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
+               Config& t_config, const std::string& t_datafile);
+
+// Fixed differential-reconstruction sample granularity for the non-sampled
+// differential SLP (bare-diff). Differential decode needs *some* anchors, so
+// this is an internal constant — not an exposed bs/sf axis.
+inline constexpr std::uint32_t kDiffBlockSize = 512;
+
+//~~~~~~~  SLP-NS range expansion, dispatched by SLP type  ~~~~~~~
+
+// Plain grammar::SLP: split [sp, ep) into a span cover, expand each variable.
+template <typename TVarsContainer, typename TLengthsContainer, typename TReport>
+void SlpNsExpandRange(const grammar::SLP<TVarsContainer, TLengthsContainer>& slp,
+                      std::size_t sp, std::size_t ep, TReport add) {
+  std::vector<typename grammar::SLP<TVarsContainer, TLengthsContainer>::VariableType> cover;
+  grammar::ComputeSpanCover(slp, sp, ep, std::back_inserter(cover));
+  for (auto var : cover) {
+    auto length = slp.SpanLength(var);
+    grammar::ExpandSLPForward(slp.GetRules(), slp.Sigma(), var, length, add);
+  }
+}
+
+// Base differential SLP: range-decompress [sp, ep) directly (no sampled tree).
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples,
+          typename TSampleRootsPos, typename TBV, typename TReport>
+void SlpNsExpandRange(const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& slp,
+                      std::size_t sp, std::size_t ep, TReport add) {
+  ExpandSLP(slp, sp, ep, add);
+}
+
+//~~~~~~~  SLP-NS cache key + build, dispatched by SLP type  ~~~~~~~
+
+template <typename TSLP>
+struct SlpNsTraits;  // primary left undefined — only the two SLP kinds below
+
+// Plain bare grammar::SLP — RePair build under kSLPNS (unchanged behaviour).
+template <typename TVarsContainer, typename TLengthsContainer>
+struct SlpNsTraits<grammar::SLP<TVarsContainer, TLengthsContainer>> {
+  using TSLP = grammar::SLP<TVarsContainer, TLengthsContainer>;
+  static constexpr std::string_view kKey = conf::kSLPNS;
+  static void build(Config& t_config) {
+    const auto key = t_config.keys[conf::kSLPNS].get<std::string>();
+    if (sdsl::cache_file_exists<TSLP>(key, t_config)) return;
+    auto event = sdsl::memory_monitor::event(key);
+    auto da = sdsl::cache_file_name<std::vector<int>>(
+        t_config.keys[conf::kDA].get<std::string>(), t_config);
+    TSLP slp;
+    construct(slp, t_config, da);
+  }
+};
+
+// Bare-diff — base DifferentialSLP under kDSLPNS, at the fixed kDiffBlockSize.
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples,
+          typename TSampleRootsPos, typename TBV>
+struct SlpNsTraits<DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>> {
+  using TDiff = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
+  static constexpr std::string_view kKey = conf::kDSLPNS;
+  static void build(Config& t_config) {
+    const auto key = t_config.keys[conf::kDSLPNS].get<std::string>();
+    if (sdsl::cache_file_exists<TDiff>(key, t_config)) return;
+    auto event = sdsl::memory_monitor::event(key);
+    TDiff dslp;
+    construct(dslp, t_config, kDiffBlockSize, key);
+  }
+};
 
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
@@ -71,17 +140,12 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
     auto [sp, ep] = count_idx_.Count(t_pattern);
     if (sp >= ep) return;
 
-    std::vector<typename TSLP::VariableType> cover;
-    grammar::ComputeSpanCover(*slp_, sp, ep, std::back_inserter(cover));
-
     std::vector<TDocId> docs;
     docs.reserve(ep - sp);
     auto add = [&docs](auto v) { docs.emplace_back(static_cast<TDocId>(v)); };
 
-    for (auto var : cover) {
-      auto length = slp_->SpanLength(var);
-      grammar::ExpandSLPForward(slp_->GetRules(), slp_->Sigma(), var, length, add);
-    }
+    // Plain SLP → span-cover expansion; differential SLP → range decompression.
+    SlpNsExpandRange(*slp_, sp, ep, add);
 
     std::sort(docs.begin(), docs.end());
     docs.erase(std::unique(docs.begin(), docs.end()), docs.end());
@@ -109,7 +173,8 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
     std::visit([this](auto&& tt_source) { count_idx_.load(tt_source.get()); }, t_source);
 
-    slp_ = this->template loadItemPtr<TSLP>(t_keys[kSLPNS].get<std::string>(), t_source, true);
+    slp_ = this->template loadItemPtr<TSLP>(
+        t_keys[SlpNsTraits<TSLP>::kKey].template get<std::string>(), t_source, true);
   }
 
   TCountIdx count_idx_;
@@ -160,12 +225,9 @@ void construct(DocListIdxSLP<TStorage, TAlphabet, TCountIdx, TSLP>& t_index, Con
     ConstructDocArray(t_config);
   }
 
-  if (const auto key = t_config.keys[kSLPNS].get<std::string>(); !sdsl::cache_file_exists<TSLP>(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
-    TSLP slp;
-    construct(slp, t_config, filepath_da);
-  }
+  // Build the SLP cache — plain bare grammar::SLP under kSLPNS, or the base
+  // differential SLP (bare-diff) under kDSLPNS — dispatched by TSLP.
+  SlpNsTraits<TSLP>::build(t_config);
 
   auto count_idx = t_index.count_idx();
   construct(count_idx, t_config.data_path, t_config);

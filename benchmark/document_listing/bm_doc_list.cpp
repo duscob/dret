@@ -569,6 +569,23 @@ const char* BareValue(BareSLPVariant v) {
   }
 }
 
+// The four bare-diff variants (base differential SLP, non-sampled).
+bool IsBareDiff(BareSLPVariant v) {
+  return v == BareSLPVariant::Diff || v == BareSLPVariant::DiffEV
+      || v == BareSLPVariant::DiffDV || v == BareSLPVariant::DiffVV;
+}
+
+// Differential int-container for a bare-diff variant (roots/span_sums/samples).
+const char* DiffContainerValue(BareSLPVariant v) {
+  switch (v) {
+    case BareSLPVariant::DiffEV: return "ev";
+    case BareSLPVariant::DiffDV: return "dv";
+    case BareSLPVariant::DiffVV: return "vv";
+    case BareSLPVariant::Diff:
+    default:                     return "iv";
+  }
+}
+
 const char* RunValuesValue(bench::axes::RunValuesVariant v) {
   switch (v) {
     case bench::axes::RunValuesVariant::DV: return "dv";
@@ -677,11 +694,15 @@ void RegisterQueryDGCDA(const bench::spec::DGCDASweep& sw, Factory<>& factory,
 void RegisterQuerySLPNS(const bench::spec::SLPNSSweep& sw, Factory<>& factory,
                         const std::vector<std::string>* patterns, std::size_t seq_size) {
   for (auto tslp : sw.tslp) {
-    const auto name = KeyedName("GCDA", {
-        {"slp", "bare"},
-        {"slp-container", BareValue(tslp)},
-        {"tree", "none"},
-    });
+    // bare-diff: non-sampled differential SLP, slp=diff + container axis.
+    // Plain bare keeps slp=bare|slp-container=… ; both are tree=none.
+    const auto name = IsBareDiff(tslp)
+        ? KeyedName("GCDA", {{"slp", "diff"},
+                             {"slp-container", DiffContainerValue(tslp)},
+                             {"tree", "none"}})
+        : KeyedName("GCDA", {{"slp", "bare"},
+                             {"slp-container", BareValue(tslp)},
+                             {"tree", "none"}});
     Factory<>::Config cfg{};
     cfg.index_t = Factory<>::IndexEnum::SLP_NS;
     cfg.bare_slp = tslp;
@@ -941,6 +962,10 @@ void RegisterConstructSLPNS(const bench::spec::SLPNSSweep& sw, dret::Config& con
       case BareSLPVariant::Raw: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_Raw>>, config, hook, cc.memory_trace); break;
       case BareSLPVariant::DV:  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DV>>, config, hook, cc.memory_trace); break;
       case BareSLPVariant::VV:  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_VV>>, config, hook, cc.memory_trace); break;
+      case BareSLPVariant::Diff:   benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_Diff>>, config, hook, cc.memory_trace); break;
+      case BareSLPVariant::DiffEV: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DiffEV>>, config, hook, cc.memory_trace); break;
+      case BareSLPVariant::DiffDV: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DiffDV>>, config, hook, cc.memory_trace); break;
+      case BareSLPVariant::DiffVV: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DiffVV>>, config, hook, cc.memory_trace); break;
       case BareSLPVariant::IV:
       default:                  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS>>, config, hook, cc.memory_trace); break;
     }
