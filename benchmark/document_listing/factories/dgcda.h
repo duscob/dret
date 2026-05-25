@@ -38,22 +38,26 @@ namespace bench::factories::dgcda {
 // - CRL: cached root span lengths only
 // - EV / DV / VV: vary the inner int-vector container of roots / span_sums /
 //   samples (TSampleRootsPos keeps its default sdsl::enc_vector<>).
+// All variants store the SLP base rules/lengths bit-compressed (int_vector):
+// SLP_Default via DifferentialLightSLP<>'s default TSLP; the OTF/CRL adapters
+// over BasicSLP<int_vector>; EV/DV/VV via an explicit int_vector base.
+using DSLP_Base = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>;
 using SLP_Default = dret::DifferentialLightSLP<>;
 using SLP_OTF     = dret::DifferentialLightSLP<
-    dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<>>>;
+    dret::BasicSLPOnTheFlySpanLength<grammar::BasicSLP<sdsl::int_vector<>>>>;
 using SLP_CRL     = dret::DifferentialLightSLP<
-    dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<>>>;
-using SLP_EV = dret::DifferentialLightSLP<grammar::SLP<>,
+    dret::BasicSLPCachedRootSpanLengths<grammar::BasicSLP<sdsl::int_vector<>>>>;
+using SLP_EV = dret::DifferentialLightSLP<DSLP_Base,
                                           grammar::SampledSLP<>,
                                           sdsl::enc_vector<>,
                                           sdsl::enc_vector<>,
                                           sdsl::enc_vector<>>;
-using SLP_DV = dret::DifferentialLightSLP<grammar::SLP<>,
+using SLP_DV = dret::DifferentialLightSLP<DSLP_Base,
                                           grammar::SampledSLP<>,
                                           sdsl::dac_vector<>,
                                           sdsl::dac_vector<>,
                                           sdsl::dac_vector<>>;
-using SLP_VV = dret::DifferentialLightSLP<grammar::SLP<>,
+using SLP_VV = dret::DifferentialLightSLP<DSLP_Base,
                                           grammar::SampledSLP<>,
                                           sdsl::vlc_vector<>,
                                           sdsl::vlc_vector<>,

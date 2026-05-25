@@ -22,7 +22,7 @@
 
 namespace dret {
 
-template <typename TSLP = grammar::SLP<>,
+template <typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>,
           typename TRoots = sdsl::int_vector<>,
           typename TSpanSums = sdsl::int_vector<>,
           typename TSamples = sdsl::int_vector<>,
@@ -117,6 +117,16 @@ class DifferentialSLP : public TSLP {
 
   void Compute(const sdsl::int_vector<>& da, uint32_t block_size);
 
+  // Compute is split so the construct path can cache the bs-independent RePair
+  // grammar and reuse it across all (bs,sf) cells:
+  //  - BuildBaseGrammar: steps 1-2 (diff-encode + RePair into the TSLP base);
+  //    sets seq_size_/diff_base_seq_; returns the top-level compact sequence.
+  //  - RestoreBaseGrammar: install a cached base grammar + scalars (skips RePair).
+  //  - FinishCompute: steps 3-6 (span sums + samples + field containers).
+  std::vector<std::size_t> BuildBaseGrammar(const sdsl::int_vector<>& da);
+  void RestoreBaseGrammar(const TSLP& base, std::size_t seq_size, uint64_t diff_base_seq);
+  void FinishCompute(uint32_t block_size, const std::vector<std::size_t>& compact_seq);
+
   std::size_t serialize(std::ostream& out, sdsl::structure_tree_node* v = nullptr, const std::string& name = "") const;
 
   void load(std::istream& in);
@@ -140,6 +150,15 @@ class DifferentialSLP : public TSLP {
 template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
 void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::Compute(const sdsl::int_vector<>& da,
                                                                                        uint32_t block_size) {
+  auto compact_seq = BuildBaseGrammar(da);
+  FinishCompute(block_size, compact_seq);
+}
+
+// Steps 1-2: diff-encode the DA and RePair it into the TSLP base. bs-independent.
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
+std::vector<std::size_t>
+DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::BuildBaseGrammar(
+    const sdsl::int_vector<>& da) {
   const auto n = da.size();
   seq_size_ = n;
 
@@ -167,6 +186,23 @@ void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::C
     };
     encoder.Encode(diff_da.begin(), diff_da.end(), wrapper, report_c_seq);
   }
+  return compact_seq;
+}
+
+// Install a cached base grammar + scalars instead of re-running RePair.
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
+void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::RestoreBaseGrammar(
+    const TSLP& base, std::size_t seq_size, uint64_t diff_base_seq) {
+  static_cast<TSLP&>(*this) = base;
+  seq_size_ = seq_size;
+  diff_base_seq_ = diff_base_seq;
+}
+
+// Steps 3-6: span sums + samples + field containers, from the base + compact_seq.
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
+void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::FinishCompute(
+    uint32_t block_size, const std::vector<std::size_t>& compact_seq) {
+  const auto n = seq_size_;
 
   // Populate any cached SpanLength data that adapter TSLPs need (no-op by default).
   // Must run before ComputeSamplesOnCompactSequence, which reads SpanLength on roots.
@@ -309,17 +345,84 @@ void ExpandSLP(const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleR
 //~~~~~~~
 
 
+// On-disk cache of the bs-independent diff base grammar (TSLP base + the top-level
+// compact sequence + the two diff scalars). Keyed by DiffGrammarCache<TSLP>'s type
+// hash, so all (bs,sf) cells of a variant — and all container variants sharing the
+// same TSLP — reuse one RePair pass.
+template <typename TSLP>
+struct DiffGrammarCache {
+  using size_type = std::size_t;  // required by sdsl serialize/store_to_cache
+
+  TSLP base;
+  sdsl::int_vector<> compact_seq;
+  uint64_t seq_size = 0;
+  uint64_t diff_base_seq = 0;
+
+  std::size_t serialize(std::ostream& out, sdsl::structure_tree_node* v = nullptr,
+                        const std::string& name = "") const {
+    auto* child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    std::size_t b = 0;
+    b += base.serialize(out, child, "base");
+    b += compact_seq.serialize(out, child, "compact_seq");
+    b += sdsl::write_member(seq_size, out, child, "seq_size");
+    b += sdsl::write_member(diff_base_seq, out, child, "diff_base_seq");
+    sdsl::structure_tree::add_size(child, b);
+    return b;
+  }
+  void load(std::istream& in) {
+    base.load(in);
+    compact_seq.load(in);
+    sdsl::read_member(seq_size, in);
+    sdsl::read_member(diff_base_seq, in);
+  }
+};
+
+// Install the diff base grammar into `work` (a DifferentialSLP/DifferentialLightSLP),
+// loading the cached RePair grammar if present (bs-independent), else building +
+// caching it. Returns the top-level compact sequence needed by FinishCompute.
+template <typename TSLP, typename TDiff>
+std::vector<std::size_t> LoadOrBuildDiffGrammar(TDiff& work, const sdsl::int_vector<>& da,
+                                                Config& t_config, const std::string& grammar_key) {
+  DiffGrammarCache<TSLP> gc;
+  if (sdsl::cache_file_exists<DiffGrammarCache<TSLP>>(grammar_key, t_config)) {
+    sdsl::load_from_cache(gc, grammar_key, t_config, true);
+    work.RestoreBaseGrammar(gc.base, gc.seq_size, gc.diff_base_seq);
+    return std::vector<std::size_t>(gc.compact_seq.begin(), gc.compact_seq.end());
+  }
+  auto compact_seq = work.BuildBaseGrammar(da);
+  gc.base = static_cast<const TSLP&>(work);
+  gc.compact_seq = sdsl::int_vector<>(compact_seq.size(), 0, 64);
+  for (std::size_t i = 0; i < compact_seq.size(); ++i)
+    gc.compact_seq[i] = compact_seq[i];
+  sdsl::util::bit_compress(gc.compact_seq);
+  gc.seq_size = work.SeqSize();
+  gc.diff_base_seq = work.DiffBaseSeq();
+  sdsl::store_to_cache(gc, grammar_key, t_config, true);
+  return compact_seq;
+}
+
 template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
 void construct(DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& t_dslp,
                Config& t_config,
                uint32_t block_size,
                const std::string& cache_key) {
   using namespace conf;
+  using DSLP = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
 
   sdsl::int_vector<> da;
   sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-  t_dslp.Compute(da, block_size);
+  // Load-or-build the bs-independent RePair grammar (shared across container
+  // variants), then finish the bs-dependent sampling. Convert into t_dslp to
+  // bit-compress the base (per-field containers are already compressed).
+  DSLP tmp;
+  auto compact_seq = LoadOrBuildDiffGrammar<TSLP>(tmp, da, t_config, cache_key + "_grammar");
+  tmp.FinishCompute(block_size, compact_seq);
+  auto bit_compress = [](auto& v) {
+    if constexpr (std::is_same_v<std::decay_t<decltype(v)>, sdsl::int_vector<>>)
+      sdsl::util::bit_compress(v);
+  };
+  t_dslp = DSLP(tmp, bit_compress, bit_compress);
 
   sdsl::store_to_cache(t_dslp, cache_key, t_config, true);
 }
