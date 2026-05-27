@@ -79,6 +79,10 @@ class Factory {
     // Default IV matches SadaSCore's default (prev_doc values are random
     // SA positions; int_vector with bit_compress is the natural choice).
     PrevDocVariant prev_doc = PrevDocVariant::IV;
+    // SA-Phi sampling rate for get_doc=sa_phi_sr (PDL/RMQ × SR-index
+    // analogue of RLCSA). Ignored when get_doc != SAPhiSR; r-index variant
+    // (sa_phi_r) has no sampling knob.
+    std::size_t sa_sampling = 0;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -103,7 +107,9 @@ class Factory {
         return dgcda_slp < t_c.dgcda_slp;
       if (run_values != t_c.run_values)
         return run_values < t_c.run_values;
-      return prev_doc < t_c.prev_doc;
+      if (prev_doc != t_c.prev_doc)
+        return prev_doc < t_c.prev_doc;
+      return sa_sampling < t_c.sa_sampling;
     }
   };
 
@@ -232,7 +238,9 @@ class Factory {
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::SADA,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp);
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
+            bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
+            t_config.sa_sampling);
         index = {idx, size};
         break;
       }
@@ -242,7 +250,9 @@ class Factory {
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::ILCP,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp);
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
+            bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
+            t_config.sa_sampling);
         index = {idx, size};
         break;
       }
@@ -252,7 +262,8 @@ class Factory {
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
             t_config.pdl_variant, t_config.get_doc, t_config.pdl_storage_policy,
-            t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp);
+            t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
+            t_config.sa_sampling);
         index = {idx, size};
         break;
       }
@@ -269,7 +280,9 @@ class Factory {
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::CILCP,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp);
+            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
+            bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
+            t_config.sa_sampling);
         index = {idx, size};
         break;
       }
@@ -280,7 +293,8 @@ class Factory {
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::SADA_S,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
-            t_config.dgcda_slp, t_config.run_values, t_config.prev_doc);
+            t_config.dgcda_slp, t_config.run_values, t_config.prev_doc,
+            t_config.sa_sampling);
         index = {idx, size};
         break;
       }
@@ -291,7 +305,8 @@ class Factory {
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::ILCP_S,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
-            t_config.dgcda_slp, t_config.run_values);
+            t_config.dgcda_slp, t_config.run_values,
+            bench::axes::PrevDocVariant::IV, t_config.sa_sampling);
         index = {idx, size};
         break;
       }
@@ -302,7 +317,8 @@ class Factory {
             t_config.block_size, t_config.storing_factor,
             bench::factories::rmq::CoreKind::CILCP_S,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
-            t_config.dgcda_slp, t_config.run_values);
+            t_config.dgcda_slp, t_config.run_values,
+            bench::axes::PrevDocVariant::IV, t_config.sa_sampling);
         index = {idx, size};
         break;
       }

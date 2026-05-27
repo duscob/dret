@@ -70,6 +70,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/rmq/doc_index_rmq_common.h
         ${PROJECT_SOURCE_DIR}/include/dret/rmq/doc_list_rmq_scheme.h
         ${PROJECT_SOURCE_DIR}/include/dret/rmq/rmq_get_doc_policies.h
+        ${PROJECT_SOURCE_DIR}/include/dret/rmq/rmq_get_doc_rlcsa.h
 
         # doc_freq/: document-frequency family.
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_base.h
@@ -107,7 +108,9 @@ include(internal_utils)
 include(ConfigSDSL)
 include(ConfigGrammar)
 include(ConfigSRIndex)
-set(LIBS ${SDSL_LIB} grammar sr-index nlohmann_json::nlohmann_json)
+include(ConfigRLCSA)
+find_package(OpenMP REQUIRED)
+set(LIBS ${SDSL_LIB} grammar sr-index nlohmann_json::nlohmann_json rlcsa ${OpenMP_CXX_LIBRARIES})
 target_link_libraries(dret INTERFACE ${LIBS})
 
 include(ConfigRePair)

@@ -191,6 +191,11 @@ using RMQCilcpSLPNSVVCore = dret::rmq::CilcpCore<TStorage,
                                                   sdsl::sd_vector<>,
                                                   RMQGetDocSLP_NS_VV<TStorage>>;
 
+// RMQ × RLCSA cores are intentionally NOT defined here: RLCSA's GSA-style SA
+// ordering doesn't match dret's SA ordering, so SADA/ILCP's RMQ recursion
+// would mis-stop on the swapped doc IDs. PDL × RLCSA below works (set-based).
+// See include/dret/rmq/rmq_get_doc_rlcsa.h.
+
 template <typename TStorage>
 using RMQSadaSLPIndex =
     dret::rmq::DocListIdxRMQ<TStorage, dret::Alphabet<>, RMQCountIdx<TStorage>, RMQSadaSLPCore<TStorage>>;
@@ -386,7 +391,10 @@ using DocListIndexConstructTypes = ::testing::Types<
     PDLPlainBk<dret::GenericStorage, dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>,
     PDLRPBk<dret::GenericStorage, dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>,
     PDLRPBk<dret::GenericStorage, dret::pdl::PDLGetDocsSLP_NS<dret::GenericStorage>>,
-    PDLRPBk<dret::GenericStorage, dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>>;
+    PDLRPBk<dret::GenericStorage, dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>,
+    // RMQ × RLCSA omitted (search-type incompatibility — see DocListIndexSearchTypes).
+    // PDL × RLCSA still exercises the RLCSA construct+load path.
+    PDLPlainBk<dret::GenericStorage, dret::pdl::PDLGetDocsRLCSA<dret::GenericStorage>>>;
 
 TYPED_TEST_SUITE(DocListIndexConstructTypedTests, DocListIndexConstructTypes);
 
@@ -533,7 +541,15 @@ using DocListIndexSearchTypes = ::testing::Types<
     PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>>,
     PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsSLP<ExternalGenericStorage>>,
     PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsSLP_NS<ExternalGenericStorage>>,
-    PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>>>;
+    PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>>,
+    // RMQ × RLCSA is NOT in the search-type list: RLCSA's GSA-style SA
+    // ordering doesn't match dret's, and SADA/ILCP miss docs on real data.
+    // (Small test data doesn't trip the bug because patterns avoid the
+    // "ambiguous zones" where multiple doc-end suffixes share a prefix.)
+    // The factory falls RMQ × RLCSA through to DA; see rmq_get_doc_rlcsa.h.
+    // PDL × RLCSA is set-based and works correctly.
+    PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsRLCSA<ExternalGenericStorage>>,
+    PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsRLCSA<ExternalGenericStorage>>>;
 
 TYPED_TEST_SUITE(DocListIndexSearchTypedTests, DocListIndexSearchTypes);
 
@@ -635,6 +651,30 @@ TEST_F(RMQSLPCacheReuseTest, rmq_dslp_reuses_dgcda_dslp_cache) {
   ASSERT_TRUE(std::filesystem::exists(dslp_path));
   EXPECT_EQ(std::filesystem::file_size(dslp_path), before_size);
   EXPECT_EQ(std::filesystem::last_write_time(dslp_path), before_time);
+}
+
+TEST_F(RMQSLPCacheReuseTest, pdl_rlcsa_sidecar_not_rebuilt) {
+  // The RLCSA sidecar is constructed by GetDocRLCSA via PDLRawRangePolicy.
+  // Test via PDL × RLCSA — the only supported consumer (RMQ × RLCSA is
+  // disabled at the factory level due to SA-ordering incompatibility; see
+  // rmq_get_doc_rlcsa.h header comment).
+  using PDLRLCSA = PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsRLCSA<ExternalGenericStorage>>;
+
+  PDLRLCSA pdl1(std::ref(storage_));
+  construct(pdl1, config_);
+
+  const auto base = sdsl::cache_file_name(
+      config_.keys[dret::conf::kRLCSA].get<std::string>(), config_);
+  const auto array_path = base + ".rlcsa.array";
+  ASSERT_TRUE(std::filesystem::exists(array_path));
+  const auto before_time = std::filesystem::last_write_time(array_path);
+  const auto before_size = std::filesystem::file_size(array_path);
+
+  PDLRLCSA pdl2(std::ref(storage_));
+  construct(pdl2, config_);
+
+  EXPECT_EQ(std::filesystem::file_size(array_path), before_size);
+  EXPECT_EQ(std::filesystem::last_write_time(array_path), before_time);
 }
 
 //~~~~~~~

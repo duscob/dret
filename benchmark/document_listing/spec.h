@@ -120,6 +120,9 @@ struct RMQSweep {
   // TPrevDoc axis for SADA-S. Default IV matches SadaSCore's default;
   // other variants in {iv, dv, vv}.
   std::vector<axes::PrevDocVariant> prev_doc{axes::PrevDocVariant::IV};
+  // SA-Phi sampling rate axis for get_doc=sa_phi_sr. Ignored for sa_phi_r
+  // (r-index has no sampling knob) and for other get-docs.
+  std::vector<std::size_t> sa_sampling{8};
   std::vector<std::uint32_t> block_size{512};
   std::vector<float> storing_factor{4.0f};
 };
@@ -134,6 +137,8 @@ struct PDLSweep {
   std::vector<axes::GCDASLPVariant> gcda_slp{axes::GCDASLPVariant::Light};
   std::vector<axes::BareSLPVariant> bare_slp{axes::BareSLPVariant::IV};
   std::vector<axes::DGCDASLPVariant> dgcda_slp{axes::DGCDASLPVariant::Default};
+  // SA-Phi sampling rate axis for get_doc=sa_phi_sr (same shape as RMQSweep).
+  std::vector<std::size_t> sa_sampling{8};
   std::vector<std::uint32_t> block_size{512};
   std::vector<float> storing_factor{4.0f};
 };
@@ -246,6 +251,7 @@ inline RMQSweep ParseRMQ(const nlohmann::json& j) {
   s.dgcda_slp = ParseEnumList<axes::DGCDASLPVariant>(j, "dgcda_slp", s.dgcda_slp);
   s.run_values = ParseEnumList<axes::RunValuesVariant>(j, "run_values", s.run_values);
   s.prev_doc = ParseEnumList<axes::PrevDocVariant>(j, "prev_doc", s.prev_doc);
+  s.sa_sampling = ParseList<std::size_t>(j, "sa_sampling", s.sa_sampling);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
   s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
   return s;
@@ -259,6 +265,7 @@ inline PDLSweep ParsePDL(const nlohmann::json& j) {
   s.gcda_slp = ParseEnumList<axes::GCDASLPVariant>(j, "gcda_slp", s.gcda_slp);
   s.bare_slp = ParseEnumList<axes::BareSLPVariant>(j, "bare_slp", s.bare_slp);
   s.dgcda_slp = ParseEnumList<axes::DGCDASLPVariant>(j, "dgcda_slp", s.dgcda_slp);
+  s.sa_sampling = ParseList<std::size_t>(j, "sa_sampling", s.sa_sampling);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
   s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
   return s;

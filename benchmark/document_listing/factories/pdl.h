@@ -26,6 +26,7 @@
 #include "dret/pdl/get_docs.h"
 #include "dret/pdl/set_codecs.h"
 #include "dret/pdl/storage_policy.h"
+#include "dret/rmq/rmq_get_doc_rlcsa.h"
 
 #include "../axes.h"
 #include "../enum_traits.h"
@@ -51,6 +52,19 @@ using GetDocsSLP_NS = dret::pdl::PDLGetDocsSLP_NS<TStorage, kWidth, TSLP>;
 
 template <typename TStorage, typename TDSLP = dgcda::SLP_Default>
 using GetDocsDSLP = dret::pdl::PDLGetDocsDSLP<TStorage, kWidth, TDSLP>;
+
+// SA-Phi backings — the RLCSA-style PDL baseline. R variant uses dense
+// r-index samples (no sampling knob); SR variant uses subsampled sr-index
+// samples (sa_sampling knob threaded through the spec).
+template <typename TStorage>
+using GetDocsSAPhi_R  = dret::pdl::PDLGetDocsSAPhi_R<TStorage, kWidth>;
+
+template <typename TStorage>
+using GetDocsSAPhi_SR = dret::pdl::PDLGetDocsSAPhi_SR<TStorage, kWidth>;
+
+// RLCSA backing — paper-faithful batched locate(range) + getSequenceForPosition.
+template <typename TStorage>
+using GetDocsRLCSA = dret::pdl::PDLGetDocsRLCSA<TStorage, kWidth>;
 
 // Typed-index aliases. One template per codec; TGetDocs defaults to DA.
 // TStorage and TGetDocs are both parametric.
@@ -92,7 +106,8 @@ MakeForCodec(TStorage t_storage, dret::Config& t_config,
              bench::axes::GetDocEnum t_get_doc,
              bench::axes::GCDASLPVariant t_gcda_slp,
              bench::axes::BareSLPVariant t_bare_slp,
-             bench::axes::DGCDASLPVariant t_dgcda_slp) {
+             bench::axes::DGCDASLPVariant t_dgcda_slp,
+             std::size_t t_sa_sampling = 0) {
   using namespace bench::axes;
   std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t> result;
 
@@ -112,16 +127,34 @@ MakeForCodec(TStorage t_storage, dret::Config& t_config,
         case GCDASLPVariant::CompactLOUDS: build(Tag<GetDocsSLP<TStorage, gcda::SLP_CompactLOUDS>>{}); break;
         case GCDASLPVariant::Combined:     build(Tag<GetDocsSLP<TStorage, gcda::SLP_Combined>>{}); break;
         case GCDASLPVariant::Light:
-        default:                           build(Tag<GetDocsSLP<TStorage, gcda::SLP_Light>>{}); break;
+        default: {
+          // PDL-GCDA-light: pin the SLP backing to the GCDA-light knee
+          // (block_size=1024, storing_factor=32 — see docs/gcda_report.md §6.1)
+          // independently of PDL's own (block_size, storing_factor). The default
+          // DocListIdxPDL ctor would leave the inner SLP at GetDocSLP's defaults
+          // (512, 4); the externally-supplied get_docs ctor lets us pass a
+          // pre-built GetDocSLP with the chosen operating point.
+          using TGetDocs = GetDocsSLP<TStorage, gcda::SLP_Light>;
+          using TIndex = TCodec<TStorage, TGetDocs>;
+          typename TGetDocs::Inner inner(t_storage, 1024, 32.0f);
+          TGetDocs get_docs(std::move(inner));
+          auto idx = std::make_shared<TIndex>(t_storage, get_docs,
+                                              t_block_size, t_storing_factor, lib_policy);
+          construct(*idx, t_config);
+          idx->load(t_config);
+          result = {idx, sdsl::size_in_bytes(*idx)};
+          break;
+        }
       }
       break;
     case GetDocEnum::SLP_NS:
       switch (t_bare_slp) {
-        case BareSLPVariant::Raw: build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_Raw>>{}); break;
-        case BareSLPVariant::DV:  build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_DV>>{});  break;
-        case BareSLPVariant::VV:  build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_VV>>{});  break;
+        case BareSLPVariant::Raw:  build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_Raw>>{});  break;
+        case BareSLPVariant::DV:   build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_DV>>{});   break;
+        case BareSLPVariant::VV:   build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_VV>>{});   break;
+        case BareSLPVariant::Diff: build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_Diff>>{}); break;
         case BareSLPVariant::IV:
-        default:                  build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_IV>>{});  break;
+        default:                   build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_IV>>{});   break;
       }
       break;
     case GetDocEnum::DSLP:
@@ -135,6 +168,24 @@ MakeForCodec(TStorage t_storage, dret::Config& t_config,
         default:                   build(Tag<GetDocsDSLP<TStorage, dgcda::SLP_Default>>{}); break;
       }
       break;
+    case GetDocEnum::SAPhiR: {
+      // SA-Phi-R: r-index-backed; no sampling parameter. Use the default
+      // (storage-only) DocListIdxPDL ctor — the inner GetDocSAPhi is
+      // default-constructed (sa_sampling=0 sentinel = no subsampling).
+      build(Tag<GetDocsSAPhi_R<TStorage>>{});
+      break;
+    }
+    case GetDocEnum::SAPhiSR: {
+      // SA-Phi-SR (sr-index, subsampled) deferred — see
+      // docs/pdl_rlcsa_baseline_plan.md. Fall through to SA-Phi-R if
+      // accidentally requested.
+      build(Tag<GetDocsSAPhi_R<TStorage>>{});
+      break;
+    }
+    case GetDocEnum::RLCSA: {
+      build(Tag<GetDocsRLCSA<TStorage>>{});
+      break;
+    }
     case GetDocEnum::DA:
     default:
       build(Tag<GetDocsDA<TStorage>>{});
@@ -158,20 +209,24 @@ Make(TStorage t_storage,
      bench::axes::PDLStoragePolicy t_policy,
      bench::axes::GCDASLPVariant t_gcda_slp = bench::axes::GCDASLPVariant::Light,
      bench::axes::BareSLPVariant t_bare_slp = bench::axes::BareSLPVariant::IV,
-     bench::axes::DGCDASLPVariant t_dgcda_slp = bench::axes::DGCDASLPVariant::Default) {
+     bench::axes::DGCDASLPVariant t_dgcda_slp = bench::axes::DGCDASLPVariant::Default,
+     std::size_t t_sa_sampling = 0) {
   using namespace bench::axes;
   const auto lib_policy = toPDLStoragePolicy(t_policy);
   switch (t_codec) {
     case PDLVariant::RP:
       return detail::MakeForCodec<IdxRP>(t_storage, t_config, t_block_size, t_storing_factor,
-                                         lib_policy, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+                                         lib_policy, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp,
+                                         t_sa_sampling);
     case PDLVariant::BC:
       return detail::MakeForCodec<IdxBC>(t_storage, t_config, t_block_size, t_storing_factor,
-                                         lib_policy, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+                                         lib_policy, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp,
+                                         t_sa_sampling);
     case PDLVariant::Plain:
     default:
       return detail::MakeForCodec<IdxPlain>(t_storage, t_config, t_block_size, t_storing_factor,
-                                            lib_policy, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+                                            lib_policy, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp,
+                                            t_sa_sampling);
   }
 }
 

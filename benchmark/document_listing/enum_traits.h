@@ -63,19 +63,25 @@ struct EnumTraits<GetDocEnum> {
   static constexpr GetDocEnum default_value() { return GetDocEnum::DA; }
 
   static std::optional<GetDocEnum> TryParse(std::string_view s) {
-    if (s == "da")     return GetDocEnum::DA;
-    if (s == "slp")    return GetDocEnum::SLP;
-    if (s == "slp_ns") return GetDocEnum::SLP_NS;
-    if (s == "dslp")   return GetDocEnum::DSLP;
+    if (s == "da")        return GetDocEnum::DA;
+    if (s == "slp")       return GetDocEnum::SLP;
+    if (s == "slp_ns")    return GetDocEnum::SLP_NS;
+    if (s == "dslp")      return GetDocEnum::DSLP;
+    if (s == "sa_phi_r")  return GetDocEnum::SAPhiR;
+    if (s == "sa_phi_sr") return GetDocEnum::SAPhiSR;
+    if (s == "rlcsa")     return GetDocEnum::RLCSA;
     return std::nullopt;
   }
 
   static const char* Name(GetDocEnum v) {
     switch (v) {
-      case GetDocEnum::DA:     return "DA";
-      case GetDocEnum::SLP:    return "SLP";
-      case GetDocEnum::SLP_NS: return "SLP-NS";
-      case GetDocEnum::DSLP:   return "DSLP";
+      case GetDocEnum::DA:      return "DA";
+      case GetDocEnum::SLP:     return "SLP";
+      case GetDocEnum::SLP_NS:  return "SLP-NS";
+      case GetDocEnum::DSLP:    return "DSLP";
+      case GetDocEnum::SAPhiR:  return "SA-Phi-R";
+      case GetDocEnum::SAPhiSR: return "SA-Phi-SR";
+      case GetDocEnum::RLCSA:   return "RLCSA";
     }
     return "UNKNOWN";
   }

@@ -54,11 +54,21 @@ enum class PDLStoragePolicy {
 // RMQ raw-range get-doc policy. The values DA / SLP / DSLP apply to both
 // RMQ-listing cores (SADA / ILCP / CILCP) and the PDL family. SLP_NS is only
 // meaningful for the RMQ family (it consumes the bare grammar::SLP<> cache).
+//
+// SAPhiR / SAPhiSR are RLCSA-style backings (PDL paper baseline): compute
+// DA[i] = rank1(doc_ends, SA[i]) where SA[i] is recovered via Phi-walks from
+// run-end samples (r-index, dense) or subsampled run-end samples (sr-index,
+// with subsample_rate as the runtime sa_sampling sub-axis). Shared class
+// (rmq::GetDocSAPhi) consumed by both RMQ cores and PDL via the same
+// dispatch pattern as DA/SLP/SLP_NS/DSLP. See docs/pdl_rlcsa_baseline_plan.md.
 enum class GetDocEnum {
   DA,
   SLP,
   SLP_NS,
   DSLP,
+  SAPhiR,   // r-index-backed (no sampling param; dense, RLCSA-analogue)
+  SAPhiSR,  // sr-index-backed (carries sa_sampling sub-axis; subsampled)
+  RLCSA,    // paper-faithful: batched CSA::RLCSA::locate(range) + getSequenceForPosition
 };
 
 // GCDA's TSLP choice. The RMQ-SLP path also consults this so SADA / ILCP /

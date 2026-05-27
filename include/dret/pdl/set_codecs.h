@@ -229,7 +229,15 @@ static_assert(SetCodec<PlainCodec<>>,
 // Templated on the underlying SLP and per-slot Chunks types so Task 18
 // can swap them; defaults match GCDA's chunk grammar setup so the same
 // type-hashed cache entries can be shared if needed.
-template <typename TSLP = grammar::SLP<>,
+// TSLP defaults to grammar::SLP with sdsl::int_vector<> rule + leaf containers
+// (bit-compressed) rather than grammar::SLP<>'s default std::vector — same
+// precedent as the GCDA combined/differential base-grammar fix
+// (docs/container_audit.md). The Stage-3 generic-action build path
+// (compress_if_iv lambda below) calls sdsl::util::bit_compress on
+// sdsl::int_vector<> fields, so this default is the bit-compressed stored
+// form. (Existing rp cache files keyed by the prior std::vector type-hash
+// will be rebuilt on first run.)
+template <typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>,
           typename TChunks = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
 class RPCodec {
  public:
