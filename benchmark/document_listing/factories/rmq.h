@@ -30,6 +30,7 @@
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/doc_list/doc_list_rmq.h"
 #include "dret/rmq/rmq_get_doc_policies.h"
+#include "dret/rmq/rmq_get_doc_rlcsa.h"
 
 #include "../axes.h"
 #include "dgcda.h"
@@ -68,6 +69,20 @@ using GetDocSLP_NS = dret::rmq::GetDocSLP_NS<TStorage, kWidth, TSLP>;
 // DGCDA build; other DGCDA variants (OTF/CRL/EV/DV/VV) select their own cache.
 template <typename TStorage, typename TDSLP = dgcda::SLP_Default>
 using GetDocDSLP = dret::rmq::GetDocDSLP<TStorage, kWidth, TDSLP>;
+
+// SA-Phi backings — RLCSA-style baseline. The dret::rmq::GetDocSAPhi class is
+// templated on the locate-index type so the same implementation serves both
+// r-index (dense, no sampling) and sr-index (subsampled, runtime sa_sampling).
+template <typename TStorage>
+using GetDocSAPhi_R  = dret::rmq::GetDocSAPhi<
+    TStorage, kWidth, sri::RIndex<TStorage, dret::Alphabet<>>>;
+template <typename TStorage>
+using GetDocSAPhi_SR = dret::rmq::GetDocSAPhi<
+    TStorage, kWidth, sri::SrIndexValidArea<TStorage, dret::Alphabet<>>>;
+
+// RLCSA backing — paper-faithful batched locate(range) + getSequenceForPosition.
+template <typename TStorage>
+using GetDocRLCSA = dret::rmq::GetDocRLCSA<TStorage, kWidth>;
 
 // Core template aliases. TGetDoc defaults to the DA backing.
 template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
@@ -209,6 +224,44 @@ MakeDSLP(TStorage t_storage, dret::Config& t_config,
   return {idx, sdsl::size_in_bytes(*idx)};
 }
 
+// Build one RMQ SA-Phi-R variant (r-index-backed; no sampling parameter).
+// The non-S core constructors accept either 1 arg (storage) or 3 args
+// (storage, bs, sf); for SA-Phi the inner GetDocSAPhi needs no per-core
+// (bs, sf), so we use the 1-arg form — the inner GetDoc is
+// default-constructed and its sa_sampling stays at 0 (the r-index sentinel,
+// meaning "no subsampling" — i.e. dense sampling).
+template <template <typename, typename> class TCoreT, typename TStorage>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeSAPhi_R(TStorage t_storage, dret::Config& t_config) {
+  using TCore = TCoreT<TStorage, GetDocSAPhi_R<TStorage>>;
+  using TIndex = Idx<TStorage, TCore>;
+  TCore core(t_storage);
+  auto idx = std::make_shared<TIndex>(t_storage, core);
+  construct(*idx, t_config);
+  idx->load(t_config);
+  return {idx, sdsl::size_in_bytes(*idx)};
+}
+
+// Build one RMQ-RLCSA variant (paper-faithful batched locate; no sampling knob).
+// Same shape as MakeSAPhi_R — 1-arg constructor (storage only).
+template <template <typename, typename> class TCoreT, typename TStorage>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeRLCSA(TStorage t_storage, dret::Config& t_config) {
+  using TCore = TCoreT<TStorage, GetDocRLCSA<TStorage>>;
+  using TIndex = Idx<TStorage, TCore>;
+  TCore core(t_storage);
+  auto idx = std::make_shared<TIndex>(t_storage, core);
+  construct(*idx, t_config);
+  idx->load(t_config);
+  return {idx, sdsl::size_in_bytes(*idx)};
+}
+
+// SA-Phi-SR (sr-index, subsampled) is deferred — see
+// docs/pdl_rlcsa_baseline_plan.md. The user chose sa_phi_r-only for this
+// stage. When SR is wired in, it will need either core-constructor
+// extensions to accept the sampling rate, or a separate
+// default-construct-then-set-sampling pattern on the inner GetDoc.
+
 template <template <typename, typename> class TCoreT, typename TStorage>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
 MakeOne(TStorage t_storage, dret::Config& t_config,
@@ -216,7 +269,8 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
         bench::axes::GetDocEnum t_get_doc,
         bench::axes::GCDASLPVariant t_gcda_slp,
         bench::axes::BareSLPVariant t_bare_slp,
-        bench::axes::DGCDASLPVariant t_dgcda_slp) {
+        bench::axes::DGCDASLPVariant t_dgcda_slp,
+        std::size_t t_sa_sampling = 0) {
   using bench::axes::GetDocEnum;
   using bench::axes::GCDASLPVariant;
   using bench::axes::BareSLPVariant;
@@ -256,6 +310,29 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
         case DGCDASLPVariant::Default:
         default:                   return MakeDSLP<TCoreT, TStorage, dgcda::SLP_Default>(t_storage, t_config, t_block_size, t_storing_factor);
       }
+    case GetDocEnum::SAPhiR:
+      return MakeSAPhi_R<TCoreT, TStorage>(t_storage, t_config);
+    case GetDocEnum::SAPhiSR:
+      // SA-Phi-SR deferred — fall through to SAPhi-R if requested.
+      return MakeSAPhi_R<TCoreT, TStorage>(t_storage, t_config);
+    case GetDocEnum::RLCSA: {
+      // RMQ × RLCSA is INCOMPATIBLE: RLCSA builds a GSA-style SA where each
+      // \x00 sequence separator gets a unique sort value (see utils.cpp
+      // simpleSuffixSort line 385), while dret's SA treats all \x01 separators
+      // as identical and compares across them. The two SAs cover the same
+      // user-suffix SET but in different orders, so dret's RMQ argmin doesn't
+      // map to the same suffix as RLCSA's compact[k-1-D]. SADA/ILCP miss docs
+      // when the marker-based early stop triggers on the swapped doc. CILCP
+      // happens to work (no early stop) but inefficiently. See
+      // docs/pdl_rlcsa_baseline_plan.md for details. Fall through to DA.
+      [[maybe_unused]] static const bool warned = [] {
+        std::cerr << "[factories/rmq] RMQ × RLCSA is unsupported (SA-ordering "
+                     "mismatch); falling through to DA. Use PDL × RLCSA for the "
+                     "paper-faithful baseline.\n";
+        return true;
+      }();
+      return MakeDA<TCoreT, TStorage>(t_storage, t_config);
+    }
     case GetDocEnum::DA:
     default:
       return MakeDA<TCoreT, TStorage>(t_storage, t_config);
@@ -320,6 +397,13 @@ MakeDSLP_S(TStorage t_storage, dret::Config& t_config,
   return {idx, sdsl::size_in_bytes(*idx)};
 }
 
+// NOTE: SA-Phi is not supported for the -S family cores (IlcpLikeSCore /
+// SadaSCore) — their 1-arg constructors don't accept the sa_sampling rate
+// the inner GetDocSAPhi needs. The MakeOneS_T dispatch below treats
+// SAPhiR / SAPhiSR as no-ops (falls through to DA). Sweep specs should not
+// list sada-s / ilcp-s / cilcp-s under sa_phi_r/sr. The non-S cores
+// (sada / ilcp / cilcp) cover SA-Phi via MakeSAPhi_R / MakeSAPhi_SR above.
+
 template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
 MakeOneS_T(TStorage t_storage, dret::Config& t_config,
@@ -327,7 +411,8 @@ MakeOneS_T(TStorage t_storage, dret::Config& t_config,
            bench::axes::GetDocEnum t_get_doc,
            bench::axes::GCDASLPVariant t_gcda_slp,
            bench::axes::BareSLPVariant t_bare_slp,
-           bench::axes::DGCDASLPVariant t_dgcda_slp) {
+           bench::axes::DGCDASLPVariant t_dgcda_slp,
+           std::size_t t_sa_sampling = 0) {
   using bench::axes::GetDocEnum;
   using bench::axes::GCDASLPVariant;
   using bench::axes::BareSLPVariant;
@@ -367,6 +452,12 @@ MakeOneS_T(TStorage t_storage, dret::Config& t_config,
         case DGCDASLPVariant::Default:
         default:                   return MakeDSLP_S<TCoreT, TStorage, TRunValues, dgcda::SLP_Default>(t_storage, t_config, t_block_size, t_storing_factor);
       }
+    case GetDocEnum::SAPhiR:
+    case GetDocEnum::SAPhiSR:
+    case GetDocEnum::RLCSA:
+      // SA-Phi and RLCSA unsupported for -S cores (1-arg constructors can't
+      // accept the inner GetDoc state they need). Safe fall-through to DA.
+      [[fallthrough]];
     case GetDocEnum::DA:
     default:
       return MakeDA_S<TCoreT, TStorage, TRunValues>(t_storage, t_config);
@@ -381,19 +472,20 @@ MakeOneS(TStorage t_storage, dret::Config& t_config,
          bench::axes::GCDASLPVariant t_gcda_slp,
          bench::axes::BareSLPVariant t_bare_slp,
          bench::axes::DGCDASLPVariant t_dgcda_slp,
-         bench::axes::RunValuesVariant t_run_values) {
+         bench::axes::RunValuesVariant t_run_values,
+         std::size_t t_sa_sampling = 0) {
   using bench::axes::RunValuesVariant;
   switch (t_run_values) {
     case RunValuesVariant::IV:
       return MakeOneS_T<TCoreT, TStorage, RunValues_IV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case RunValuesVariant::VV:
       return MakeOneS_T<TCoreT, TStorage, RunValues_VV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case RunValuesVariant::DV:
     default:
       return MakeOneS_T<TCoreT, TStorage, RunValues_DV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
   }
 }
 
@@ -409,19 +501,20 @@ MakeOneSada_S(TStorage t_storage, dret::Config& t_config,
               bench::axes::GCDASLPVariant t_gcda_slp,
               bench::axes::BareSLPVariant t_bare_slp,
               bench::axes::DGCDASLPVariant t_dgcda_slp,
-              bench::axes::PrevDocVariant t_prev_doc) {
+              bench::axes::PrevDocVariant t_prev_doc,
+              std::size_t t_sa_sampling = 0) {
   using bench::axes::PrevDocVariant;
   switch (t_prev_doc) {
     case PrevDocVariant::DV:
       return MakeOneS_T<TCoreT, TStorage, PrevDoc_DV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case PrevDocVariant::VV:
       return MakeOneS_T<TCoreT, TStorage, PrevDoc_VV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case PrevDocVariant::IV:
     default:
       return MakeOneS_T<TCoreT, TStorage, PrevDoc_IV>(
-          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+          t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
   }
 }
 
@@ -437,27 +530,28 @@ Make(TStorage t_storage, dret::Config& t_config,
      bench::axes::BareSLPVariant t_bare_slp,
      bench::axes::DGCDASLPVariant t_dgcda_slp = bench::axes::DGCDASLPVariant::Default,
      bench::axes::RunValuesVariant t_run_values = bench::axes::RunValuesVariant::DV,
-     bench::axes::PrevDocVariant t_prev_doc = bench::axes::PrevDocVariant::IV) {
+     bench::axes::PrevDocVariant t_prev_doc = bench::axes::PrevDocVariant::IV,
+     std::size_t t_sa_sampling = 0) {
   switch (t_core) {
     case CoreKind::ILCP:
       return detail::MakeOne<IlcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                        t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+                                        t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case CoreKind::CILCP:
       return detail::MakeOne<CilcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                         t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+                                         t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case CoreKind::SADA_S:
       return detail::MakeOneSada_S<SadaSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                               t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_prev_doc);
+                                               t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_prev_doc, t_sa_sampling);
     case CoreKind::ILCP_S:
       return detail::MakeOneS<IlcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                          t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values);
+                                          t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
     case CoreKind::CILCP_S:
       return detail::MakeOneS<CilcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                           t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values);
+                                           t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
     case CoreKind::SADA:
     default:
       return detail::MakeOne<SadaCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                        t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp);
+                                        t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
   }
 }
 

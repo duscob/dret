@@ -67,6 +67,11 @@ constexpr std::string_view kCilcpS = "cilcp_s";
 // per-variant stored-set codecs. kPDL is the umbrella; kTree is the
 // shared tree-topology cache; each variant (kPlain/kRP/kBC) owns its
 // own kSets payload, and kBC additionally owns kDict.
+// RLCSA sidecar cache (Track C of pdl_rlcsa_baseline_plan.md).
+// RLCSA writes its own on-disk files via writeTo(base); the key maps to the
+// file basename, not an SDSL typed-cache entry.
+constexpr std::string_view kRLCSA = "rlcsa";
+
 constexpr std::string_view kPDL = "pdl";
 constexpr std::string_view kPlain = "plain";
 constexpr std::string_view kRP = "rp";
@@ -140,6 +145,7 @@ struct Keys {
                 {conf::kRunValues, "cilcp_s_run_values"},
             },
         },
+        {conf::kRLCSA, "rlcsa"},
         {conf::kRmqNDoc, "rmq_n_doc"},
         {conf::kIlcpArray, "ilcp_array"},
         {

@@ -533,6 +533,19 @@ int main(int argc, char** argv) {
           ->ArgsProduct({block_sizes, storing_factors});
     }
 
+    if (HasVariant(rmq_get_doc_variants, GetDocEnum::RLCSA)) {
+      using GetDoc    = rmq_fac::GetDocRLCSA<GS>;
+      using SadaCore  = rmq_fac::SadaCore<GS, GetDoc>;
+      using IlcpCore  = rmq_fac::IlcpCore<GS, GetDoc>;
+      using CilcpCore = rmq_fac::CilcpCore<GS, GetDoc>;
+      using SadaIdx   = rmq_fac::Idx<GS, SadaCore>;
+      using IlcpIdx   = rmq_fac::Idx<GS, IlcpCore>;
+      using CilcpIdx  = rmq_fac::Idx<GS, CilcpCore>;
+      benchmark::RegisterBenchmark("DocListSADA-RLCSA", BM_ConstructBruteIdx<SadaIdx>, config, data_path);
+      benchmark::RegisterBenchmark("DocListILCP-RLCSA", BM_ConstructBruteIdx<IlcpIdx>, config, data_path);
+      benchmark::RegisterBenchmark("DocListCILCP-RLCSA", BM_ConstructBruteIdx<CilcpIdx>, config, data_path);
+    }
+
     // DGCDA — one construct benchmark per requested TSLP variant.
     namespace dgcda_fac = bench::factories::dgcda;
     auto register_dgcda = [&]<typename TIndex>(const char* suffix) {
@@ -574,25 +587,34 @@ int main(int argc, char** argv) {
         switch (pdl_v) {
           case PDLVariant::Plain:
             switch (pdl_gd) {
-              case GetDocEnum::DA:   register_pdl.template operator()<pdl_fac::IdxPlain<GS>>(pair); break;
-              case GetDocEnum::SLP:  register_pdl.template operator()<pdl_fac::IdxPlain<GS, pdl_fac::GetDocsSLP<GS>>>(pair); break;
-              case GetDocEnum::DSLP: register_pdl.template operator()<pdl_fac::IdxPlain<GS, pdl_fac::GetDocsDSLP<GS>>>(pair); break;
+              case GetDocEnum::DA:      register_pdl.template operator()<pdl_fac::IdxPlain<GS>>(pair); break;
+              case GetDocEnum::SLP:     register_pdl.template operator()<pdl_fac::IdxPlain<GS, pdl_fac::GetDocsSLP<GS>>>(pair); break;
+              case GetDocEnum::DSLP:    register_pdl.template operator()<pdl_fac::IdxPlain<GS, pdl_fac::GetDocsDSLP<GS>>>(pair); break;
+              case GetDocEnum::SAPhiR:  register_pdl.template operator()<pdl_fac::IdxPlain<GS, pdl_fac::GetDocsSAPhi_R<GS>>>(pair); break;
+              case GetDocEnum::SAPhiSR: register_pdl.template operator()<pdl_fac::IdxPlain<GS, pdl_fac::GetDocsSAPhi_R<GS>>>(pair); break;
+              case GetDocEnum::RLCSA:   register_pdl.template operator()<pdl_fac::IdxPlain<GS, pdl_fac::GetDocsRLCSA<GS>>>(pair); break;
               case GetDocEnum::SLP_NS: break;  // not a valid PDL backing
             }
             break;
           case PDLVariant::RP:
             switch (pdl_gd) {
-              case GetDocEnum::DA:   register_pdl.template operator()<pdl_fac::IdxRP<GS>>(pair); break;
-              case GetDocEnum::SLP:  register_pdl.template operator()<pdl_fac::IdxRP<GS, pdl_fac::GetDocsSLP<GS>>>(pair); break;
-              case GetDocEnum::DSLP: register_pdl.template operator()<pdl_fac::IdxRP<GS, pdl_fac::GetDocsDSLP<GS>>>(pair); break;
+              case GetDocEnum::DA:      register_pdl.template operator()<pdl_fac::IdxRP<GS>>(pair); break;
+              case GetDocEnum::SLP:     register_pdl.template operator()<pdl_fac::IdxRP<GS, pdl_fac::GetDocsSLP<GS>>>(pair); break;
+              case GetDocEnum::DSLP:    register_pdl.template operator()<pdl_fac::IdxRP<GS, pdl_fac::GetDocsDSLP<GS>>>(pair); break;
+              case GetDocEnum::SAPhiR:  register_pdl.template operator()<pdl_fac::IdxRP<GS, pdl_fac::GetDocsSAPhi_R<GS>>>(pair); break;
+              case GetDocEnum::SAPhiSR: register_pdl.template operator()<pdl_fac::IdxRP<GS, pdl_fac::GetDocsSAPhi_R<GS>>>(pair); break;
+              case GetDocEnum::RLCSA:   register_pdl.template operator()<pdl_fac::IdxRP<GS, pdl_fac::GetDocsRLCSA<GS>>>(pair); break;
               case GetDocEnum::SLP_NS: break;
             }
             break;
           case PDLVariant::BC:
             switch (pdl_gd) {
-              case GetDocEnum::DA:   register_pdl.template operator()<pdl_fac::IdxBC<GS>>(pair); break;
-              case GetDocEnum::SLP:  register_pdl.template operator()<pdl_fac::IdxBC<GS, pdl_fac::GetDocsSLP<GS>>>(pair); break;
-              case GetDocEnum::DSLP: register_pdl.template operator()<pdl_fac::IdxBC<GS, pdl_fac::GetDocsDSLP<GS>>>(pair); break;
+              case GetDocEnum::DA:      register_pdl.template operator()<pdl_fac::IdxBC<GS>>(pair); break;
+              case GetDocEnum::SLP:     register_pdl.template operator()<pdl_fac::IdxBC<GS, pdl_fac::GetDocsSLP<GS>>>(pair); break;
+              case GetDocEnum::DSLP:    register_pdl.template operator()<pdl_fac::IdxBC<GS, pdl_fac::GetDocsDSLP<GS>>>(pair); break;
+              case GetDocEnum::SAPhiR:  register_pdl.template operator()<pdl_fac::IdxBC<GS, pdl_fac::GetDocsSAPhi_R<GS>>>(pair); break;
+              case GetDocEnum::SAPhiSR: register_pdl.template operator()<pdl_fac::IdxBC<GS, pdl_fac::GetDocsSAPhi_R<GS>>>(pair); break;
+              case GetDocEnum::RLCSA:   register_pdl.template operator()<pdl_fac::IdxBC<GS, pdl_fac::GetDocsRLCSA<GS>>>(pair); break;
               case GetDocEnum::SLP_NS: break;
             }
             break;

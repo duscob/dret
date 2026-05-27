@@ -109,6 +109,26 @@ class DocListIdxPDL
         storing_factor_(t_storing_factor),
         policy_(t_policy) {}
 
+  // Externally-supplied get_docs variant. Used by the benchmark factory to pin
+  // the raw-range get-doc backing's parameters (e.g. the GCDA-light SLP's own
+  // block_size / storing_factor) to a chosen operating point — independently
+  // of PDL's own (block_size, storing_factor) above. The default ctor builds
+  // get_docs_ from {t_storage} only, which leaves the inner GCDA SLP at its
+  // default (512, 4); this ctor lets the caller pass a pre-built TGetDocs with
+  // the desired inner configuration.
+  DocListIdxPDL(const TStorage& t_storage,
+                const TGetDocs& t_get_docs,
+                uint32_t t_block_size = 512,
+                float t_storing_factor = 4.0f,
+                StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
+      : SchemeBase(TMergeSets()),
+        StorageBase(t_storage),
+        count_idx_(t_storage),
+        get_docs_(t_get_docs),
+        block_size_(t_block_size),
+        storing_factor_(t_storing_factor),
+        policy_(t_policy) {}
+
   size_type serialize(std::ostream& out,
                       sdsl::structure_tree_node* v,
                       const std::string& name) const override {

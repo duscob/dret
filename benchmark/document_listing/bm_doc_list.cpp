@@ -665,14 +665,18 @@ const char* PolicyValue(PDLStoragePolicy v) {
   }
 }
 
-// get-doc backend kind in keyed form: da / gcda / gcda-bare / gcda-diff.
+// get-doc backend kind in keyed form: da / gcda / gcda-bare / gcda-diff /
+// sa-phi-r / sa-phi-sr.
 const char* GetDocValue(GetDocEnum g) {
   switch (g) {
-    case GetDocEnum::SLP:    return "gcda";
-    case GetDocEnum::SLP_NS: return "gcda-bare";
-    case GetDocEnum::DSLP:   return "gcda-diff";
+    case GetDocEnum::SLP:     return "gcda";
+    case GetDocEnum::SLP_NS:  return "gcda-bare";
+    case GetDocEnum::DSLP:    return "gcda-diff";
+    case GetDocEnum::SAPhiR:  return "sa-phi-r";
+    case GetDocEnum::SAPhiSR: return "sa-phi-sr";
+    case GetDocEnum::RLCSA:   return "rlcsa";
     case GetDocEnum::DA:
-    default:                 return "da";
+    default:                  return "da";
   }
 }
 
@@ -802,41 +806,51 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
       const auto& pd_list = sada_s
           ? sw.prev_doc
           : std::vector<bench::axes::PrevDocVariant>{bench::axes::PrevDocVariant::IV};
+      // SA-sampling axis: only meaningful for SAPhiSR (sr-index subsample
+      // rate); SAPhiR and all other get-docs use a single sentinel value.
+      const auto sa_list = (gd == GetDocEnum::SAPhiSR)
+          ? sw.sa_sampling
+          : std::vector<std::size_t>{0};
       for (auto bs : bs_list) {
         for (auto sf : sf_list) {
           for (auto pair : inner_vec) {
             for (auto dslp : dslp_vec) {
               for (auto rv : rv_list) {
                 for (auto pd : pd_list) {
-                  KV kv;
-                  kv.push_back({"get-doc", GetDocValue(gd)});
-                  if (gd == GetDocEnum::SLP) {
-                    kv.push_back({"slp", SlpPlainValue(pair.first)});
-                  } else if (gd == GetDocEnum::SLP_NS) {
-                    kv.push_back({"slp-container", BareValue(pair.second)});
-                  } else if (gd == GetDocEnum::DSLP) {
-                    auto [span, cont] = DiffParts(dslp);
-                    kv.push_back({"span-length", span});
-                    kv.push_back({"slp-container", cont});
+                  for (auto sa : sa_list) {
+                    KV kv;
+                    kv.push_back({"get-doc", GetDocValue(gd)});
+                    if (gd == GetDocEnum::SLP) {
+                      kv.push_back({"slp", SlpPlainValue(pair.first)});
+                    } else if (gd == GetDocEnum::SLP_NS) {
+                      kv.push_back({"slp-container", BareValue(pair.second)});
+                    } else if (gd == GetDocEnum::DSLP) {
+                      auto [span, cont] = DiffParts(dslp);
+                      kv.push_back({"span-length", span});
+                      kv.push_back({"slp-container", cont});
+                    } else if (gd == GetDocEnum::SAPhiSR) {
+                      kv.push_back({"sa-sampling", IntStr(static_cast<std::uint32_t>(sa))});
+                    }
+                    if (needs_bs_sf) {
+                      kv.push_back({"block-size", IntStr(bs)});
+                      kv.push_back({"storing-factor", SfStr(sf)});
+                    }
+                    if (sada_s)      kv.push_back({"prev-doc", PrevDocValue(pd)});
+                    if (ilcp_s_like) kv.push_back({"run-values", RunValuesValue(rv)});
+                    std::string name = KeyedName(CoreName(core), kv);
+                    Factory<>::Config cfg{};
+                    cfg.index_t = core_idx;
+                    cfg.get_doc = gd;
+                    cfg.gcda_slp = pair.first;
+                    cfg.bare_slp = pair.second;
+                    cfg.dgcda_slp = dslp;
+                    cfg.block_size = needs_bs_sf ? bs : 512;
+                    cfg.storing_factor = needs_bs_sf ? sf : 4.0f;
+                    cfg.run_values = rv;
+                    cfg.prev_doc = pd;
+                    cfg.sa_sampling = sa;
+                    benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
                   }
-                  if (needs_bs_sf) {
-                    kv.push_back({"block-size", IntStr(bs)});
-                    kv.push_back({"storing-factor", SfStr(sf)});
-                  }
-                  if (sada_s)      kv.push_back({"prev-doc", PrevDocValue(pd)});
-                  if (ilcp_s_like) kv.push_back({"run-values", RunValuesValue(rv)});
-                  std::string name = KeyedName(CoreName(core), kv);
-                  Factory<>::Config cfg{};
-                  cfg.index_t = core_idx;
-                  cfg.get_doc = gd;
-                  cfg.gcda_slp = pair.first;
-                  cfg.bare_slp = pair.second;
-                  cfg.dgcda_slp = dslp;
-                  cfg.block_size = needs_bs_sf ? bs : 512;
-                  cfg.storing_factor = needs_bs_sf ? sf : 4.0f;
-                  cfg.run_values = rv;
-                  cfg.prev_doc = pd;
-                  benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
                 }
               }
             }
@@ -894,6 +908,46 @@ void RegisterQueryPDL(const bench::spec::PDLSweep& sw, Factory<>& factory,
             auto [span, cont] = DiffParts(v);
             emit({{"span-length", span}, {"slp-container", cont}},
                  GCDASLPVariant::Light, BareSLPVariant::IV, v);
+          }
+          break;
+        case GetDocEnum::SAPhiR:
+          // r-index-backed; no sampling sub-axis.
+          emit({}, GCDASLPVariant::Light, BareSLPVariant::IV, DGCDASLPVariant::Default);
+          break;
+        case GetDocEnum::SAPhiSR:
+          // sr-index-backed; fan out across sa_sampling values. Inner emit
+          // doesn't know about sa_sampling, so set cfg.sa_sampling around it.
+          // (One cell per sa_sampling × the existing emit grid.)
+          for (auto s : sw.sa_sampling) {
+            // Hack: stash sa_sampling in a shadow var captured by emit's
+            // cfg-builder. We need to thread it; replace emit's inner block
+            // with a tiny inline expansion to inject cfg.sa_sampling = s.
+            for (auto policy : sw.policy) {
+              for (auto bs : sw.block_size) {
+                for (auto sf : sw.storing_factor) {
+                  KV kv;
+                  kv.push_back({"codec", CodecValue(codec)});
+                  kv.push_back({"get-doc", GetDocValue(gd)});
+                  kv.push_back({"sa-sampling", IntStr(static_cast<std::uint32_t>(s))});
+                  kv.push_back({"policy", PolicyValue(policy)});
+                  kv.push_back({"block-size", IntStr(bs)});
+                  kv.push_back({"storing-factor", SfStr(sf)});
+                  Factory<>::Config cfg{};
+                  cfg.index_t = Factory<>::IndexEnum::PDL;
+                  cfg.block_size = bs;
+                  cfg.storing_factor = sf;
+                  cfg.get_doc = gd;
+                  cfg.pdl_variant = codec;
+                  cfg.pdl_storage_policy = policy;
+                  cfg.gcda_slp = GCDASLPVariant::Light;
+                  cfg.bare_slp = BareSLPVariant::IV;
+                  cfg.dgcda_slp = DGCDASLPVariant::Default;
+                  cfg.sa_sampling = s;
+                  benchmark::RegisterBenchmark(KeyedName("PDL", kv), BM_Query,
+                                                &factory, cfg, patterns, seq_size);
+                }
+              }
+            }
           }
           break;
         case GetDocEnum::DA:

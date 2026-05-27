@@ -22,6 +22,8 @@
 
 #include "dret/config.h"
 #include "dret/rmq/rmq_get_doc_policies.h"
+#include "dret/rmq/rmq_get_doc_rlcsa.h"
+#include "dret/rmq/rmq_get_doc_sa_phi.h"
 
 namespace dret::pdl {
 
@@ -106,6 +108,32 @@ template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>
 using PDLGetDocsSLP_NS = PDLRawRangePolicy<rmq::GetDocSLP_NS<TStorage, t_width, TSLP>>;
+
+// SA-Phi-backed (get-doc=sa_phi_r / sa_phi_sr) — the RLCSA-style baseline.
+// Computes DA[i] = rank1(doc_ends, SA[i]) where SA[i] is recovered via
+// Phi-walks. Two specialisations expose the dense r-index and the subsampled
+// sr-index variants; see docs/pdl_rlcsa_baseline_plan.md.
+template <typename TStorage = GenericStorage,
+          uint8_t t_width = 8,
+          typename TBvDocEnds = sdsl::sd_vector<>>
+using PDLGetDocsSAPhi_R = PDLRawRangePolicy<
+    rmq::GetDocSAPhi<TStorage, t_width,
+                      sri::RIndex<TStorage, dret::Alphabet<t_width>>,
+                      TBvDocEnds>>;
+
+// RLCSA-backed (get-doc=rlcsa) — paper-faithful baseline.
+// Wraps rmq::GetDocRLCSA which uses batched RLCSA::locate(range) +
+// getSequenceForPosition — no separate doc_ends bitvector needed.
+template <typename TStorage = GenericStorage, uint8_t t_width = 8>
+using PDLGetDocsRLCSA = PDLRawRangePolicy<rmq::GetDocRLCSA<TStorage, t_width>>;
+
+template <typename TStorage = GenericStorage,
+          uint8_t t_width = 8,
+          typename TBvDocEnds = sdsl::sd_vector<>>
+using PDLGetDocsSAPhi_SR = PDLRawRangePolicy<
+    rmq::GetDocSAPhi<TStorage, t_width,
+                      sri::SrIndexValidArea<TStorage, dret::Alphabet<t_width>>,
+                      TBvDocEnds>>;
 
 // Free-function construct() that forwards to the inner rmq::GetDoc*
 // construct() so PDL indexes can build their raw get-doc cache through
