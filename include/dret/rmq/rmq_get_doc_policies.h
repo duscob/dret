@@ -27,9 +27,23 @@
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"
+#include "dret/slp/differential_slp.h"
 #include "dret/slp/slp_tools.h"
 
 namespace dret {
+
+// Trait: is T an instantiation of dret::DifferentialSLP<...>?  Used by
+// GetDocSLP_NS::construct to switch construct overloads when the chosen
+// bare-SLP type is a DifferentialSLP (bare-diff) rather than a plain
+// grammar::SLP.
+template <typename T>
+struct is_differential_slp : std::false_type {};
+template <typename TSLP, typename TRoots, typename TSpanSums,
+          typename TSamples, typename TSampleRootsPos, typename TBV>
+struct is_differential_slp<DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>>
+    : std::true_type {};
+template <typename T>
+inline constexpr bool is_differential_slp_v = is_differential_slp<T>::value;
 
 // ExpandSLP overload for bare `grammar::SLP<>` (no sampled tree, no covers).
 // The default templated `ExpandSLP` (slp_tools.h) calls `Leaf`/`Position`/`Cover`,
@@ -269,9 +283,21 @@ void construct(GetDocSLP_NS<TStorage, t_width, TSLP>& /*unused*/, Config& t_conf
     return;
 
   auto event = sdsl::memory_monitor::event(key_slp);
-  auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
   TSLP slp;
-  dret::construct(slp, t_config, filepath_da);
+  if constexpr (is_differential_slp_v<TSLP>) {
+    // Bare-diff variant: TSLP is dret::DifferentialSLP<...>. Its construct
+    // overload (differential_slp.h:405) needs (config, block_size, cache_key)
+    // rather than (config, da_filepath). The base RePair grammar is bs-invariant
+    // (LoadOrBuildDiffGrammar caches it once), so the block_size only affects
+    // the per-span compact_seq sampling — pick a fixed sensible value so the
+    // cache is deterministic across callers using this get-doc policy.
+    dret::construct(slp, t_config, /*block_size=*/512u, key_slp);
+  } else {
+    // Plain bare-SLP variant: TSLP is grammar::SLP<...>. Construct from the DA
+    // file via dret::construct(grammar::SLP&, Config&, datafile).
+    auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
+    dret::construct(slp, t_config, filepath_da);
+  }
 }
 
 // Document-array lookup over a differential grammar-compressed SLP. The default
