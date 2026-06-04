@@ -72,6 +72,65 @@ std::vector<std::size_t> CollectGetDocsSorted(const TPolicy& policy,
   return out;
 }
 
+// Per-run Phi-walk reuse parity check: the SA-Phi range overload must emit
+// the same multiset of doc ids as DA (the canonical reference) for every
+// probed [sp, ep). Also exercises the single-position path so a regression
+// in either path against the other is caught.
+TEST_F(PDLGetDocsPolicyParityTest, SAPhi_RangeMatchesDA_AndMatchesSinglePos) {
+  using DAPolicy    = dret::pdl::PDLGetDocsDA<ExternalGenericStorage>;
+  using SAPhiPolicy = dret::pdl::PDLGetDocsSAPhi_R<ExternalGenericStorage>;
+
+  DAPolicy    da{    typename DAPolicy::Inner   {std::ref(storage_)} };
+  SAPhiPolicy saphi{ typename SAPhiPolicy::Inner{std::ref(storage_)} };
+
+  // DA is a no-op (cache built by the bootstrap above). SAPhi builds the
+  // r-index sidecar files (bwt_rle, samples, marks, mark_to_sample) the
+  // first time through; idempotent on rebuild.
+  construct(da,    config_);
+  construct(saphi, config_);
+
+  da.inner().load(config_);
+  saphi.inner().load(config_);
+
+  const std::size_t n = da.inner().size();
+  ASSERT_GT(n, 0u);
+
+  const std::vector<std::pair<std::size_t, std::size_t>> ranges = {
+      {0, 0},               // empty
+      {0, n},               // full
+      {0, 1},               // single first
+      {n - 1, n},           // single last
+      {0, n / 2},           // prefix
+      {n / 2, n},           // suffix
+      {n / 4, 3 * n / 4},   // mid-slice
+      {1, n - 1},           // strict interior
+      {2, 7},               // arbitrary small
+      {5, 5},               // empty mid
+  };
+
+  for (auto [sp, ep] : ranges) {
+    SCOPED_TRACE(::testing::Message() << "[" << sp << ", " << ep << ")");
+    auto da_out    = CollectGetDocsSorted(da, sp, ep);
+    auto saphi_out = CollectGetDocsSorted(saphi, sp, ep);
+
+    ASSERT_EQ(da_out.size(), ep - sp);
+    EXPECT_EQ(saphi_out.size(), da_out.size());
+    EXPECT_EQ(saphi_out, da_out) << "SA-Phi range disagrees with DA";
+
+    // Per-position: the range path should agree with the single-position
+    // path on every i in [sp, ep). Together with the multiset check above,
+    // this pins down the per-run walk to emit exactly DA[i] at each i.
+    std::vector<std::size_t> per_pos;
+    per_pos.reserve(ep - sp);
+    for (std::size_t i = sp; i < ep; ++i) {
+      per_pos.push_back(saphi.getDoc(i));
+    }
+    std::sort(per_pos.begin(), per_pos.end());
+    EXPECT_EQ(saphi_out, per_pos)
+        << "SA-Phi range disagrees with SA-Phi single-position";
+  }
+}
+
 TEST_F(PDLGetDocsPolicyParityTest, DA_SLP_DSLP_ReportIdenticalDocsAcrossRanges) {
   using DAPolicy   = dret::pdl::PDLGetDocsDA<ExternalGenericStorage>;
   using SLPPolicy  = dret::pdl::PDLGetDocsSLP<ExternalGenericStorage>;

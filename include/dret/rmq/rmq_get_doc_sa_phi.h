@@ -18,7 +18,7 @@
 //   - sri::SrIndexValidArea  — subsampled (subsample_rate runtime knob);
 //                              currently treated as RIndex; see plan §B.2.
 //
-// SA[i] algorithm:
+// SA[i] algorithm (single-position path, sa_at_):
 //   1. Find the BWT run r containing position i  →  bwt_rle.run_of_position(i).
 //   2. Look up the run-end position             →  [_, run_end] = run_range(r).
 //   3. Read the run-end SA sample                →  samples[r] + 1  =  SA[run_end].
@@ -27,6 +27,14 @@
 //   4. Walk Phi backward (run_end - i) times:
 //        sa = SA[run_end];  for k in (run_end..=i+1): sa = phi(sa).first;
 //      yields SA[i].
+//
+// Range-expansion path (range_get_doc_, operator()(b, e, report)):
+//   Iterate runs (not positions) via RLEStringS::splitInRuns(b, e, ...).
+//   For each run intersecting [b, e), seed sa = SA[run_end - 1] from the
+//   run-end sample, then walk Phi backward through the run *once*, reusing
+//   every intermediate SA value to report doc_at_(sa) for the positions
+//   that fall in [b, e). This drops the per-run cost from Θ((e-b)·L) (the
+//   trivial "call sa_at_(i) for each i in [b, e)") to Θ(L + (e-b)).
 //
 // All loaded items are shared (via the typed-cache + std::any storage map)
 // with `BruteRI` / `BruteSRI` / `GetDocBv` — no extra files on disk.
@@ -89,11 +97,18 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   // Range expansion [b, e). Mirrors the existing rmq::GetDoc* API so PDL's
   // PDLRawRangePolicy can wrap this verbatim.
+  //
+  // Delegates to range_get_doc_, which iterates BWT runs and reuses the
+  // intermediate SA values from a single per-run Phi-walk to emit doc ids
+  // for every position in [b, e). Order across positions is not guaranteed
+  // (per-run high-to-low, runs left-to-right); the sole consumer
+  // (DLSampledTreeScheme::Search) sort+uniques before emitting.
   template <typename TReport>
   void operator()(std::size_t t_b, std::size_t t_e, TReport& t_report) const {
-    for (std::size_t i = t_b; i < t_e; ++i) {
-      t_report((*this)(i));
-    }
+    std::function<void(std::size_t)> report = [&t_report](std::size_t d) {
+      t_report(d);
+    };
+    range_get_doc_(t_b, t_e, report);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
@@ -178,10 +193,47 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
     doc_at_ = [doc_ends_rank](std::size_t pos) -> std::size_t {
       return doc_ends_rank.get()(pos);
     };
+
+    // Range expansion: iterate runs (not positions). For each BWT run
+    // intersecting [b, e), seed sa from samples[run_rnk] (= SA[run_end - 1]),
+    // walk Phi backward through the run once, and report doc_at_(sa) for
+    // every position landing in [b, e). Phi-walk steps stay un-erased
+    // (phi captured by value); only the user report callback crosses the
+    // std::function<void(std::size_t)> boundary, once per emitted doc.
+    range_get_doc_ = [cref_bwt, cref_samples, phi, doc_at = doc_at_, n](
+        std::size_t b, std::size_t e,
+        const std::function<void(std::size_t)>& report) {
+      if (b >= e) return;
+      cref_bwt.get().splitInRuns(b, e, [&](auto run_rnk, auto /*c*/,
+                                            auto run_start, auto run_end_excl) {
+        std::size_t sa = (cref_samples.get()[run_rnk] + 1) % n;
+        std::size_t pos = run_end_excl - 1;
+        // Skip positions in [e, run_end_excl) — outside the query range.
+        while (pos >= e) {
+          sa = phi(sa).first;
+          --pos;
+        }
+        // Report positions in [max(b, run_start), min(e, run_end_excl)).
+        // splitInRuns guarantees the run intersects [b, e), so the report
+        // window is non-empty and pos starts inside it.
+        const std::size_t stop = b > run_start ? b : run_start;
+        while (true) {
+          report(doc_at(sa));
+          if (pos == stop) break;
+          sa = phi(sa).first;
+          --pos;
+        }
+      });
+    };
   }
 
   std::function<std::size_t(std::size_t)> sa_at_;   // i   -> SA[i]
   std::function<std::size_t(std::size_t)> doc_at_;  // pos -> rank1(doc_ends, pos)
+  // (b, e, report) -> reports doc_at_(SA[i]) for each i in [b, e), using a
+  // single Phi-walk per BWT run intersecting the range.
+  std::function<void(std::size_t, std::size_t,
+                     const std::function<void(std::size_t)>&)>
+      range_get_doc_;
   std::size_t sa_sampling_ = 0;
 };
 
