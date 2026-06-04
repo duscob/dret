@@ -823,7 +823,15 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
                     if (gd == GetDocEnum::SLP) {
                       kv.push_back({"slp", SlpPlainValue(pair.first)});
                     } else if (gd == GetDocEnum::SLP_NS) {
-                      kv.push_back({"slp-container", BareValue(pair.second)});
+                      // Mirror RegisterQuerySLPNS: bare-diff variants take the
+                      // diff-container axis (iv/ev/dv/vv) and add an explicit
+                      // slp=diff so the name doesn't collide with bare-iv.
+                      if (IsBareDiff(pair.second)) {
+                        kv.push_back({"slp", "diff"});
+                        kv.push_back({"slp-container", DiffContainerValue(pair.second)});
+                      } else {
+                        kv.push_back({"slp-container", BareValue(pair.second)});
+                      }
                     } else if (gd == GetDocEnum::DSLP) {
                       auto [span, cont] = DiffParts(dslp);
                       kv.push_back({"span-length", span});

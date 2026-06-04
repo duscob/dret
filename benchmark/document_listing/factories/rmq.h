@@ -52,6 +52,10 @@ using slp_ns::BareSLP_IV;
 using slp_ns::BareSLP_Raw;
 using slp_ns::BareSLP_DV;
 using slp_ns::BareSLP_VV;
+using slp_ns::BareSLP_Diff;
+using slp_ns::BareSLP_DiffEV;
+using slp_ns::BareSLP_DiffDV;
+using slp_ns::BareSLP_DiffVV;
 
 // GetDoc policy template aliases. The GetDocSLP TSLP default intentionally
 // matches gcda::SLP_Light, and GetDocDSLP's TSLP default matches the DGCDA
@@ -296,6 +300,14 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
           return MakeSLP_NS<TCoreT, TStorage, BareSLP_DV>(t_storage, t_config);
         case BareSLPVariant::VV:
           return MakeSLP_NS<TCoreT, TStorage, BareSLP_VV>(t_storage, t_config);
+        case BareSLPVariant::Diff:
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_Diff>(t_storage, t_config);
+        case BareSLPVariant::DiffEV:
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DiffEV>(t_storage, t_config);
+        case BareSLPVariant::DiffDV:
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DiffDV>(t_storage, t_config);
+        case BareSLPVariant::DiffVV:
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DiffVV>(t_storage, t_config);
         case BareSLPVariant::IV:
         default:
           return MakeSLP_NS<TCoreT, TStorage, BareSLP_IV>(t_storage, t_config);
@@ -438,6 +450,14 @@ MakeOneS_T(TStorage t_storage, dret::Config& t_config,
           return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DV, TRunValues>(t_storage, t_config);
         case BareSLPVariant::VV:
           return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_VV, TRunValues>(t_storage, t_config);
+        case BareSLPVariant::Diff:
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_Diff, TRunValues>(t_storage, t_config);
+        case BareSLPVariant::DiffEV:
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DiffEV, TRunValues>(t_storage, t_config);
+        case BareSLPVariant::DiffDV:
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DiffDV, TRunValues>(t_storage, t_config);
+        case BareSLPVariant::DiffVV:
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DiffVV, TRunValues>(t_storage, t_config);
         case BareSLPVariant::IV:
         default:
           return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_IV, TRunValues>(t_storage, t_config);
