@@ -21,6 +21,10 @@
 
 #include "dret/size_report.h"
 
+#ifdef DRET_DOC_LIST_PROFILE
+#include "dret/doc_list/search_profile.h"
+#endif
+
 DEFINE_string(pattern_code, "PLAIN", "Codification Algorithm for pattern: PLAIN, BASE64");
 
 //~~~~~~~
@@ -74,6 +78,10 @@ auto BM_MacroQuery = [](benchmark::State& t_state, auto t_make_index, const auto
 
   std::size_t total = 0;
 
+#ifdef DRET_DOC_LIST_PROFILE
+  dret::search_profile().reset();
+#endif
+
   for (auto _ : t_state) {
     total = 0;
     for (const auto& pattern : t_patterns) {
@@ -85,6 +93,19 @@ auto BM_MacroQuery = [](benchmark::State& t_state, auto t_make_index, const auto
   UpdateCounter(t_state, t_n, index_size, t_patterns.size(), total);
   appendCounters(t_state, sizes);
   t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
+#ifdef DRET_DOC_LIST_PROFILE
+  {
+    const auto& pr = dret::search_profile();
+    const double q = pr.n_queries ? static_cast<double>(pr.n_queries) : 1.0;
+    t_state.counters["prof_count_ns_x_q"] = pr.ns_count / q;
+    t_state.counters["prof_cover_ns_x_q"] = pr.ns_cover / q;
+    t_state.counters["prof_expand_ns_x_q"] = pr.ns_expand / q;
+    t_state.counters["prof_combine_ns_x_q"] = pr.ns_combine / q;
+    t_state.counters["prof_nodes_x_q"] = pr.n_nodes / q;
+    t_state.counters["prof_rawpos_x_q"] = pr.n_raw_positions / q;
+    t_state.counters["prof_docs_x_q"] = pr.n_docs / q;
+  }
+#endif
   {
     auto bm_name = t_state.name();
     std::string idx_name = bm_name.substr(bm_name.find('/') + 1);

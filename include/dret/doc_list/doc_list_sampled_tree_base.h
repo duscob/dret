@@ -10,6 +10,12 @@
 
 #include "dret/doc_list/doc_list_base.h"
 
+#ifdef DRET_DOC_LIST_PROFILE
+#include <chrono>
+
+#include "dret/doc_list/search_profile.h"
+#endif
+
 namespace dret {
 
 
@@ -26,11 +32,21 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
   DLSampledTreeScheme() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
+#ifdef DRET_DOC_LIST_PROFILE
+    using prof_clk = std::chrono::steady_clock;
+    const auto prof_t0 = prof_clk::now();
+#endif
     auto [sp, ep] = count(t_pattern);
+#ifdef DRET_DOC_LIST_PROFILE
+    const auto prof_t1 = prof_clk::now();
+#endif
 
     std::vector<std::pair<std::size_t, std::size_t>> raw_ranges;
     std::vector<std::size_t> nodes;
     computeCoverFull(sp, ep, raw_ranges, nodes);
+#ifdef DRET_DOC_LIST_PROFILE
+    const auto prof_t2 = prof_clk::now();
+#endif
 
     std::size_t total_raw = 0;
     for (const auto& r : raw_ranges) total_raw += r.second - r.first;
@@ -47,6 +63,9 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
 
     sort(docs.begin(), docs.end());
     docs.erase(unique(docs.begin(), docs.end()), docs.end());
+#ifdef DRET_DOC_LIST_PROFILE
+    const auto prof_t3 = prof_clk::now();
+#endif
 
     if (!nodes.empty()) {
       auto get_doc_set = [this](std::size_t t_i) {
@@ -54,6 +73,21 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
       };
       merge_sets_(nodes.begin(), nodes.end(), get_doc_set, docs);
     }
+#ifdef DRET_DOC_LIST_PROFILE
+    const auto prof_t4 = prof_clk::now();
+    {
+      using ns = std::chrono::nanoseconds;
+      auto& pr = dret::search_profile();
+      pr.ns_count += std::chrono::duration_cast<ns>(prof_t1 - prof_t0).count();
+      pr.ns_cover += std::chrono::duration_cast<ns>(prof_t2 - prof_t1).count();
+      pr.ns_expand += std::chrono::duration_cast<ns>(prof_t3 - prof_t2).count();
+      pr.ns_combine += std::chrono::duration_cast<ns>(prof_t4 - prof_t3).count();
+      ++pr.n_queries;
+      pr.n_nodes += nodes.size();
+      pr.n_raw_positions += total_raw;
+      pr.n_docs += docs.size();
+    }
+#endif
 
     for (const auto& doc : docs) {
       t_report(doc);
