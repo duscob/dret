@@ -81,27 +81,36 @@ using ExternalGS = std::reference_wrapper<sri::GenericStorage>;
 
 namespace cache_clean {
 
-// Delete every regular file under cache_dir whose filename starts with
-// file_prefix. Used to wipe a cell's variant-specific cache artefacts.
-// The shared artefacts (Text / SA / DocEnds / DA / LCP) don't start with
-// the per-cell prefix, so they survive.
-void DeleteByPrefix(const std::filesystem::path& cache_dir,
-                    const std::string& file_prefix) {
+// Delete every regular file under cache_dir named <file_prefix>...<file_suffix>.
+// SDSL writes cache files as "<key>_<basename>.sdsl", so the cell's key prefix
+// anchors the front and "_<basename>.sdsl" anchors the back. The shared
+// artefacts (Text / SA / DocEnds / DA / LCP) don't start with a per-cell key
+// prefix, so they survive.
+// Returns the number of files removed, so the caller can detect a prefix that
+// matches nothing — a silently ineffective rebuild is indistinguishable from a
+// fast one by timing alone.
+std::size_t DeleteByPrefix(const std::filesystem::path& cache_dir,
+                           const std::string& file_prefix,
+                           const std::string& file_suffix) {
   namespace fs = std::filesystem;
   std::error_code ec;
-  if (!fs::is_directory(cache_dir, ec)) return;
+  std::size_t removed = 0;
+  if (!fs::is_directory(cache_dir, ec)) return removed;
   for (const auto& entry : fs::directory_iterator(cache_dir, ec)) {
     if (ec) break;
     const auto name = entry.path().filename().string();
-    if (name.rfind(file_prefix, 0) == 0) {  // starts_with
-      fs::remove(entry.path(), ec);
-    }
+    if (name.size() < file_prefix.size() + file_suffix.size()) continue;
+    if (name.rfind(file_prefix, 0) != 0) continue;  // starts_with
+    if (name.compare(name.size() - file_suffix.size(), file_suffix.size(),
+                     file_suffix) != 0) continue;  // ends_with
+    if (fs::remove(entry.path(), ec)) ++removed;
   }
+  return removed;
 }
 
 // Build a rebuild closure for one construct-mode cell. Empty when disabled
-// or when no prefixes are given. The closure deletes every cache file whose
-// filename starts with <basename>_<key_prefix> for any prefix in the list.
+// or when no prefixes are given. The closure deletes every cache file named
+// <key_prefix>..._<basename>.sdsl for any prefix in the list.
 // Multi-prefix support: RMQ cells need to wipe both the per-core RMQ cache
 // (e.g. "sada_rmq_") and the shared rmq_n_doc helper (a one-element file
 // rebuilt almost for free), but never the SLP cache (shared with GCDA).
@@ -110,12 +119,26 @@ std::function<void()> MakeHook(bool enable,
                                std::string basename,
                                std::vector<std::string> key_prefixes) {
   if (!enable || key_prefixes.empty()) return {};
-  std::vector<std::string> file_prefixes;
-  file_prefixes.reserve(key_prefixes.size());
-  for (auto& kp : key_prefixes) file_prefixes.push_back(basename + "_" + kp);
-  return [cache_dir = std::move(cache_dir),
-          file_prefixes = std::move(file_prefixes)]() {
-    for (const auto& fp : file_prefixes) DeleteByPrefix(cache_dir, fp);
+  const std::string file_suffix = "_" + basename + ".sdsl";
+  return [cache_dir = std::move(cache_dir), file_suffix,
+          key_prefixes = std::move(key_prefixes),
+          first_call = std::make_shared<bool>(true)]() {
+    std::size_t removed = 0;
+    for (const auto& kp : key_prefixes) {
+      removed += DeleteByPrefix(cache_dir, kp, file_suffix);
+    }
+    // A rebuild that deletes nothing yields a warm-cache measurement while
+    // looking like a clean one. Report it on the first pass rather than let
+    // the cell masquerade as a cold construct.
+    if (*first_call && removed == 0) {
+      std::cerr << "WARNING: rebuild deleted no cache files for prefixes [";
+      for (std::size_t i = 0; i < key_prefixes.size(); ++i) {
+        std::cerr << (i ? ", " : "") << key_prefixes[i];
+      }
+      std::cerr << "] with suffix '" << file_suffix << "' in " << cache_dir
+                << " — timing will be cache-warm.\n";
+    }
+    *first_call = false;
   };
 }
 
