@@ -1,5 +1,5 @@
 # Configure benchmarks
-set(benchmark_LIBS dret ${LIBS} ${GFLAGS_LIB})
+set(benchmark_LIBS dret ${LIBS} gflags::gflags)
 
 if (NOT TARGET benchmark)
     include(ConfigGBenchmark)

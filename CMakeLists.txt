@@ -122,12 +122,7 @@ set(VNMEXTRACT_EXE "\"${${ExternalProjectName}_VNMEXTRACT}\"")
 target_compile_definitions(dret INTERFACE VNMEXTRACT_EXE=${VNMEXTRACT_EXE})
 
 
-# TODO use find_package(gflags) instead find_library(...)
-find_library(GFLAGS_LIB gflags)
-if (NOT GFLAGS_LIB)
-    include(ConfigGFlags)
-    set(GFLAGS_LIB gflags::gflags)
-endif ()
+include(ConfigGFlags)
 
 if (dret_build_tests)
     enable_testing()
@@ -172,7 +167,7 @@ find_package(Threads)
 if (dret_build_tools)
     include(ConfigRIndexLib)
 
-    list(APPEND tool_LIBS dret ${LIBS} ${GFLAGS_LIB})
+    list(APPEND tool_LIBS dret ${LIBS} gflags::gflags)
 
     find_package(Threads)
     list(APPEND tool_LIBS ${CMAKE_THREAD_LIBS_INIT})
