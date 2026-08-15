@@ -4,6 +4,10 @@
 
 #pragma once
 
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+
 #include <sdsl/enc_vector.hpp>
 #include <sdsl/int_vector.hpp>
 #include <sdsl/io.hpp>
@@ -109,6 +113,11 @@ class DifferentialLightSLP : public DifferentialSLP<TSLP, TRoots, TSpanSums, TSa
 
 // RePair the DA into a CNF SLP for the sampled tree. bs/sf/variant-independent,
 // so it can be cached once per collection and reused across all DGCDA cells.
+//
+// Note this compresses the *raw* DA, not the differential sequence: the sampled
+// tree's nodes carry document-id sets accumulated by AddSet, which are only
+// well-defined over the raw DA. The differential encoding lives in the base
+// grammar (DifferentialSLP::BuildBaseGrammar), not here.
 inline grammar::SLP<> BuildDiffCnfSlp(const sdsl::int_vector<>& da) {
   const auto n = da.size();
   std::vector<int> da_vec(n);
@@ -118,6 +127,30 @@ inline grammar::SLP<> BuildDiffCnfSlp(const sdsl::int_vector<>& da) {
   grammar::RePairEncoder<true> encoder;
   auto wrapper = grammar::BuildSLPWrapper(slp_cnf);
   encoder.Encode(da_vec.begin(), da_vec.end(), wrapper);
+  return slp_cnf;
+}
+
+// Same result, built from the external irepair grammar that doc_list_gcda.h
+// already produces for this very DA, instead of re-running RePair in-process.
+//
+// The in-process grammar::RePairBasicEncoder degrades pathologically on some
+// document arrays -- on concat_1000_001 it ran >45 h without finishing, with
+// 80% of samples in grammar::searchHash (hash saturation). The external
+// irepair compressed the same DA in 479 s. RePairReader<true> and
+// RePairEncoder<true> share the BalanceTreeByWeight completion handler
+// verbatim, so the CNF shape is unchanged. See docs/bug_dgcda_repair_hang.md.
+//
+// t_da_file must be the same path doc_list_gcda.h passes to REPAIR_EXE, i.e.
+// sdsl::cache_file_name<std::vector<int>>(config.keys[kDA], config).
+inline grammar::SLP<> BuildDiffCnfSlpFromRePairFiles(const std::string& t_da_file) {
+  if (!std::filesystem::exists(t_da_file + ".R") && REPAIR_EXE) {
+    std::string cmd = REPAIR_EXE + (" " + t_da_file);
+    std::system(cmd.c_str());
+  }
+  grammar::SLP<> slp_cnf;
+  grammar::RePairReader<true> re_pair_reader;
+  auto wrapper = grammar::BuildSLPWrapper(slp_cnf);
+  re_pair_reader.Read(t_da_file, wrapper);
   return slp_cnf;
 }
 
@@ -228,7 +261,9 @@ void construct(DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSampl
   if (sdsl::cache_file_exists<grammar::SLP<>>(key_cnf, t_config)) {
     sdsl::load_from_cache(cnf, key_cnf, t_config, true);
   } else {
-    cnf = BuildDiffCnfSlp(da);
+    const auto filepath_da =
+        sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
+    cnf = BuildDiffCnfSlpFromRePairFiles(filepath_da);
     sdsl::store_to_cache(cnf, key_cnf, t_config, true);
   }
 
