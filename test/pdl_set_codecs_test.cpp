@@ -543,12 +543,17 @@ TEST(PDLBCCodec, AllDocSentinelExpandsBelowNDoc) {
 // must populate when vnmextract finds bicliques, and round-trip
 // cleanly through serialize/load.
 //
-// 12 slots that all share the same 8-element doc set is dense enough
-// for vnmextract to extract at least one biclique under the codec's
-// configured (bcsizes=10,5,2) — n_rules > 0 is therefore expected. If
-// it ever ceases to hold (e.g., new vnmextract version), the test
-// still validates the round-trip; only the >0 guard becomes a soft
-// signal.
+// 12 slots sharing the same 8-element doc set is dense enough for vnmextract to
+// extract at least one biclique — but only under fixture-scale mining
+// parameters, which this test now sets explicitly. The codec's defaults are
+// drl's production values (min_bicliques=500, bcsizes=5000,500,100,50,30,15),
+// which find nothing in a 12-slot fixture. That is deliberate: those values
+// used to be the default for real collections too, costing >55 h on a single DA
+// row of a 671 MB collection that takes 218 s at drl's settings, for 0.15% less
+// space. See docs/bug_pdlbc_parameters.md.
+//
+// If the >0 guard ever ceases to hold (e.g. a new vnmextract version), the test
+// still validates the round-trip; only that guard becomes a soft signal.
 TEST(PDLBCCodec, RulesAndBlocksRoundTripWhenBicliquesExtracted) {
   constexpr std::size_t kNDoc = 16;
   std::vector<StoredSet> sets;
@@ -556,6 +561,7 @@ TEST(PDLBCCodec, RulesAndBlocksRoundTripWhenBicliquesExtracted) {
     sets.push_back({false, {0, 1, 2, 3, 4, 5, 6, 7}});
   }
   BCCodec<> codec;
+  codec.SetMiningParams({"1", "10,5,2", "4"});
   codec.Build(sets.size(), SetSource(sets), kNDoc);
 
   EXPECT_GT(codec.n_rules(), 0u)

@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <istream>
 #include <iterator>
 #include <ostream>
@@ -34,6 +35,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -354,7 +356,49 @@ class BCCodec {
 
   using TSelect1 = typename TBitvector::select_1_type;
 
+  // vnmextract mining parameters, matching its positional argv:
+  //
+  //   vnmextract <graph> <format> <shingle_size> <iters> <bcsizes> <out> <num_hashes>
+  //
+  // format=1 (binary) and shingle_size=1 are fixed by runVnmextract; the other
+  // three are these. Names follow vnmextract's own usage string rather than
+  // what they might sound like:
+  //
+  //   min_bicliques (argv[4], `iters` upstream) is NOT a node-degree cutoff.
+  //     It is a minimum-yield stopping rule. Each pass mines at the current
+  //     bcsize, then compares the number of bicliques found against it; on a
+  //     smaller yield the miner drops to the next bcsize, and stops once the
+  //     list is exhausted. See the loop at the end of vnmextract.cpp main().
+  //   bcsizes (argv[5]) is the descending list of target biclique sizes.
+  //   num_hashes (argv[7]) is the number of min-hash functions used for
+  //     shingling, not a count of shingles.
+  //
+  // Defaults are drl's production values (drl/external/doclist-env/build_pdl):
+  // 500, 5000,500,100,50,30,15, and 4. drl used 1000 and 8 for its single
+  // largest (1.09 GB) collection, enwiki-big.
+  //
+  // These were previously hardcoded to 1 / 10,5,2 so that small test fixtures
+  // would still yield bicliques — but nothing confined that to fixtures, and it
+  // applied to real collections too. min_bicliques=1 means every pass keeps
+  // mining at the current size until one yields literally zero, and mining down
+  // to bcsize=2 continues long past where drl stopped. Measured: 659 mining
+  // iterations on a 100 MB collection, 17.6x slower on `page` for 0.15% less
+  // space, and >55 h without finishing one DA row on a 671 MB collection that
+  // takes 218 s at these defaults. See docs/bug_pdlbc_parameters.md.
+  //
+  // Fixtures that need bicliques out of a tiny input must opt in explicitly via
+  // SetMiningParams — see PDLBCCodec.RulesAndBlocksRoundTripWhenBicliquesExtracted.
+  struct MiningParams {
+    std::string min_bicliques = "500";
+    std::string bcsizes = "5000,500,100,50,30,15";
+    std::string num_hashes = "4";
+  };
+
   BCCodec() = default;
+
+  void SetMiningParams(MiningParams t_params) { mining_ = std::move(t_params); }
+
+  const MiningParams& mining_params() const { return mining_; }
 
   template <typename TGetSetAt>
   void Build(std::size_t t_n_slots, TGetSetAt&& t_get_set_at, std::size_t t_n_doc) {
@@ -389,7 +433,23 @@ class BCCodec {
     std::uint32_t total_edges = 0;
     for (std::size_t s = 0; s < t_n_slots; ++s) {
       const auto& set = slot_sets[s];
-      if (set.contains_all || set.docs.empty()) continue;
+      // Singletons are excluded from the graph, matching the reference
+      // implementation (rlcsa document_graph.cpp:209, which writes them to a
+      // separate .singletons file with the note "The presence of singletons
+      // greatly slows down the search for bicliques"). A degree-1 node cannot
+      // participate in a biclique -- that needs at least two documents on the
+      // document side -- so it is pure search-space dilution.
+      //
+      // Measured on version_0100_100 at (1024,8): 618,288 of 2,428,115 graph
+      // nodes (25.5%) were singletons. They inflate the row count that
+      // vnmextract shingles over, so min-hash clusters fill up with nodes that
+      // can never contribute a biclique -- which both slows every pass and
+      // lowers its yield. See docs/bug_pdlbc_parameters.md.
+      //
+      // Stage 3 below is unaffected: a slot absent from the graph simply has
+      // no rule refs and emits its documents verbatim, which is exactly how
+      // the reference treated its .singletons entries.
+      if (set.contains_all || set.docs.empty() || set.docs.size() == 1) continue;
       // drl convention: slot node id = n_doc + 1 + slot, written negative;
       // doc id is 1-based (doc + 1).
       auto node_id = static_cast<std::int32_t>(t_n_doc + 1 + s);
@@ -565,18 +625,45 @@ class BCCodec {
     }
   }
 
-  static void runVnmextract(const std::string& graph_path, const std::string& out_prefix) {
-    // Args mirror drl/external/doclist-env/build_pdl with smaller bcsizes
-    // to handle small fixtures. Format=1, shingle_size=1, threshold=1,
-    // bcsizes=10,5,2, num_shingles=4. Suppress stdout/stderr to keep test
-    // output clean.
+  // Runs the external biclique miner. Throws if it cannot be run at all.
+  //
+  // This used to be `(void)rc` with stdout and stderr sent to /dev/null, on the
+  // reasoning that vnmextract legitimately emits no biclique files when there
+  // is nothing compressible. That is true, but it made three very different
+  // situations indistinguishable: no bicliques found, the miner crashing, and
+  // the binary not existing at all. The last one is not hypothetical --
+  // `bm_doc_list` had no build dependency on the dsextract external project, so
+  // any fresh build tree produced a binary whose VNMEXTRACT_EXE pointed at a
+  // missing file. Every PDL-BC build then silently reported zero rules, which
+  // is indistinguishable from a real measurement and was mistaken for one.
+  //
+  // So: a missing or non-executable binary is a hard error, and a non-zero exit
+  // is reported on stderr rather than swallowed. Producing no bicliques remains
+  // perfectly valid and is left to the caller to interpret.
+  void runVnmextract(const std::string& graph_path, const std::string& out_prefix) const {
+    const std::string exe = VNMEXTRACT_EXE;
+    std::error_code ec;
+    if (!std::filesystem::exists(exe, ec) || ec) {
+      throw std::runtime_error(
+          "BCCodec: vnmextract not found at '" + exe +
+          "'. PDL-BC cannot be built. Ensure the dsextract external project is "
+          "built (cmake --build <dir> --target dsextract).");
+    }
+
+    // <graph> format=1 shingle_size=1 <iters> <bcsizes> <out> <num_hashes>
     std::ostringstream cmd;
-    cmd << VNMEXTRACT_EXE << " " << graph_path << " 1 1 1 10,5,2 " << out_prefix
-        << " 4 >/dev/null 2>&1";
-    int rc = std::system(cmd.str().c_str());
-    // We tolerate any non-zero exit: vnmextract may produce no biclique
-    // files when the input has nothing compressible, which is fine.
-    (void)rc;
+    cmd << exe << " " << graph_path << " 1 1 " << mining_.min_bicliques << " "
+        << mining_.bcsizes << " " << out_prefix << " " << mining_.num_hashes
+        << " >/dev/null 2>&1";
+    const int rc = std::system(cmd.str().c_str());
+    if (rc != 0) {
+      // Not fatal -- the caller falls back to verbatim sets -- but it must be
+      // visible, because a silent failure looks exactly like "nothing to
+      // compress" in the resulting index.
+      std::cerr << "BCCodec: warning: vnmextract exited with status " << rc
+                << " (graph=" << graph_path << "); continuing with whatever "
+                   "biclique files it produced." << std::endl;
+    }
   }
 
   // Parse `<prefix>-biclique-it-N.txt` files for N = 0, 1, 2, ... until
@@ -663,6 +750,9 @@ class BCCodec {
     blocks_ = TIntVector(tmp_blocks);
     block_borders_ = TBitvector(tmp_borders);
   }
+
+  // Not serialized: it only affects Build, never the built structure.
+  MiningParams mining_;
 
   std::size_t n_doc_ = 0;
   std::size_t n_slots_ = 0;
