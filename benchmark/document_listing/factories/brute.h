@@ -36,4 +36,13 @@ using IdxSr = dret::DocListIdxBrute<
     dret::Alphabet<>,
     sri::SrIndexValidArea<TStorage>>;
 
+// The same shape, named for construct mode. DocListIdxBrute's own default
+// locate index is sri::SrIdxGeneric<SrIndexValidArea<...>, 16>, which binds
+// the subsample rate at compile time; construct mode has to cover whatever
+// sampling_size values the spec lists, so it names SrIndexValidArea directly
+// and passes the rate to the constructor. That is all SrIdxGeneric does
+// internally -- it exists only to expose a one-argument (storage) ctor.
+template <typename TStorage>
+using IdxSrConstruct = IdxSr<TStorage>;
+
 }  // namespace bench::factories::brute

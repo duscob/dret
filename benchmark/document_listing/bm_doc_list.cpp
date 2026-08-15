@@ -372,6 +372,45 @@ void BM_ConstructBrute(benchmark::State& t_state, dret::Config t_config,
   t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
 }
 
+// Construct kernel for the sr-index brute baseline.
+//
+// Separate from BM_ConstructBrute because the subsample rate is a runtime
+// value that selects the "<rate>_" cache-key prefix, so it has to be baked
+// into the index object rather than merely passed alongside it: construct()
+// finishes by load()ing the index's own locate member, and a default-built
+// sri::SrIndexValidArea has an empty prefix and would look for unprefixed
+// keys. Hence the two-argument ctor here, and the rate also handed to
+// construct() for the temporary it builds internally.
+//
+// Before this existed, construct mode silently skipped `brute kind=sr-index`,
+// so the run samples had to be produced out-of-band by the sr-index project's
+// bm_construct_ri -- which is what coupled the two projects through the shared
+// cache directory. No rebuild hook: --rebuild is still not wired for brute.
+void BM_ConstructBruteSr(benchmark::State& t_state, dret::Config t_config,
+                         std::size_t subsample_rate, bool memory_trace) {
+  using TStorage = dret::GenericStorage;
+  using TIndex = bench::factories::brute::IdxSrConstruct<TStorage>;
+  using TLocateIdx = sri::SrIndexValidArea<TStorage, dret::Alphabet<>>;
+
+  TIndex index{TStorage{}, TLocateIdx{TStorage{}, subsample_rate}};
+  std::int64_t first_iter_ns = -1;
+  for (auto _ : t_state) {
+    const auto t0 = std::chrono::steady_clock::now();
+    sdsl::memory_monitor::start();
+    construct(index, t_config, subsample_rate);
+    sdsl::memory_monitor::stop();
+    const auto t1 = std::chrono::steady_clock::now();
+    if (first_iter_ns < 0) {
+      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    }
+  }
+  WarnIfWarm(t_state, first_iter_ns, false);
+  if (memory_trace) WriteMemoryTrace(t_state);
+  SetupConstructCounters(t_state, t_config, 0, 0);
+  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
+  t_state.counters["s"] = static_cast<double>(subsample_rate);
+}
+
 template <typename TIndex>
 void BM_ConstructGCDAFamily(benchmark::State& t_state, dret::Config t_config,
                              std::uint32_t bs, float sf,
@@ -1281,8 +1320,16 @@ void RegisterConstructBrute(const bench::spec::BruteSweep& sw, dret::Config& con
       benchmark::RegisterBenchmark("BruteRI",
           BM_ConstructBrute<dret::DocListIdxBrute<>>, config,
           std::function<void()>{}, cc.memory_trace);
+    } else {
+      // One cell per sampling rate, named exactly as RegisterQueryBrute names
+      // it: the rate is part of the cache-key prefix, so a construct cell and
+      // a query cell only line up if their rates match.
+      for (auto s : sw.sampling_size) {
+        const auto name = KeyedName("BruteSRI", {{"sampling", std::to_string(s)}});
+        benchmark::RegisterBenchmark(name, BM_ConstructBruteSr, config,
+                                     static_cast<std::size_t>(s), cc.memory_trace);
+      }
     }
-    // sr-index construct path is not exposed today; skip.
   }
 }
 

@@ -106,6 +106,38 @@ void construct(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_inde
   t_index.load(t_config);
 }
 
+// Overload for locate indexes that take the subsample rate as a runtime
+// constructor argument (the sri::SrIndex family) rather than as a template
+// parameter (sri::SrIdxGeneric, which is only a thin wrapper forwarding a
+// compile-time rate to this same constructor).
+//
+// Construct mode needs this because the spec's sampling_size is a list of
+// runtime values; binding the rate at compile time would restrict it to a
+// fixed set. The rate selects the "<rate>_" cache-key prefix
+// (sri::SrIndex::setupKeyNames), so it must match the rate the query side
+// later loads with, or the load fails with a missing "<rate>_bwt_run_*" key.
+//
+// t_index must already carry the same rate: this ends by load()ing t_index's
+// own locate index member, and a default-constructed one has an empty key
+// prefix.
+template <typename TStorage, typename TAlphabet, typename TLocateIdx, typename TGetDoc>
+void construct(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_index,
+               Config& t_config,
+               std::size_t t_subsample_rate) {
+  if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
+    auto event = sdsl::memory_monitor::event("Text");
+    ConstructText<TAlphabet::int_width>(t_config);
+  }
+
+  TLocateIdx locate_index(t_index.storage(), t_subsample_rate);
+  construct(locate_index, t_config.data_path, t_config);
+
+  TGetDoc get_doc(t_index.storage());
+  construct(get_doc, t_config);
+
+  t_index.load(t_config);
+}
+
 //~~~~~~~
 
 
