@@ -549,6 +549,49 @@ void BM_ConstructRMQ_NS(benchmark::State& t_state, dret::Config t_config,
   if (memory_trace) WriteSizesSidecar(t_state, sizes);
 }
 
+// PDL with a GCDA-light SLP backing, pinned to the GCDA-light knee
+// (block_size=1024, storing_factor=32) independently of PDL's own (bs, sf).
+//
+// This mirrors the query factory (factories/pdl.h): it constructs the inner
+// GetDocSLP explicitly at that operating point, because the plain 4-arg
+// DocListIdxPDL ctor would leave the inner SLP at GetDocSLP's own defaults of
+// (512, 4). Construct used that plain ctor, so it built a (512,4) backing the
+// query never reads while the query built the (1024,32) one itself -- the last
+// thing keeping run_unit.sh's stage B alive after the missing get_doc cases
+// were added. It is also why 1024-32_gcda_docs showed up as one of the most
+// duplicated artifacts across partitions: every partition holding any PDL
+// get_doc=slp cell needs that same pinned backing.
+template <typename TIndex, typename TGetDocs>
+void BM_ConstructPDLGCDALight(benchmark::State& t_state, dret::Config t_config,
+                              dret::pdl::StoragePolicy t_policy,
+                              std::uint32_t bs, float sf,
+                              std::function<void()> rebuild_hook, bool memory_trace) {
+  GS storage;
+  typename TGetDocs::Inner inner(storage, 1024, 32.0f);
+  TGetDocs get_docs(std::move(inner));
+  TIndex index(storage, get_docs, bs, sf, t_policy);
+  std::int64_t first_iter_ns = -1;
+  for (auto _ : t_state) {
+    if (rebuild_hook) {
+      t_state.PauseTiming();
+      rebuild_hook();
+      t_state.ResumeTiming();
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    sdsl::memory_monitor::start();
+    construct(index, t_config);
+    sdsl::memory_monitor::stop();
+    const auto t1 = std::chrono::steady_clock::now();
+    if (first_iter_ns < 0) {
+      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    }
+  }
+  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
+  if (memory_trace) WriteMemoryTrace(t_state);
+  SetupConstructCounters(t_state, t_config, bs, sf);
+  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
+}
+
 template <typename TIndex>
 void BM_ConstructPDL(benchmark::State& t_state, dret::Config t_config,
                      dret::pdl::StoragePolicy t_policy,
@@ -1311,9 +1354,39 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
           case PDLVariant::Plain:
             switch (gd) {
               case GetDocEnum::DA:   reg.template operator()<IdxPlain<GS>>(); break;
-              case GetDocEnum::SLP:  reg.template operator()<IdxPlain<GS, GetDocsSLP<GS>>>(); break;
+              case GetDocEnum::SLP: {
+                // Pinned GCDA-light backing at (1024,32) -- must match the query
+                // factory exactly, see BM_ConstructPDLGCDALight.
+                using TGD = GetDocsSLP<GS, bench::factories::gcda::SLP_Light>;
+                for (auto bs : sw.block_size) {
+                  for (auto sf : sw.storing_factor) {
+                    const auto cell_name = base_name + BsSfSuffix(bs, sf);
+                    auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
+                                                      {PDLKeyPrefix(bs, sf, codec, policy)});
+                    benchmark::RegisterBenchmark(cell_name,
+                        BM_ConstructPDLGCDALight<IdxPlain<GS, TGD>, TGD>,
+                        config, lib_policy, bs, sf, hook, cc.memory_trace);
+                  }
+                }
+                break;
+              }
               case GetDocEnum::DSLP: reg.template operator()<IdxPlain<GS, GetDocsDSLP<GS>>>(); break;
-              case GetDocEnum::SLP_NS: break;
+              // Bare-SLP-backed: one cell per bare_slp variant, mirroring the
+              // query factory's dispatch (factories/pdl.h). This was a bare
+              // `break`, so construct silently produced nothing while the query
+              // spec asked for it -- the last of the five (family, get_doc)
+              // combinations that forced run_unit.sh's stage B to exist.
+              case GetDocEnum::SLP_NS:
+                for (auto v : sw.bare_slp) {
+                  switch (v) {
+                    case BareSLPVariant::Raw:  reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Raw>>>();  break;
+                    case BareSLPVariant::DV:   reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DV>>>();   break;
+                    case BareSLPVariant::VV:   reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_VV>>>();   break;
+                    case BareSLPVariant::Diff: reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>>>(); break;
+                    default:                   reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_IV>>>();   break;
+                  }
+                }
+                break;
             // r-index- / RLCSA-backed get-doc. The PDL tree still has its
             // (bs,sf) axis -- that sampling is independent of how the DA is
             // read -- so these reuse the same reg() lambda. Absent before, which
@@ -1329,9 +1402,39 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
           case PDLVariant::RP:
             switch (gd) {
               case GetDocEnum::DA:   reg.template operator()<IdxRP<GS>>(); break;
-              case GetDocEnum::SLP:  reg.template operator()<IdxRP<GS, GetDocsSLP<GS>>>(); break;
+              case GetDocEnum::SLP: {
+                // Pinned GCDA-light backing at (1024,32) -- must match the query
+                // factory exactly, see BM_ConstructPDLGCDALight.
+                using TGD = GetDocsSLP<GS, bench::factories::gcda::SLP_Light>;
+                for (auto bs : sw.block_size) {
+                  for (auto sf : sw.storing_factor) {
+                    const auto cell_name = base_name + BsSfSuffix(bs, sf);
+                    auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
+                                                      {PDLKeyPrefix(bs, sf, codec, policy)});
+                    benchmark::RegisterBenchmark(cell_name,
+                        BM_ConstructPDLGCDALight<IdxRP<GS, TGD>, TGD>,
+                        config, lib_policy, bs, sf, hook, cc.memory_trace);
+                  }
+                }
+                break;
+              }
               case GetDocEnum::DSLP: reg.template operator()<IdxRP<GS, GetDocsDSLP<GS>>>(); break;
-              case GetDocEnum::SLP_NS: break;
+              // Bare-SLP-backed: one cell per bare_slp variant, mirroring the
+              // query factory's dispatch (factories/pdl.h). This was a bare
+              // `break`, so construct silently produced nothing while the query
+              // spec asked for it -- the last of the five (family, get_doc)
+              // combinations that forced run_unit.sh's stage B to exist.
+              case GetDocEnum::SLP_NS:
+                for (auto v : sw.bare_slp) {
+                  switch (v) {
+                    case BareSLPVariant::Raw:  reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Raw>>>();  break;
+                    case BareSLPVariant::DV:   reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DV>>>();   break;
+                    case BareSLPVariant::VV:   reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_VV>>>();   break;
+                    case BareSLPVariant::Diff: reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>>>(); break;
+                    default:                   reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_IV>>>();   break;
+                  }
+                }
+                break;
             // r-index- / RLCSA-backed get-doc. The PDL tree still has its
             // (bs,sf) axis -- that sampling is independent of how the DA is
             // read -- so these reuse the same reg() lambda. Absent before, which
@@ -1347,9 +1450,39 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
           case PDLVariant::BC:
             switch (gd) {
               case GetDocEnum::DA:   reg.template operator()<IdxBC<GS>>(); break;
-              case GetDocEnum::SLP:  reg.template operator()<IdxBC<GS, GetDocsSLP<GS>>>(); break;
+              case GetDocEnum::SLP: {
+                // Pinned GCDA-light backing at (1024,32) -- must match the query
+                // factory exactly, see BM_ConstructPDLGCDALight.
+                using TGD = GetDocsSLP<GS, bench::factories::gcda::SLP_Light>;
+                for (auto bs : sw.block_size) {
+                  for (auto sf : sw.storing_factor) {
+                    const auto cell_name = base_name + BsSfSuffix(bs, sf);
+                    auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
+                                                      {PDLKeyPrefix(bs, sf, codec, policy)});
+                    benchmark::RegisterBenchmark(cell_name,
+                        BM_ConstructPDLGCDALight<IdxBC<GS, TGD>, TGD>,
+                        config, lib_policy, bs, sf, hook, cc.memory_trace);
+                  }
+                }
+                break;
+              }
               case GetDocEnum::DSLP: reg.template operator()<IdxBC<GS, GetDocsDSLP<GS>>>(); break;
-              case GetDocEnum::SLP_NS: break;
+              // Bare-SLP-backed: one cell per bare_slp variant, mirroring the
+              // query factory's dispatch (factories/pdl.h). This was a bare
+              // `break`, so construct silently produced nothing while the query
+              // spec asked for it -- the last of the five (family, get_doc)
+              // combinations that forced run_unit.sh's stage B to exist.
+              case GetDocEnum::SLP_NS:
+                for (auto v : sw.bare_slp) {
+                  switch (v) {
+                    case BareSLPVariant::Raw:  reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Raw>>>();  break;
+                    case BareSLPVariant::DV:   reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DV>>>();   break;
+                    case BareSLPVariant::VV:   reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_VV>>>();   break;
+                    case BareSLPVariant::Diff: reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>>>(); break;
+                    default:                   reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_IV>>>();   break;
+                  }
+                }
+                break;
             // r-index- / RLCSA-backed get-doc. The PDL tree still has its
             // (bs,sf) axis -- that sampling is independent of how the DA is
             // read -- so these reuse the same reg() lambda. Absent before, which
