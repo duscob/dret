@@ -72,6 +72,57 @@ CoreFixture MakeFixture(StoragePolicy policy, std::size_t n_doc = 5,
   return f;
 }
 
+
+// Deterministic guard for PDLTreeCore::getDocSet's sort.
+//
+// DLSampledTreeScheme::Search merges node sets with std::set_union, whose
+// precondition is sorted input. BCCodec::Expand emits [rule docs][verbatim
+// docs] -- each run ascending, the concatenation not -- and on dna_010000_010
+// that made set_union emit 273,171 duplicate doc ids across 1191 of 1210
+// patterns while the underlying sets stayed exactly correct. getDocSet now
+// sorts and uniques for codecs declaring kExpandsSorted == false.
+//
+// A stub codec is used rather than driving vnmextract: its biclique
+// decomposition is not stable run to run, so a miner-based assertion is flaky.
+struct UnsortedStubCodec {
+  static constexpr bool kExpandsSorted = false;
+
+  template <typename TGetSetAt>
+  void Build(std::size_t, TGetSetAt&&, std::size_t) {}
+
+  // Mimics BCCodec: a rule run (8,9,10), then the verbatim remainder (0),
+  // then a second rule overlapping the first (9) -- the exact shape that
+  // breaks set_union.
+  template <typename TReport>
+  void Expand(std::size_t, std::size_t, TReport&& t_report) const {
+    for (std::size_t d : {std::size_t{8}, std::size_t{9}, std::size_t{10},
+                          std::size_t{0}, std::size_t{9}}) {
+      t_report(d);
+    }
+  }
+
+  std::size_t serialize(std::ostream&, sdsl::structure_tree_node* = nullptr,
+                        const std::string& = "") const { return 0; }
+  void load(std::istream&) {}
+  dret::SizeReport GetSizeReport() const { return {}; }
+};
+
+TEST(PDLTreeCoreGetDocSet, SortsAndUniquesWhenCodecDoesNotEmitSorted) {
+  using Core = dret::pdl::PDLTreeCore<sdsl::sd_vector<>,
+                                      sdsl::sd_vector<>::rank_1_type,
+                                      sdsl::sd_vector<>::select_1_type,
+                                      sdsl::int_vector<>,
+                                      UnsortedStubCodec>;
+  Core core;
+  sdsl::int_vector<> starts(1, 0), ends(1, 1), fc(1, 0), ns(1, 0);
+  sdsl::bit_vector marker(1, 1);
+  core.Assemble(starts, ends, fc, ns, sdsl::sd_vector<>(marker),
+                UnsortedStubCodec{}, /*n_doc=*/16, /*block_size=*/1,
+                /*storing_factor=*/4.0f, StoragePolicy::OccurrenceWeighted);
+
+  EXPECT_THAT(core.getDocSet(0), testing::ElementsAre(0u, 8u, 9u, 10u));
+}
+
 using Range = std::pair<std::size_t, std::size_t>;
 
 struct CoverResult {

@@ -101,6 +101,8 @@ concept SetCodec = std::default_initializable<T>
 // tests that don't care about real codec output.
 class DummyCodec {
  public:
+  static constexpr bool kExpandsSorted = true;
+
   template <typename TGetSetAt>
   void Build(std::size_t /*t_n_slots*/, TGetSetAt&& /*t_get_set_at*/) {}
 
@@ -144,6 +146,10 @@ template <typename TObjContainer = sdsl::int_vector<>,
 class PlainCodec {
  public:
   static constexpr std::string_view kVariantKey = conf::kPlain;
+
+  // Expand emits doc ids in ascending order, so PDLTreeCore::getDocSet can
+  // hand the result straight to std::set_union in the merge functor.
+  static constexpr bool kExpandsSorted = true;
 
   using TStoredChunks = grammar::Chunks<TObjContainer, TPosContainer>;
 
@@ -244,6 +250,10 @@ template <typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>,
 class RPCodec {
  public:
   static constexpr std::string_view kVariantKey = conf::kRP;
+
+  // Expand emits doc ids in ascending order, so PDLTreeCore::getDocSet can
+  // hand the result straight to std::set_union in the merge functor.
+  static constexpr bool kExpandsSorted = true;
 
   using TStoredChunks = grammar::GCChunks<TSLP, /*kExpand=*/true, TChunks>;
 
@@ -353,6 +363,8 @@ template <typename TBitvector = sdsl::sd_vector<>,
 class BCCodec {
  public:
   static constexpr std::string_view kVariantKey = conf::kBC;
+
+  static constexpr bool kExpandsSorted = false;
 
   using TSelect1 = typename TBitvector::select_1_type;
 

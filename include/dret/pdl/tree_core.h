@@ -36,6 +36,9 @@ namespace dret::pdl {
 // codec — querying then yields no documents per slot, which matches the
 // "skeleton, no real data" semantics.
 struct NullCodec {
+  // Emits nothing, which is trivially sorted.
+  static constexpr bool kExpandsSorted = true;
+
   template <typename TGetSetAt>
   void Build(std::size_t /*t_n_slots*/, TGetSetAt&& /*t_get_set_at*/,
              std::size_t /*t_n_doc*/) {}
@@ -126,6 +129,16 @@ class PDLTreeCore {
     out.reserve(n_doc_);
     stored_sets_.Expand(t_codec_slot, n_doc_,
                         [&out](std::size_t d) { out.push_back(d); });
+    // DLSampledTreeScheme::Search feeds this straight into
+    // MergeSetsBinaryTreeFunctor, which merges with std::set_union -- so the
+    // result has to be sorted and unique. Codecs that already emit in
+    // ascending order (Plain, RP) declare kExpandsSorted and pay nothing here;
+    // BC concatenates per-rule runs and does not, so it is sorted once, at the
+    // only place where the ordering contract is actually consumed.
+    if constexpr (!TStoredSetCodec::kExpandsSorted) {
+      std::sort(out.begin(), out.end());
+      out.erase(std::unique(out.begin(), out.end()), out.end());
+    }
     return out;
   }
 

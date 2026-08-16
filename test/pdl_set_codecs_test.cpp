@@ -557,8 +557,18 @@ TEST(PDLBCCodec, AllDocSentinelExpandsBelowNDoc) {
 TEST(PDLBCCodec, RulesAndBlocksRoundTripWhenBicliquesExtracted) {
   constexpr std::size_t kNDoc = 16;
   std::vector<StoredSet> sets;
+  // Every slot shares the high block {8..13} -- dense enough for vnmextract to
+  // lift into one biclique -- plus one low doc unique to its group, which no
+  // rule can cover and so stays verbatim. That partial cover is the shape that
+  // matters: Expand emits the rule's docs first, then the verbatim remainder,
+  // giving [8 9 10 11 12 13][0] -- correct as a set, not globally sorted.
+  //
+  // The earlier fixture had 12 slots sharing one identical 8-doc set, so a
+  // single rule covered each slot completely, nothing was left verbatim, and
+  // the expansion came out sorted by accident. It therefore could not have
+  // caught the dna_010000_010 duplicate-doc defect.
   for (std::size_t i = 0; i < 12; ++i) {
-    sets.push_back({false, {0, 1, 2, 3, 4, 5, 6, 7}});
+    sets.push_back({false, {i % 3, 8, 9, 10, 11, 12, 13}});
   }
   BCCodec<> codec;
   codec.SetMiningParams({"1", "10,5,2", "4"});
@@ -566,6 +576,38 @@ TEST(PDLBCCodec, RulesAndBlocksRoundTripWhenBicliquesExtracted) {
 
   EXPECT_GT(codec.n_rules(), 0u)
       << "fixture intended to make vnmextract emit at least one biclique";
+
+  // Regression: BCCodec::Expand concatenates per-rule runs with the verbatim
+  // remainder, so its output is NOT globally sorted even though each run is.
+  // PDLTreeCore::getDocSet feeds that to MergeSetsBinaryTreeFunctor, which
+  // merges with std::set_union and requires sorted input; violating it emitted
+  // 273,171 duplicate doc ids on dna_010000_010. The codec must therefore
+  // declare kExpandsSorted == false so getDocSet sorts, and this pins that
+  // declaration to the observed behaviour: if Expand ever starts emitting in
+  // ascending order, kExpandsSorted should be revisited rather than left
+  // stale.
+  static_assert(!BCCodec<>::kExpandsSorted,
+                "BCCodec::Expand concatenates per-rule runs, so it is not globally "
+                "sorted; PDLTreeCore::getDocSet sorts on the strength of this flag");
+  {
+    for (std::size_t slot = 0; slot < sets.size(); ++slot) {
+      std::vector<std::size_t> got;
+      codec.Expand(slot, kNDoc, [&got](std::size_t d) { got.push_back(d); });
+      // Deliberately not asserting sortedness: Expand concatenates runs and
+      // need not be ordered. getDocSet is what must deliver sorted output, and
+      // that is pinned by PDLTreeCoreGetDocSet.SortsAndUniques... using a stub
+      // codec, rather than here where vnmextract's decomposition varies run to
+      // run.
+      // Whatever the order, the underlying set must be exactly right: the
+      // dna failure had perfect sets and only duplicate emissions.
+      std::vector<std::size_t> uniq(got);
+      std::sort(uniq.begin(), uniq.end());
+      uniq.erase(std::unique(uniq.begin(), uniq.end()), uniq.end());
+      EXPECT_EQ(uniq, sets[slot].docs) << "slot " << slot << " set mismatch";
+    }
+    // The set assertions above hold however vnmextract decomposed the input,
+    // which is why they are the ones made here.
+  }
 
   std::stringstream ss;
   std::size_t bytes = codec.serialize(ss);
