@@ -387,6 +387,56 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
 //~~~~~~~
 
 
+// The SLP over the document array, plus the compact sequence, as parsed from
+// irepair's .R/.C. Cached once per collection under bs/sf-independent keys.
+//
+// irepair itself already ran once per collection -- every call site guards it
+// on std::filesystem::exists(t_datafile + ".R"), a path with no (bs,sf) in it.
+// What used to repeat was this *parse* of its output: it lived inside the
+// "<bs>-<sf>_gcda_slp" guard in construct() below, so all 20 cells of a grid
+// sweep redid it. Measured across the 2026-08 campaign that cost ~71 h, ~8.4%
+// of stage A, and it is why revision-mid spent 12.85 h re-deriving one grammar
+// 17 times. DGCDA never had the problem -- see dgcda_slp_grammar.
+//
+// compact_seq round-trips through a bit-compressed int_vector; the values are
+// grammar variable ids, so they are non-negative and bounded by the rule count.
+inline void LoadOrBuildDaSlp(Config& t_config,
+                             const std::string& t_datafile,
+                             grammar::SLP<>& t_slp,
+                             std::vector<std::size_t>& t_compact_seq) {
+  using namespace conf;
+  const auto key_slp = t_config.keys[kGCDA][kSLPGrammar].get<std::string>();
+  const auto key_seq = t_config.keys[kGCDA][kSLPCompactSeq].get<std::string>();
+
+  if (sdsl::cache_file_exists<grammar::SLP<>>(key_slp, t_config)
+      && sdsl::cache_file_exists<sdsl::int_vector<>>(key_seq, t_config)) {
+    sdsl::load_from_cache(t_slp, key_slp, t_config, true);
+    sdsl::int_vector<> seq;
+    sdsl::load_from_cache(seq, key_seq, t_config, true);
+    t_compact_seq.assign(seq.begin(), seq.end());
+    return;
+  }
+
+  auto event = sdsl::memory_monitor::event(key_slp);
+  {
+    grammar::RePairReader<false> re_pair_reader;
+    auto slp_wrapper = grammar::BuildSLPWrapper(t_slp);
+    auto report_compact_seq = [&t_compact_seq](const auto& _var) {
+      t_compact_seq.emplace_back(_var);
+    };
+    re_pair_reader.Read(t_datafile, slp_wrapper, report_compact_seq);
+  }
+
+  sdsl::store_to_cache(t_slp, key_slp, t_config, true);
+  sdsl::int_vector<> seq(t_compact_seq.size());
+  std::copy(t_compact_seq.begin(), t_compact_seq.end(), seq.begin());
+  sdsl::util::bit_compress(seq);
+  sdsl::store_to_cache(seq, key_seq, t_config, true);
+}
+
+//~~~~~~~
+
+
 template <typename TSLP, typename TSampledSLP, typename TChunks>
 void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
                Config& t_config,
@@ -413,18 +463,11 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
       sdsl::load_from_cache(cslp, key, t_config, true);
     }
 
+    // Collection-level, not cell-level: parsed once and reused by every
+    // (bs,sf) cell. See LoadOrBuildDaSlp above.
     grammar::SLP<> slp;
     std::vector<std::size_t> compact_seq;
-    {
-      grammar::RePairReader<false> re_pair_reader;
-      auto slp_wrapper = grammar::BuildSLPWrapper(slp);
-
-      auto report_compact_seq = [&compact_seq](const auto& _var) {
-        compact_seq.emplace_back(_var);
-      };
-
-      re_pair_reader.Read(t_datafile, slp_wrapper, report_compact_seq);
-    }
+    LoadOrBuildDaSlp(t_config, t_datafile, slp, compact_seq);
 
     lslp.Compute(slp, compact_seq, cslp);
     sdsl::store_to_cache(lslp, key_lslp, t_config, true);

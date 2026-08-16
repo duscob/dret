@@ -27,6 +27,14 @@ constexpr std::string_view kDA = "da";
 constexpr std::string_view kGCDA = "gcda";
 constexpr std::string_view kSLP = "slp";
 constexpr std::string_view kDocs = "docs";
+// The SLP over the document array plus its compact sequence, as parsed from
+// irepair's .R/.C output. Both depend only on the DA, so unlike kSLP/kDocs
+// these are cached WITHOUT the "<bs>-<sf>_" prefix and are shared by every cell
+// of a (block size, storing factor) sweep. Before they existed GCDA re-parsed
+// the grammar in all 20 cells of the grid; DGCDA already did the equivalent via
+// its own dgcda_slp_grammar.
+constexpr std::string_view kSLPGrammar = "slpGrammar";
+constexpr std::string_view kSLPCompactSeq = "slpCompactSeq";
 constexpr std::string_view kDGCDA = "dgcda";
 // Phase C: non-sampled grammar::SLP<> cache (dret::DocListIdxSLP).
 // Distinct from kGCDA::kSLP so the bare SLP and the GCDA-sampled SLPs
@@ -96,6 +104,8 @@ struct Keys {
             {
                 {conf::kSLP, "gcda_slp"},
                 {conf::kDocs, "gcda_docs"},
+                {conf::kSLPGrammar, "gcda_slp_grammar"},
+                {conf::kSLPCompactSeq, "gcda_slp_compact_seq"},
             },
         },
         {
