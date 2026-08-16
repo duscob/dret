@@ -1209,6 +1209,35 @@ void RegisterRMQOneCore(const std::string& core_name,
         RegisterRMQOneTriple<TCoreT, GetDocDSLP<GS>, true>(core_name, "-DSLP", config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook);
         break;
       }
+      // r-index- and RLCSA-backed get-doc. No (bs,sf) axis: these read the DA
+      // through Phi walks over the r-index (or through RLCSA's batched locate),
+      // and neither is sampled by block size or storing factor.
+      //
+      // These cases were absent, so construct mode silently skipped them and
+      // stage B of run_unit.sh existed to build them at query time instead,
+      // with its timings discarded. BM_ConstructRMQ_NS has exactly the shape
+      // the query factory's MakeSAPhi_R / MakeRLCSA already use.
+      case GetDocEnum::SAPhiR: {
+        using TCore = TCoreT<GS, GetDocSAPhi_R<GS>>;
+        using TIndex = Idx<GS, TCore>;
+        benchmark::RegisterBenchmark(core_name + "-SA-Phi-R",
+            BM_ConstructRMQ_NS<TIndex, TCore>, config, rebuild_hook, memory_trace);
+        break;
+      }
+      case GetDocEnum::RLCSA: {
+        using TCore = TCoreT<GS, GetDocRLCSA<GS>>;
+        using TIndex = Idx<GS, TCore>;
+        benchmark::RegisterBenchmark(core_name + "-RLCSA",
+            BM_ConstructRMQ_NS<TIndex, TCore>, config, rebuild_hook, memory_trace);
+        break;
+      }
+      case GetDocEnum::SAPhiSR:
+        // Left out deliberately: the sr-index subsample rate is a runtime axis
+        // (sw.sa_sampling) that selects the "<rate>_" cache-key prefix, so it
+        // must be baked into the index the way DocListIdxBrute's sr-index cells
+        // are. Query mode fans out over sa_sampling; construct would have to
+        // match it rate for rate or the caches would not line up.
+        break;
     }
   }
 }
@@ -1285,6 +1314,16 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
               case GetDocEnum::SLP:  reg.template operator()<IdxPlain<GS, GetDocsSLP<GS>>>(); break;
               case GetDocEnum::DSLP: reg.template operator()<IdxPlain<GS, GetDocsDSLP<GS>>>(); break;
               case GetDocEnum::SLP_NS: break;
+            // r-index- / RLCSA-backed get-doc. The PDL tree still has its
+            // (bs,sf) axis -- that sampling is independent of how the DA is
+            // read -- so these reuse the same reg() lambda. Absent before, which
+            // is why stage B of run_unit.sh had to build them at query time.
+            // SAPhiSR is deliberately omitted: query mode itself defers it and
+            // falls back to SAPhiR (see factories/pdl.h), and its subsample rate
+            // is a runtime axis that would have to be matched cell for cell.
+              case GetDocEnum::SAPhiR: reg.template operator()<IdxPlain<GS, GetDocsSAPhi_R<GS>>>(); break;
+              case GetDocEnum::RLCSA:  reg.template operator()<IdxPlain<GS, GetDocsRLCSA<GS>>>(); break;
+              case GetDocEnum::SAPhiSR: break;
             }
             break;
           case PDLVariant::RP:
@@ -1293,6 +1332,16 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
               case GetDocEnum::SLP:  reg.template operator()<IdxRP<GS, GetDocsSLP<GS>>>(); break;
               case GetDocEnum::DSLP: reg.template operator()<IdxRP<GS, GetDocsDSLP<GS>>>(); break;
               case GetDocEnum::SLP_NS: break;
+            // r-index- / RLCSA-backed get-doc. The PDL tree still has its
+            // (bs,sf) axis -- that sampling is independent of how the DA is
+            // read -- so these reuse the same reg() lambda. Absent before, which
+            // is why stage B of run_unit.sh had to build them at query time.
+            // SAPhiSR is deliberately omitted: query mode itself defers it and
+            // falls back to SAPhiR (see factories/pdl.h), and its subsample rate
+            // is a runtime axis that would have to be matched cell for cell.
+              case GetDocEnum::SAPhiR: reg.template operator()<IdxRP<GS, GetDocsSAPhi_R<GS>>>(); break;
+              case GetDocEnum::RLCSA:  reg.template operator()<IdxRP<GS, GetDocsRLCSA<GS>>>(); break;
+              case GetDocEnum::SAPhiSR: break;
             }
             break;
           case PDLVariant::BC:
@@ -1301,6 +1350,16 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
               case GetDocEnum::SLP:  reg.template operator()<IdxBC<GS, GetDocsSLP<GS>>>(); break;
               case GetDocEnum::DSLP: reg.template operator()<IdxBC<GS, GetDocsDSLP<GS>>>(); break;
               case GetDocEnum::SLP_NS: break;
+            // r-index- / RLCSA-backed get-doc. The PDL tree still has its
+            // (bs,sf) axis -- that sampling is independent of how the DA is
+            // read -- so these reuse the same reg() lambda. Absent before, which
+            // is why stage B of run_unit.sh had to build them at query time.
+            // SAPhiSR is deliberately omitted: query mode itself defers it and
+            // falls back to SAPhiR (see factories/pdl.h), and its subsample rate
+            // is a runtime axis that would have to be matched cell for cell.
+              case GetDocEnum::SAPhiR: reg.template operator()<IdxBC<GS, GetDocsSAPhi_R<GS>>>(); break;
+              case GetDocEnum::RLCSA:  reg.template operator()<IdxBC<GS, GetDocsRLCSA<GS>>>(); break;
+              case GetDocEnum::SAPhiSR: break;
             }
             break;
         }
