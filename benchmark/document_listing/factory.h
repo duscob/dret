@@ -8,6 +8,7 @@
 #include <any>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
@@ -115,8 +116,37 @@ class Factory {
 
   explicit Factory(dret::Config t_config, uint32_t t_block_size = 512, float t_storing_factor = 4)
       : config_{std::move(t_config)} {
-    sdsl::int_vector_buffer<t_width> buf(sdsl::cache_file_name(sdsl::key_bwt_trait<t_width>::KEY_BWT, config_));
-    seq_size_ = buf.size();
+    // Sequence length, read straight from the BWT's int_vector header.
+    //
+    // This used to be `int_vector_buffer<t_width> buf(...); seq_size_ = buf.size();`
+    // which REWROTE the file on every query run. sdsl::int_vector_buffer's
+    // constructor forces the output stream open regardless of the requested
+    // mode --- `m_ofile.open(m_filename, mode | std::ios::out | std::ios::binary)`
+    // --- and its destructor calls close(), which unconditionally does
+    // write_block() and rewrites the header. So merely asking a read-only-looking
+    // buffer for its size touched bwt_data.sdsl every time a Factory was built.
+    //
+    // Harmless in content (the BWT is deterministic, and the 8 collections whose
+    // copies happened to be read-only completed identically with the write
+    // failing), but it dirtied mtimes, which is what makes "did the query stage
+    // build anything?" checks unreliable --- they compare filenames, not mtimes.
+    //
+    // Mirrors int_vector_buffer's own arithmetic: read_header yields the length
+    // in BITS and the stored width, and m_size = bits / width.
+    {
+      const auto bwt_file = sdsl::cache_file_name(sdsl::key_bwt_trait<t_width>::KEY_BWT, config_);
+      std::ifstream bwt_in(bwt_file, std::ios::binary);
+      if (!bwt_in) {
+        throw std::runtime_error("Factory: cannot open BWT file '" + bwt_file + "'");
+      }
+      uint64_t bits = 0;
+      uint8_t stored_width = 0;
+      sdsl::int_vector<0>::read_header(bits, stored_width, bwt_in);
+      if (stored_width == 0) {
+        throw std::runtime_error("Factory: BWT '" + bwt_file + "' reports width 0");
+      }
+      seq_size_ = bits / stored_width;
+    }
 
     // r_index_ / sr_index_ are NOT loaded eagerly: they back only the
     // BRUTE_R_INDEX / BRUTE_SR_INDEX paths in MakeInner and require
