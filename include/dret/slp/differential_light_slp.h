@@ -19,6 +19,7 @@
 #include <grammar/slp_helper.h>
 
 #include "dret/config.h"
+#include "dret/construct_base.h"
 #include "dret/slp/differential_slp.h"
 
 namespace dret {
@@ -144,9 +145,9 @@ inline grammar::SLP<> BuildDiffCnfSlp(const sdsl::int_vector<>& da) {
 // sdsl::cache_file_name<std::vector<int>>(config.keys[kDA], config).
 inline grammar::SLP<> BuildDiffCnfSlpFromRePairFiles(const std::string& t_da_file) {
   if (!std::filesystem::exists(t_da_file + ".R") && REPAIR_EXE) {
-    std::string cmd = REPAIR_EXE + (" " + t_da_file);
-    std::system(cmd.c_str());
+    RunRePair(t_da_file);
   }
+  CheckRePairGrammar(t_da_file);
   grammar::SLP<> slp_cnf;
   grammar::RePairReader<true> re_pair_reader;
   auto wrapper = grammar::BuildSLPWrapper(slp_cnf);

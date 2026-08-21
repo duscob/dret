@@ -344,11 +344,11 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
   if (!std::filesystem::exists(t_datafile + ".R") && REPAIR_EXE) {
     const auto filename = std::filesystem::path(t_datafile).filename().string();
     auto event = sdsl::memory_monitor::event("RePair-" + filename);
-    std::string cmd = REPAIR_EXE + (" " + t_datafile);
-    std::system(cmd.c_str());
+    RunRePair(t_datafile);
     t_config.file_map[filename + ".R"] = t_datafile + ".R";
     t_config.file_map[filename + ".C"] = t_datafile + ".C";
   }
+  CheckRePairGrammar(t_datafile);
 
   const auto key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
 

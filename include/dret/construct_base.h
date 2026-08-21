@@ -4,7 +4,15 @@
 
 #pragma once
 
+#include <cstdlib>
+#include <filesystem>
+#include <stdexcept>
 #include <string>
+#include <system_error>
+
+// For decoding the std::system() wait status below. This pipeline is Linux-only
+// (irepair ships as a gcc Makefile), so the POSIX macros are always available.
+#include <sys/wait.h>
 
 #include <sdsl/bit_vectors.hpp>
 #include <sdsl/config.hpp>
@@ -26,6 +34,84 @@ const std::string KEY_DA = "da";
 const std::string KEY_DA_RAW = KEY_DA + "_raw";
 
 }  // namespace conf
+
+//~~~~~~~
+
+
+// Cache-integrity guards. See docs/bug_empty_da_page_big.md.
+//
+// A construct that dies while an sdsl::int_vector_buffer is open leaves a file
+// whose header still reads zero -- close() is what back-patches the real header
+// -- but which otherwise holds gigabytes of entirely plausible data. Nothing in
+// the cache layer validates that on load, so a later run reads size 0, builds an
+// empty document array, hands it to RePair, and segfaults in the grammar reader
+// a long way from the actual fault. These guards make it fail where it breaks.
+
+inline void CheckNonEmptyCacheFile(std::size_t t_size, const std::string& t_path, const std::string& t_what) {
+  if (t_size == 0) {
+    throw std::runtime_error(
+        t_what + " is empty: '" + t_path +
+        "'. A cached artifact of size zero usually means an earlier construct was "
+        "killed while writing it, leaving real data behind an unpatched header. "
+        "Delete it and rebuild -- do not trust the rest of this cache.");
+  }
+}
+
+// RePair runs as an external process, and its exit status used to be discarded
+// at every call site. Check the input, the status, and the outputs here instead.
+// Precedent for the rc check: pdl/set_codecs.h, for vnmextract.
+inline void RunRePair(const std::string& t_datafile) {
+  std::error_code ec;
+  const auto in_size = std::filesystem::file_size(t_datafile, ec);
+  if (ec || in_size == 0) {
+    throw std::runtime_error(
+        "RePair: refusing to compress '" + t_datafile +
+        "': " + (ec ? ec.message() : std::string("the file is empty")) +
+        ". An empty document array is the signature of a poisoned suffix-array cache.");
+  }
+
+  const std::string cmd = REPAIR_EXE + (" " + t_datafile);
+  const int rc = std::system(cmd.c_str());
+  if (rc != 0) {
+    // std::system yields a wait status, not an exit code -- report the decoded
+    // form, because "killed by signal 9" (the OOM killer, the likely fate of
+    // irepair on the largest document arrays) and "exited 1" need different fixes.
+    std::string how;
+    if (rc == -1) {
+      how = "could not be started";
+    } else if (WIFSIGNALED(rc)) {
+      how = "was killed by signal " + std::to_string(WTERMSIG(rc));
+    } else if (WIFEXITED(rc)) {
+      how = "exited with code " + std::to_string(WEXITSTATUS(rc));
+    } else {
+      how = "returned wait status " + std::to_string(rc);
+    }
+    throw std::runtime_error("RePair: '" + cmd + "' " + how + ".");
+  }
+}
+
+// Validate the .R/.C pair whether it was just built or picked up from cache --
+// a poisoned grammar is otherwise reused forever, since the call sites skip
+// RePair whenever .R merely exists.
+//
+// Size is only decisive for .C: irepair emits a 4-byte .R even for empty input,
+// so an empty grammar is recognised by its 0-byte sequence file, not its rules.
+inline void CheckRePairGrammar(const std::string& t_datafile) {
+  std::error_code ec;
+  for (const auto* ext : {".R", ".C"}) {
+    const auto path = t_datafile + ext;
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec) {
+      throw std::runtime_error("RePair: cannot stat '" + path + "': " + ec.message() +
+                               ". The grammar for this document array is missing or unreadable.");
+    }
+    if (size == 0) {
+      throw std::runtime_error("RePair: '" + path +
+                               "' is empty, so the grammar encodes nothing. Delete the .R/.C pair "
+                               "for this document array and rebuild it.");
+    }
+  }
+}
 
 //~~~~~~~
 
@@ -149,7 +235,9 @@ void ConstructDocArray(Config& t_config) {
 
   {
     auto key_sa = t_config.keys[conf::kSA].get<std::string>();
-    sdsl::int_vector_buffer<> sa_buf(sdsl::cache_file_name(key_sa, t_config), std::ios::in);
+    auto sa_path = sdsl::cache_file_name(key_sa, t_config);
+    sdsl::int_vector_buffer<> sa_buf(sa_path, std::ios::in);
+    CheckNonEmptyCacheFile(sa_buf.size(), sa_path, "suffix array");
 
     BitVector doc_endings;
     auto key_doc_end = t_config.keys[conf::kDocEnds].get<std::string>();

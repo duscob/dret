@@ -250,11 +250,11 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
   if (!std::filesystem::exists(t_datafile + ".R") && REPAIR_EXE) {
     const auto filename = std::filesystem::path(t_datafile).filename().string();
     auto event = sdsl::memory_monitor::event("RePair-" + filename);
-    std::string cmd = REPAIR_EXE + (" " + t_datafile);
-    std::system(cmd.c_str());
+    RunRePair(t_datafile);
     t_config.file_map[filename + ".R"] = t_datafile + ".R";
     t_config.file_map[filename + ".C"] = t_datafile + ".C";
   }
+  CheckRePairGrammar(t_datafile);
 
   auto key_slp = t_config.keys[kSLPNS].get<std::string>();
   auto event = sdsl::memory_monitor::event(
