@@ -341,10 +341,10 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
   using namespace conf;
 
   // Grammar compress data file using RePair
-  if (!std::filesystem::exists(t_datafile + ".R") && REPAIR_EXE) {
+  if (!std::filesystem::exists(t_datafile + ".R") && repair::kAvailable) {
     const auto filename = std::filesystem::path(t_datafile).filename().string();
     auto event = sdsl::memory_monitor::event("RePair-" + filename);
-    RunRePair(t_datafile);
+    RunRePair(t_datafile, t_config.repair);
     t_config.file_map[filename + ".R"] = t_datafile + ".R";
     t_config.file_map[filename + ".C"] = t_datafile + ".C";
   }

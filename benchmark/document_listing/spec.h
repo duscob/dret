@@ -15,6 +15,7 @@
 //                   "doc_delim": 0 },
 //     "workload": { "reps": 10, "min_time": 0.0,
 //                   "report_stats": false, "print_result": false },
+//     "repair":   { "variant": "auto", "mb": null, "mb_max": null },
 //     "sweep": [
 //       { "family": "gcda",  "tslp": ["Light"], "block_size": [512],
 //                            "storing_factor": [4] },
@@ -40,6 +41,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -62,6 +64,27 @@ struct Dataset {
   std::uint8_t data_width = 8;
   std::string sa_algo = "SDSL_LIBDIVSUFSORT";
   int doc_delim = 0;
+};
+
+// How to run irepair over this collection's document array. Every field is
+// optional and the defaults derive from the array's size, so a spec that omits
+// the block builds exactly what it always did.
+//
+// It belongs in the spec rather than in an environment variable because <MB>
+// decides *which grammar gets built*: below a size-dependent threshold irepair
+// switches to a memory-lean pass whose output differs. The spec is archived with
+// the run, so a value set here leaves a record; an environment variable would
+// not. Construct mode only.
+struct RePair {
+  // "auto" (default) | "bal32" | "bal64". Both are RePair's balanced build; the
+  // number is the width of a sequence position, and only bal64 is correct past
+  // 2^31 elements. See include/dret/repair.h.
+  std::string variant = "auto";
+  // Unset: derive the value that keeps irepair on its fast path.
+  std::optional<std::uint64_t> mb;
+  // Unset: no cap. Setting this below the derived value trades the grammar for
+  // memory, and the construct logs say so when it happens.
+  std::optional<std::uint64_t> mb_max;
 };
 
 struct Workload {
@@ -156,6 +179,7 @@ struct Spec {
   Mode mode = Mode::Query;
   Dataset dataset;
   Workload workload;
+  RePair repair;
   std::vector<FamilySweep> sweep;
 };
 
@@ -303,6 +327,20 @@ inline Dataset ParseDataset(const nlohmann::json& j) {
   return d;
 }
 
+inline RePair ParseRePair(const nlohmann::json& j) {
+  RePair r;
+  if (j.contains("variant")) {
+    r.variant = j.at("variant").get<std::string>();
+    if (r.variant != "auto" && r.variant != "bal32" && r.variant != "bal64") {
+      throw std::invalid_argument("spec.repair.variant: must be 'auto', 'bal32' or 'bal64', got '" +
+                                  r.variant + "'");
+    }
+  }
+  if (j.contains("mb")) r.mb = j.at("mb").get<std::uint64_t>();
+  if (j.contains("mb_max")) r.mb_max = j.at("mb_max").get<std::uint64_t>();
+  return r;
+}
+
 inline Workload ParseWorkload(const nlohmann::json& j) {
   Workload w;
   if (j.contains("reps")) w.reps = j.at("reps").get<int>();
@@ -323,6 +361,7 @@ inline Spec ParseSpec(const nlohmann::json& j) {
   if (j.contains("mode")) s.mode = detail::ParseMode(j.at("mode").get<std::string>());
   if (j.contains("dataset")) s.dataset = detail::ParseDataset(j.at("dataset"));
   if (j.contains("workload")) s.workload = detail::ParseWorkload(j.at("workload"));
+  if (j.contains("repair")) s.repair = detail::ParseRePair(j.at("repair"));
   if (j.contains("sweep")) {
     for (const auto& block : j.at("sweep")) {
       s.sweep.push_back(detail::ParseFamilyBlock(block));

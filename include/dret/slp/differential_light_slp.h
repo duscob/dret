@@ -141,11 +141,12 @@ inline grammar::SLP<> BuildDiffCnfSlp(const sdsl::int_vector<>& da) {
 // RePairEncoder<true> share the BalanceTreeByWeight completion handler
 // verbatim, so the CNF shape is unchanged. See docs/bug_dgcda_repair_hang.md.
 //
-// t_da_file must be the same path doc_list_gcda.h passes to REPAIR_EXE, i.e.
+// t_da_file must be the same path doc_list_gcda.h passes to irepair, i.e.
 // sdsl::cache_file_name<std::vector<int>>(config.keys[kDA], config).
-inline grammar::SLP<> BuildDiffCnfSlpFromRePairFiles(const std::string& t_da_file) {
-  if (!std::filesystem::exists(t_da_file + ".R") && REPAIR_EXE) {
-    RunRePair(t_da_file);
+inline grammar::SLP<> BuildDiffCnfSlpFromRePairFiles(const std::string& t_da_file,
+                                                    const repair::Options& t_repair = {}) {
+  if (!std::filesystem::exists(t_da_file + ".R") && repair::kAvailable) {
+    RunRePair(t_da_file, t_repair);
   }
   CheckRePairGrammar(t_da_file);
   grammar::SLP<> slp_cnf;
@@ -264,7 +265,7 @@ void construct(DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSampl
   } else {
     const auto filepath_da =
         sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
-    cnf = BuildDiffCnfSlpFromRePairFiles(filepath_da);
+    cnf = BuildDiffCnfSlpFromRePairFiles(filepath_da, t_config.repair);
     sdsl::store_to_cache(cnf, key_cnf, t_config, true);
   }
 

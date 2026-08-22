@@ -4,8 +4,10 @@
 
 #pragma once
 
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -19,9 +21,17 @@
 #include <sdsl/int_vector_buffer.hpp>
 
 #include "dret/config.h"
+#include "dret/repair.h"
 
-#ifndef REPAIR_EXE
-#define REPAIR_EXE nullptr
+// The two balanced irepair builds, named for the width of a sequence position:
+// REPAIR_EXE_BAL32 is upstream's `bal/irepair`, REPAIR_EXE_BAL64 its
+// `large/bal/irepair`. RunRePair chooses between them per document array.
+#ifndef REPAIR_EXE_BAL32
+#define REPAIR_EXE_BAL32 nullptr
+#endif
+
+#ifndef REPAIR_EXE_BAL64
+#define REPAIR_EXE_BAL64 nullptr
 #endif
 
 namespace dret {
@@ -60,7 +70,17 @@ inline void CheckNonEmptyCacheFile(std::size_t t_size, const std::string& t_path
 // RePair runs as an external process, and its exit status used to be discarded
 // at every call site. Check the input, the status, and the outputs here instead.
 // Precedent for the rc check: pdl/set_codecs.h, for vnmextract.
-inline void RunRePair(const std::string& t_datafile) {
+namespace repair {
+
+// Whether this build can run RePair at all. The call sites skip grammar
+// construction when it cannot, so they ask this rather than testing one
+// particular binary -- which was the old `&& REPAIR_EXE` guard, and would now
+// silently mean "is the 32-bit one configured".
+inline constexpr bool kAvailable = (REPAIR_EXE_BAL32 != nullptr) && (REPAIR_EXE_BAL64 != nullptr);
+
+}  // namespace repair
+
+inline void RunRePair(const std::string& t_datafile, const repair::Options& t_options = {}) {
   std::error_code ec;
   const auto in_size = std::filesystem::file_size(t_datafile, ec);
   if (ec || in_size == 0) {
@@ -70,7 +90,34 @@ inline void RunRePair(const std::string& t_datafile) {
         ". An empty document array is the signature of a poisoned suffix-array cache.");
   }
 
-  const std::string cmd = REPAIR_EXE + (" " + t_datafile);
+  // Which binary, and with what <MB>, is decided from the size of *this* array.
+  // The policy itself lives in PlanRePair so it can be tested directly.
+  const auto elems = static_cast<std::uintmax_t>(in_size) / sizeof(int);
+  const auto plan = repair::PlanRePair(elems, t_options);
+
+  const char* exe = plan.use_64bit ? REPAIR_EXE_BAL64 : REPAIR_EXE_BAL32;
+  if (exe == nullptr) {
+    throw std::runtime_error(std::string("RePair: the ") + (plan.use_64bit ? "bal64" : "bal32") +
+                             " binary is not configured in this build (REPAIR_EXE_" +
+                             (plan.use_64bit ? "BAL64" : "BAL32") + " is unset).");
+  }
+
+  if (plan.lean_path) {
+    // Below the fast-path threshold irepair emits a different grammar. It stays
+    // valid and is reproducible, but it will not match the rest of a cache built
+    // at the derived value, so this must never pass unremarked.
+    std::cerr << "RePair: running with " << *plan.mb << " MB, below the "
+              << repair::FastPathMB(elems) << " MB this array needs for the fast path (peak RSS "
+              << "would be about " << repair::FastPathPeakMB(elems) << " MB). The memory-lean "
+              << "pass produces a different grammar from one built at the derived value: "
+              << t_datafile << std::endl;
+  }
+
+  std::string cmd = exe + (" " + t_datafile);
+  if (plan.mb.has_value()) {
+    cmd += " " + std::to_string(*plan.mb);
+  }
+
   const int rc = std::system(cmd.c_str());
   if (rc != 0) {
     // std::system yields a wait status, not an exit code -- report the decoded

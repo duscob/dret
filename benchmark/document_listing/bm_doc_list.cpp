@@ -1561,6 +1561,25 @@ int main(int argc, char** argv) {
                           spec.dataset.doc_delim);
   }
 
+  // Carry the spec's RePair block into the config the construct code sees. It is
+  // deliberately not read from the environment: <MB> selects between two
+  // different grammars, so the value has to be part of the archived spec rather
+  // than ambient process state.
+  {
+    const auto& r = spec.repair;
+    config.repair.variant = r.variant == "bal32"   ? dret::repair::Variant::kBal32
+                            : r.variant == "bal64" ? dret::repair::Variant::kBal64
+                                                   : dret::repair::Variant::kAuto;
+    config.repair.mb = r.mb;
+    config.repair.mb_max = r.mb_max;
+    if (spec.mode == bench::spec::Mode::Construct &&
+        (r.variant != "auto" || r.mb.has_value() || r.mb_max.has_value())) {
+      std::cerr << "RePair: spec override in effect -- variant=" << r.variant
+                << " mb=" << (r.mb ? std::to_string(*r.mb) : "derived")
+                << " mb_max=" << (r.mb_max ? std::to_string(*r.mb_max) : "none") << std::endl;
+    }
+  }
+
   // Read patterns up-front for query mode (kept alive through main).
   std::vector<std::string> patterns;
   if (spec.mode == bench::spec::Mode::Query) {

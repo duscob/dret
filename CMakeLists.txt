@@ -114,8 +114,14 @@ set(LIBS ${SDSL_LIB} grammar sr-index nlohmann_json::nlohmann_json rlcsa ${OpenM
 target_link_libraries(dret INTERFACE ${LIBS})
 
 include(ConfigRePair)
-set(REPAIR_EXE "\"${${ExternalProjectName}_SOURCE_DIR}/bal/irepair\"")
-target_compile_definitions(dret INTERFACE REPAIR_EXE=${REPAIR_EXE})
+# Both of RePair's balanced builds are available; RunRePair picks one per document
+# array from its element count. They differ only in the width of a sequence
+# position -- `int` in upstream's `bal/`, `long long` in its `large/bal/` -- so
+# they are named for that here. See include/dret/repair.h.
+set(REPAIR_EXE_BAL32 "\"${${ExternalProjectName}_SOURCE_DIR}/bal/irepair\"")
+set(REPAIR_EXE_BAL64 "\"${${ExternalProjectName}_SOURCE_DIR}/large/bal/irepair\"")
+target_compile_definitions(dret INTERFACE REPAIR_EXE_BAL32=${REPAIR_EXE_BAL32})
+target_compile_definitions(dret INTERFACE REPAIR_EXE_BAL64=${REPAIR_EXE_BAL64})
 
 include(ConfigDSExtract)
 set(VNMEXTRACT_EXE "\"${${ExternalProjectName}_VNMEXTRACT}\"")
@@ -159,6 +165,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(pdl_storage_policy_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_storage_policy_test.cpp)
     cxx_test_with_flags_and_args(pdl_cache_collision_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_cache_collision_test.cpp)
     cxx_test_with_flags_and_args(pdl_header_inclusion_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_header_inclusion_test.cpp)
+    cxx_test_with_flags_and_args(repair_plan_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/repair_plan_test.cpp)
 endif ()
 
 

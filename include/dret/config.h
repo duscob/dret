@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "dret/repair.h"
+
 #include "sr-index/alphabet.h"
 #include "sr-index/config.h"
 #include "sr-index/index_base.h"
@@ -199,6 +201,13 @@ const auto& createDefaultKeys() {
 
 struct Config : public sri::Config {
   uint64_t data_delim = 0;
+
+  // How to run irepair over this collection's document array. Defaults derive
+  // everything from the array's size, so this needs setting only when a host
+  // cannot afford the derived value. It lives here, rather than being read from
+  // the environment, because <MB> changes the grammar that gets built: the value
+  // used has to travel with the run's configuration.
+  repair::Options repair;
 
   Config() = default;
 

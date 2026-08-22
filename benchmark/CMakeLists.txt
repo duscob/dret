@@ -18,9 +18,10 @@ cxx_executable_with_flags(bm_doc_list "" "${benchmark_LIBS}" document_listing/bm
 
 # The benchmarks shell out to two external-project binaries at run time: PDL-BC
 # to vnmextract (dsextract) and GCDA/DGCDA to irepair (repair). Their paths are
-# baked in as VNMEXTRACT_EXE / REPAIR_EXE compile definitions on the `dret`
-# INTERFACE target, but a compile definition creates no build ordering, and an
-# INTERFACE library cannot carry the dependency for its consumers.
+# baked in as VNMEXTRACT_EXE / REPAIR_EXE_BAL32 / REPAIR_EXE_BAL64 compile
+# definitions on the `dret` INTERFACE target, but a compile definition creates
+# no build ordering, and an INTERFACE library cannot carry the dependency for
+# its consumers.
 #
 # Without this, `cmake --build <dir> --target bm_doc_list` in a fresh tree
 # yields a binary whose VNMEXTRACT_EXE points at a file that was never built.
