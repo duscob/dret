@@ -37,7 +37,24 @@ namespace dret::rmq {
 // halves; needed for CILCP, whose Rule-2 RLE merges by doc-equality with min
 // tracking, breaking the marker-based stop invariant and silently dropping
 // docs in subranges whose RMQ-min coincides with an earlier-marked doc.
+//
+// kAlwaysReport gates whether report() is invoked even when the RMQ-min's doc
+// is already reported. For SADA one RMQ position carries exactly one document,
+// so gating on the marker loses nothing. For the ILCP family a position stands
+// for a whole RUN, and report() is also what fans the run out; a run whose head
+// doc happens to be a duplicate can still hold the FIRST occurrence of other
+// documents, and gating drops them. That is sound only when the run's own
+// values pin down its contents:
+//   - ILCP / ILCP-S: runs are ilcp-constant, so a run reachable past the stop
+//     test consists purely of first occurrences and its head doc cannot already
+//     be reported — gating is a no-op.
+//   - CILCP / CILCP-S: runs merge by document, so a run's stored value is a
+//     MIN and may even be attained outside [sp, ep). Such a run can report a
+//     duplicate occurrence early and thereby suppress the fan-out of a later
+//     run that holds a genuinely new document. These cores must always report.
+// report() is responsible for de-duplicating its own head document.
 template <bool kStopOnReported = true,
+          bool kAlwaysReport = false,
           typename TRMQ, typename TGetDoc, typename TIsReported, typename TReport>
 void ListDocsRMQScheme(std::size_t bp,
                        std::size_t ep,
@@ -50,14 +67,14 @@ void ListDocsRMQScheme(std::size_t bp,
   const auto k = rmq(bp, ep - 1);
   const auto d = get_doc(k);
   const bool already = is_reported(k, d);
-  if (!already) {
+  if (!already || kAlwaysReport) {
     report(k, d);
   }
   if constexpr (kStopOnReported) {
     if (already) return;
   }
-  ListDocsRMQScheme<kStopOnReported>(bp, k, rmq, get_doc, is_reported, report);
-  ListDocsRMQScheme<kStopOnReported>(k + 1, ep, rmq, get_doc, is_reported, report);
+  ListDocsRMQScheme<kStopOnReported, kAlwaysReport>(bp, k, rmq, get_doc, is_reported, report);
+  ListDocsRMQScheme<kStopOnReported, kAlwaysReport>(k + 1, ep, rmq, get_doc, is_reported, report);
 }
 
 // Canonical Sadakane-style LEFTMOST RMQ traversal: recursion stops by an
@@ -76,7 +93,11 @@ void ListDocsRMQScheme(std::size_t bp,
 // is_reported still gates the *emission* of doc d (same MarkedReported as
 // the original scheme) — multiple runs can share a leftmost-doc, and we
 // don't want to double-emit. It no longer gates the recursion.
-template <typename TRMQ, typename TGetDoc, typename TStopPred,
+// kAlwaysReport carries the same meaning as in ListDocsRMQScheme above: the
+// ILCP-family cores whose runs merge by document (CILCP-S) must fan a visited
+// run out even when its head document is already reported.
+template <bool kAlwaysReport = false,
+          typename TRMQ, typename TGetDoc, typename TStopPred,
           typename TIsReported, typename TReport>
 void ListDocsRMQSchemeDepth(std::size_t bp,
                             std::size_t ep,
@@ -90,11 +111,11 @@ void ListDocsRMQSchemeDepth(std::size_t bp,
   const auto k = rmq(bp, ep - 1);
   if (stop_pred(k, bp)) return;
   const auto d = get_doc(k);
-  if (!is_reported(k, d)) {
+  if (!is_reported(k, d) || kAlwaysReport) {
     report(k, d);
   }
-  ListDocsRMQSchemeDepth(bp, k, rmq, get_doc, stop_pred, is_reported, report);
-  ListDocsRMQSchemeDepth(k + 1, ep, rmq, get_doc, stop_pred, is_reported, report);
+  ListDocsRMQSchemeDepth<kAlwaysReport>(bp, k, rmq, get_doc, stop_pred, is_reported, report);
+  ListDocsRMQSchemeDepth<kAlwaysReport>(k + 1, ep, rmq, get_doc, stop_pred, is_reported, report);
 }
 
 //~~~~~~~
