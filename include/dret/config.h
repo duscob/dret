@@ -150,10 +150,10 @@ struct Keys {
             },
         },
         {
+            // CILCP-S shares CILCP's partition (kCILCP run_heads + rmq); only the
+            // run values are its own, exactly as ILCP-S does over ILCP.
             conf::kCilcpS,
             {
-                {conf::kRmq, "cilcp_s_rmq"},
-                {conf::kRunHeads, "cilcp_s_run_heads"},
                 {conf::kRunValues, "cilcp_s_run_values"},
             },
         },

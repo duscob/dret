@@ -591,11 +591,11 @@ using CilcpCore = IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHead
 // Lemma 2 (and Sadakane's original ILCP work, Gagie-Navarro-Puglisi 2014).
 //
 // ILCP-S reuses the existing ilcp_run_heads + ilcp_rmq cache files; it only
-// adds a persisted run_values array (kIlcpS / kRunValues). CILCP-S is
-// independent — its RLE matches the paper's CILCP★ Definition 1 (greedy
-// merging of consecutive single-doc ILCP runs of the same document) and
-// differs from the existing CILCP's RLE, so it owns separate cache files
-// (kCilcpS / kRunHeads, kRmq, kRunValues).
+// adds a persisted run_values array (kIlcpS / kRunValues). CILCP-S stands in
+// the same relation to CILCP: both build the CILCP* Definition 1 partition of
+// Cobas, Makinen and Rossi (SPIRE 2020) via internal::BuildCilcpRuns and share
+// its cache (kCILCP / kRunHeads, kRmq), so CILCP-S owns only its run values
+// (kCilcpS / kRunValues).
 
 
 enum class IlcpVariantS { ILCP_S, CILCP_S };

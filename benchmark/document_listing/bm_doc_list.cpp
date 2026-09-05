@@ -180,9 +180,13 @@ std::vector<std::string> CilcpKeyPrefixes() {
   return {"cilcp_rmq_", "cilcp_run_heads_", "rmq_n_doc_"};
 }
 
-// -S families. SADA-S reuses sada_rmq_, just wipes the extra prev_doc cache.
-// ILCP-S reuses ilcp_rmq_ + ilcp_run_heads_, just wipes the extra run_values.
-// CILCP-S owns its own complete set under cilcp_s_*.
+// -S families each reuse their base core's structures and wipe only the extra
+// cache they own. SADA-S reuses sada_rmq_; ILCP-S reuses ilcp_rmq_ +
+// ilcp_run_heads_; CILCP-S reuses cilcp_rmq_ + cilcp_run_heads_, since it builds
+// the same CMR20 partition as CILCP and now shares its cache.
+//
+// A --rebuild of an -S cell therefore does NOT rebuild the shared partition; the
+// base core owns it. To force that, rebuild the base core (CILCP / ILCP) too.
 std::vector<std::string> SadaSKeyPrefixes() {
   return {"sada_s_prev_doc_", "rmq_n_doc_"};
 }
@@ -190,7 +194,7 @@ std::vector<std::string> IlcpSKeyPrefixes() {
   return {"ilcp_s_run_values_", "rmq_n_doc_"};
 }
 std::vector<std::string> CilcpSKeyPrefixes() {
-  return {"cilcp_s_rmq_", "cilcp_s_run_heads_", "cilcp_s_run_values_", "rmq_n_doc_"};
+  return {"cilcp_s_run_values_", "rmq_n_doc_"};
 }
 
 // Warmth check: stderr-warn once per cell when --rebuild is off AND the
