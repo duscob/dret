@@ -158,7 +158,7 @@ sdsl::int_vector<> LoadOrComputeIlcp(Config& t_config, std::size_t t_n_doc) {
 }  // namespace internal
 
 //~~~~~~~
-// SadaCore
+// SadaLCore
 
 
 template <typename TStorage = GenericStorage,
@@ -166,17 +166,17 @@ template <typename TStorage = GenericStorage,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = GetDocDA<TStorage, t_width>>
-class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class SadaLCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
   using typename Base::size_type;
 
-  explicit SadaCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
+  explicit SadaLCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
 
-  SadaCore(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor)
+  SadaLCore(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor)
       : Base(t_storage), get_doc_(t_storage, t_block_size, t_storing_factor) {}
 
-  SadaCore() = default;
+  SadaLCore() = default;
 
   void load(Config t_config) override {
     Base::load(t_config);
@@ -253,10 +253,10 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 };
 
 //~~~~~~~
-// SadaSCore — Sadakane-style depth-based stop variant of SadaCore.
+// SadaCore — Sadakane-style depth-based stop variant of SadaLCore.
 //
 // Same RMQ over prev_doc as the original SADA core; the difference is at
-// query time only. SadaSCore persists the prev_doc array (existing SadaCore
+// query time only. SadaCore persists the prev_doc array (existing SadaLCore
 // discards it after RMQ construction) so the recursion stop can read it as
 // `prev_doc[k] >= bp_subrange` — Sadakane's canonical predicate. Reuses the
 // `kSADA / kRmq` cache file; adds `kSadaS / kPrevDoc` for the value array.
@@ -268,17 +268,17 @@ template <typename TStorage = GenericStorage,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = GetDocDA<TStorage, t_width>,
           typename TPrevDoc = sdsl::int_vector<>>
-class SadaSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
   using typename Base::size_type;
 
-  explicit SadaSCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
+  explicit SadaCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
 
-  SadaSCore(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor)
+  SadaCore(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor)
       : Base(t_storage), get_doc_(t_storage, t_block_size, t_storing_factor) {}
 
-  SadaSCore() = default;
+  SadaCore() = default;
 
   void load(Config t_config) override {
     Base::load(t_config);
@@ -364,30 +364,30 @@ class SadaSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 };
 
 //~~~~~~~
-// IlcpCore / CilcpCore (share the same loaded representation; differ in the
+// IlcpLCore / CilcpLCore (share the same loaded representation; differ in the
 // run-compression rule used at construction and in the fan-out behavior at query).
 
 
-enum class IlcpVariant { ILCP, CILCP };
+enum class IlcpLeanVariant { ILCP_L, CILCP_L };
 
-template <IlcpVariant kVariant,
+template <IlcpLeanVariant kVariant,
           typename TStorage,
           uint8_t t_width,
           typename TBvRunHeads,
           typename TRMQ,
           typename TBvDocEnds,
           typename TGetDoc = GetDocDA<TStorage, t_width>>
-class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
   using typename Base::size_type;
 
-  explicit IlcpLikeCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
+  explicit IlcpLikeLeanCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
 
-  IlcpLikeCore(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor)
+  IlcpLikeLeanCore(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor)
       : Base(t_storage), get_doc_(t_storage, t_block_size, t_storing_factor) {}
 
-  IlcpLikeCore() = default;
+  IlcpLikeLeanCore() = default;
 
   void load(Config t_config) override {
     Base::load(t_config);
@@ -468,7 +468,7 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       // different documents, does not fire the peek and fans out normally.)
       const std::size_t b = run_start + 1;
       const std::size_t e = run_end + 1;
-      if constexpr (kVariant == IlcpVariant::CILCP) {
+      if constexpr (kVariant == IlcpLeanVariant::CILCP_L) {
         if (b < e && get_doc_(b) != doc)
           get_doc_(b, e, report_dedup);
       } else {
@@ -482,12 +482,12 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     // while pending docs remain in the same subrange). Force unconditional
     // recursion for CILCP only; ILCP keeps the early-stop, which is sound
     // for ilcp-constant runs and is a major query-time optimization.
-    constexpr bool kStopOnReported = (kVariant != IlcpVariant::CILCP);
+    constexpr bool kStopOnReported = (kVariant != IlcpLeanVariant::CILCP_L);
     // CILCP runs merge by document, so a run's stored value is a min that may be
     // attained outside [sp, ep). Such a run can report a duplicate occurrence
     // early and suppress the fan-out of a later run holding a new document, so
     // the fan-out must not be gated on the head doc being new.
-    constexpr bool kAlwaysReport = (kVariant == IlcpVariant::CILCP);
+    constexpr bool kAlwaysReport = (kVariant == IlcpLeanVariant::CILCP_L);
     ListDocsRMQScheme<kStopOnReported, kAlwaysReport>(run_sp, run_ep, *rmq_, get_doc, mr, report);
   }
 
@@ -530,7 +530,7 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using typename Base::TSource;
 
   static std::string_view TopKey() {
-    return kVariant == IlcpVariant::ILCP ? conf::kILCP : conf::kCILCP;
+    return kVariant == IlcpLeanVariant::ILCP_L ? conf::kILCP : conf::kCILCP;
   }
 
   void loadInner(TSource& t_source, const JSON& t_keys) override {
@@ -572,7 +572,7 @@ template <typename TStorage = GenericStorage,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = GetDocDA<TStorage, t_width>>
-using IlcpCore = IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>;
+using IlcpLCore = IlcpLikeLeanCore<IlcpLeanVariant::ILCP_L, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>;
 
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
@@ -580,12 +580,12 @@ template <typename TStorage = GenericStorage,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = GetDocDA<TStorage, t_width>>
-using CilcpCore = IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>;
+using CilcpLCore = IlcpLikeLeanCore<IlcpLeanVariant::CILCP_L, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>;
 
 //~~~~~~~
-// IlcpSCore / CilcpSCore — Sadakane-style depth-based recursion-stop variants.
+// IlcpCore / CilcpCore — Sadakane-style depth-based recursion-stop variants.
 //
-// Same query shape as IlcpLikeCore (run-space RMQ + Option B fan-out with the
+// Same query shape as IlcpLikeLeanCore (run-space RMQ + Option B fan-out with the
 // CILCP Rule-2 peek), but the recursion stops on the canonical
 // `run_values[k] >= m` predicate from Cobas, Mäkinen, Rossi SPIRE 2020
 // Lemma 2 (and Sadakane's original ILCP work, Gagie-Navarro-Puglisi 2014).
@@ -598,9 +598,9 @@ using CilcpCore = IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHead
 // (kCilcpS / kRunValues).
 
 
-enum class IlcpVariantS { ILCP_S, CILCP_S };
+enum class IlcpFullVariant { ILCP, CILCP };
 
-template <IlcpVariantS kVariantS,
+template <IlcpFullVariant kVariantS,
           typename TStorage,
           uint8_t t_width,
           typename TBvRunHeads,
@@ -608,17 +608,17 @@ template <IlcpVariantS kVariantS,
           typename TBvDocEnds,
           typename TGetDoc = GetDocDA<TStorage, t_width>,
           typename TRunValues = sdsl::dac_vector<>>
-class IlcpLikeSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class IlcpLikeFullCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
   using typename Base::size_type;
 
-  explicit IlcpLikeSCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
+  explicit IlcpLikeFullCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
 
-  IlcpLikeSCore(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor)
+  IlcpLikeFullCore(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor)
       : Base(t_storage), get_doc_(t_storage, t_block_size, t_storing_factor) {}
 
-  IlcpLikeSCore() = default;
+  IlcpLikeFullCore() = default;
 
   void load(Config t_config) override {
     Base::load(t_config);
@@ -675,7 +675,7 @@ class IlcpLikeSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
           t_report(dd);
         }
       };
-      // See IlcpLikeCore::findDocs: CILCP★ merges by document too, so a visited
+      // See IlcpLikeLeanCore::findDocs: CILCP★ merges by document too, so a visited
       // run must be fanned out even when its head doc is already reported.
       report_dedup(doc);
 
@@ -686,10 +686,10 @@ class IlcpLikeSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
       const std::size_t b = run_start + 1;
       const std::size_t e = run_end + 1;
-      if constexpr (kVariantS == IlcpVariantS::CILCP_S) {
+      if constexpr (kVariantS == IlcpFullVariant::CILCP) {
         // CILCP★ runs can be either single-doc (merged) or multi-doc (a
         // non-merged, hence ilcp-constant, ILCP run). The peek is sound for
-        // both, by the argument spelled out in IlcpLikeCore::findDocs.
+        // both, by the argument spelled out in IlcpLikeLeanCore::findDocs.
         if (b < e && get_doc_(b) != doc)
           get_doc_(b, e, report_dedup);
       } else {
@@ -698,7 +698,7 @@ class IlcpLikeSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       }
     };
 
-    constexpr bool kAlwaysReport = (kVariantS == IlcpVariantS::CILCP_S);
+    constexpr bool kAlwaysReport = (kVariantS == IlcpFullVariant::CILCP);
     ListDocsRMQSchemeDepth<kAlwaysReport>(run_sp, run_ep, *rmq_, get_doc, stop_pred, mr, report);
   }
 
@@ -748,11 +748,11 @@ class IlcpLikeSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   // CILCP-S and CILCP build the same CMR20 runs (internal::BuildCilcpRuns).
   // Only the values live in the kIlcpS / kCilcpS namespace.
   static std::string_view RleTopKey() {
-    return kVariantS == IlcpVariantS::ILCP_S ? conf::kILCP : conf::kCILCP;
+    return kVariantS == IlcpFullVariant::ILCP ? conf::kILCP : conf::kCILCP;
   }
 
   static std::string_view ValuesTopKey() {
-    return kVariantS == IlcpVariantS::ILCP_S ? conf::kIlcpS : conf::kCilcpS;
+    return kVariantS == IlcpFullVariant::ILCP ? conf::kIlcpS : conf::kCilcpS;
   }
 
   void loadInner(TSource& t_source, const JSON& t_keys) override {
@@ -797,7 +797,7 @@ template <typename TStorage = GenericStorage,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = GetDocDA<TStorage, t_width>,
           typename TRunValues = sdsl::dac_vector<>>
-using IlcpSCore = IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>;
+using IlcpCore = IlcpLikeFullCore<IlcpFullVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>;
 
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
@@ -806,7 +806,7 @@ template <typename TStorage = GenericStorage,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = GetDocDA<TStorage, t_width>,
           typename TRunValues = sdsl::dac_vector<>>
-using CilcpSCore = IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>;
+using CilcpCore = IlcpLikeFullCore<IlcpFullVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>;
 
 //~~~~~~~
 // DocListIdxRMQ
@@ -815,7 +815,7 @@ using CilcpSCore = IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRu
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TCore = SadaCore<TStorage, TAlphabet::int_width>>
+          typename TCore = SadaLCore<TStorage, TAlphabet::int_width>>
 class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
  public:
   using Base = DocListIndexExtStorage<TStorage, TAlphabet>;
@@ -959,7 +959,7 @@ void StoreRunHeadsAndRMQ(Config& t_config,
 // Shared by CILCP and CILCP-S so the two cores partition IDENTICALLY by
 // construction. They differ in exactly one thing: CILCP-S also stores the run
 // values, which buys it the value-based stop; CILCP omits them and recurses
-// unconditionally instead (see IlcpLikeCore::findDocs).
+// unconditionally instead (see IlcpLikeLeanCore::findDocs).
 inline void BuildCilcpRuns(const sdsl::int_vector<>& t_ilcp,
                            const sdsl::int_vector<>& t_da,
                            sdsl::bit_vector& t_run_heads,
@@ -1038,7 +1038,7 @@ inline void StorePackedValues(Config& t_config,
 }
 
 // Backwards-compatible alias for the run_values use site. Default
-// TRunValues = sdsl::dac_vector<> matches the IlcpLikeSCore default.
+// TRunValues = sdsl::dac_vector<> matches the IlcpLikeFullCore default.
 template <typename TRunValues = sdsl::dac_vector<>>
 inline void StoreRunValues(Config& t_config,
                            const std::string& t_key,
@@ -1048,7 +1048,7 @@ inline void StoreRunValues(Config& t_config,
 
 // SADA construction: prev_doc + RMinQ.
 template <typename TStorage, uint8_t t_width, typename TRMQ, typename TBvDocEnds, typename TGetDoc>
-void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, Config& t_config) {
+void construct(SadaLCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
 
@@ -1061,6 +1061,12 @@ void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, C
 
     std::size_t n_doc = internal::ReadNDoc(t_config);
 
+    // prev_doc[i] = the previous SA position holding DA[i], or 0 when there is
+    // none. Using 0 as "no previous occurrence" is only safe because SA position
+    // 0 is the sentinel suffix, which no pattern range ever contains: every
+    // query has sp >= 1, so 0 < sp acts as -infinity in the stop test
+    // prev_doc[k] >= sp. If the sentinel handling ever changes so that position
+    // 0 can fall inside a range, this needs a real out-of-band value.
     sdsl::int_vector<> prev_doc(da.size(), 0, sdsl::bits::hi(da.size()) + 1);
     std::vector<std::size_t> last_occ(n_doc + 2, 0);
     for (std::size_t i = 0; i < da.size(); ++i) {
@@ -1083,7 +1089,7 @@ void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, C
 // TPrevDoc controls how that array is encoded on disk — int_vector is the
 // natural default (random SA positions don't compress much under DAC/VLC).
 template <typename TStorage, uint8_t t_width, typename TRMQ, typename TBvDocEnds, typename TGetDoc, typename TPrevDoc>
-void construct(SadaSCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc, TPrevDoc>& t_core, Config& t_config) {
+void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc, TPrevDoc>& t_core, Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
 
@@ -1113,7 +1119,7 @@ void construct(SadaSCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc, TPrevDoc>
       sdsl::store_to_cache(rmq, key_rmq, t_config, true);
     }
     // Pack into the requested TPrevDoc container. For TPrevDoc =
-    // sdsl::int_vector<> (the SadaSCore default) StorePackedValues does
+    // sdsl::int_vector<> (the SadaCore default) StorePackedValues does
     // bit_compress; for DAC / VLC / similar it constructs from a
     // std::vector<uint64_t>.
     std::vector<std::size_t> prev_doc_values(prev_doc.size());
@@ -1132,7 +1138,7 @@ template <typename TStorage,
           typename TRMQ,
           typename TBvDocEnds,
           typename TGetDoc>
-void construct(IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
+void construct(IlcpLikeLeanCore<IlcpLeanVariant::ILCP_L, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
                Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
@@ -1171,7 +1177,7 @@ template <typename TStorage,
           typename TRMQ,
           typename TBvDocEnds,
           typename TGetDoc>
-void construct(IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
+void construct(IlcpLikeLeanCore<IlcpLeanVariant::CILCP_L, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
                Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
@@ -1206,7 +1212,7 @@ void construct(IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, 
 }
 
 // StorePackedValues / StoreRunValues are defined earlier in the file
-// (right before construct(SadaCore, ...) — see above).
+// (right before construct(SadaLCore, ...) — see above).
 
 // ILCP-S construction: reuse the existing ILCP RLE (run_heads + rmq) and
 // additionally persist run_values for the depth-based stop. If the ILCP
@@ -1219,7 +1225,7 @@ template <typename TStorage,
           typename TBvDocEnds,
           typename TGetDoc,
           typename TRunValues>
-void construct(IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>& t_core,
+void construct(IlcpLikeFullCore<IlcpFullVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>& t_core,
                Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
@@ -1275,7 +1281,7 @@ template <typename TStorage,
           typename TBvDocEnds,
           typename TGetDoc,
           typename TRunValues>
-void construct(IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>& t_core,
+void construct(IlcpLikeFullCore<IlcpFullVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>& t_core,
                Config& t_config) {
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);

@@ -74,10 +74,10 @@ class Factory {
     // fields. New code should prefer designated init.
     DGCDASLPVariant dgcda_slp = DGCDASLPVariant::Default;
     // TRunValues axis for the -S families (ILCP-S / CILCP-S). Ignored by
-    // every other index family. Default DV matches IlcpLikeSCore's default.
+    // every other index family. Default DV matches IlcpLikeFullCore's default.
     RunValuesVariant run_values = RunValuesVariant::DV;
     // TPrevDoc axis for SADA-S. Ignored by every other index family.
-    // Default IV matches SadaSCore's default (prev_doc values are random
+    // Default IV matches SadaCore's default (prev_doc values are random
     // SA positions; int_vector with bit_compress is the natural choice).
     PrevDocVariant prev_doc = PrevDocVariant::IV;
     // SA-Phi sampling rate for get_doc=sa_phi_sr (PDL/RMQ × SR-index
@@ -267,7 +267,7 @@ class Factory {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::SADA,
+            bench::factories::rmq::CoreKind::SADA_L,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
             bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
             t_config.sa_sampling);
@@ -279,7 +279,7 @@ class Factory {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::ILCP,
+            bench::factories::rmq::CoreKind::ILCP_L,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
             bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
             t_config.sa_sampling);
@@ -309,7 +309,7 @@ class Factory {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::CILCP,
+            bench::factories::rmq::CoreKind::CILCP_L,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
             bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
             t_config.sa_sampling);
@@ -321,7 +321,7 @@ class Factory {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::SADA_S,
+            bench::factories::rmq::CoreKind::SADA,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
             t_config.dgcda_slp, t_config.run_values, t_config.prev_doc,
             t_config.sa_sampling);
@@ -333,7 +333,7 @@ class Factory {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::ILCP_S,
+            bench::factories::rmq::CoreKind::ILCP,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
             t_config.dgcda_slp, t_config.run_values,
             bench::axes::PrevDocVariant::IV, t_config.sa_sampling);
@@ -345,7 +345,7 @@ class Factory {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::CILCP_S,
+            bench::factories::rmq::CoreKind::CILCP,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
             t_config.dgcda_slp, t_config.run_values,
             bench::axes::PrevDocVariant::IV, t_config.sa_sampling);

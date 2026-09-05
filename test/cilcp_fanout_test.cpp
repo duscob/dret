@@ -78,22 +78,22 @@ using CilcpFanoutTypes = ::testing::Types<
     dret::DocListIdxBrute<ExternalGenericStorage>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                              sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                             dret::rmq::SadaLCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                             dret::rmq::IlcpLCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                             dret::rmq::CilcpLCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                              dret::rmq::SadaCore<ExternalGenericStorage>>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                              sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                              dret::rmq::IlcpCore<ExternalGenericStorage>>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                              sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::CilcpCore<ExternalGenericStorage>>,
-    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
-                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::SadaSCore<ExternalGenericStorage>>,
-    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
-                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::IlcpSCore<ExternalGenericStorage>>,
-    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
-                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::CilcpSCore<ExternalGenericStorage>>>;
+                             dret::rmq::CilcpCore<ExternalGenericStorage>>>;
 
 TYPED_TEST_SUITE(CilcpFanoutTypedTests, CilcpFanoutTypes);
 
@@ -136,10 +136,10 @@ class CilcpPartitionTest : public BaseConfigTests<8> {
 TEST_F(CilcpPartitionTest, cilcp_and_cilcp_s_share_one_partition) {
   using Cilcp  = dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                      sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                     dret::rmq::CilcpCore<ExternalGenericStorage>>;
+                     dret::rmq::CilcpLCore<ExternalGenericStorage>>;
   using CilcpS = dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                      sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                     dret::rmq::CilcpSCore<ExternalGenericStorage>>;
+                     dret::rmq::CilcpCore<ExternalGenericStorage>>;
   auto bytes = [](const auto& idx, const std::string& key) -> std::size_t {
     for (const auto& [k, v] : idx.core().GetSizeReport())
       if (k == key) return v;

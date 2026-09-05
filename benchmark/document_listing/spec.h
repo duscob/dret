@@ -21,7 +21,7 @@
 //                            "storing_factor": [4] },
 //       { "family": "dgcda", "tslp": ["Default","OTF"], "block_size": [512],
 //                            "storing_factor": [4] },
-//       { "family": "rmq",   "core": ["sada","ilcp"],
+//       { "family": "rmq",   "core": ["sada","ilcp","cilcp-l"],
 //                            "get_doc": ["da","slp"], "gcda_slp": ["Light"],
 //                            "block_size": [512], "storing_factor": [4] },
 //       { "family": "pdl",   "codec": ["Plain"], "get_doc": ["DA"],
@@ -125,22 +125,22 @@ struct SLPNSSweep {
 
 struct RMQSweep {
   std::vector<factories::rmq::CoreKind> core{
+      factories::rmq::CoreKind::SADA_L,
+      factories::rmq::CoreKind::ILCP_L,
+      factories::rmq::CoreKind::CILCP_L,
       factories::rmq::CoreKind::SADA,
       factories::rmq::CoreKind::ILCP,
-      factories::rmq::CoreKind::CILCP,
-      factories::rmq::CoreKind::SADA_S,
-      factories::rmq::CoreKind::ILCP_S,
-      factories::rmq::CoreKind::CILCP_S};
+      factories::rmq::CoreKind::CILCP};
   std::vector<axes::GetDocEnum> get_doc{axes::GetDocEnum::DA};
   std::vector<axes::GCDASLPVariant> gcda_slp{axes::GCDASLPVariant::Light};
   std::vector<axes::BareSLPVariant> bare_slp{axes::BareSLPVariant::IV};
   // DGCDA variant axis for get_doc=dslp (the differential get-doc backend).
   std::vector<axes::DGCDASLPVariant> dgcda_slp{axes::DGCDASLPVariant::Default};
   // TRunValues axis for the -S sub-family (ILCP-S / CILCP-S). Default DV
-  // matches IlcpLikeSCore's default; other variants in {iv, dv, vv} fan
+  // matches IlcpLikeFullCore's default; other variants in {iv, dv, vv} fan
   // the -S cores out across the run-values container.
   std::vector<axes::RunValuesVariant> run_values{axes::RunValuesVariant::DV};
-  // TPrevDoc axis for SADA-S. Default IV matches SadaSCore's default;
+  // TPrevDoc axis for SADA-S. Default IV matches SadaCore's default;
   // other variants in {iv, dv, vv}.
   std::vector<axes::PrevDocVariant> prev_doc{axes::PrevDocVariant::IV};
   // SA-Phi sampling rate axis for get_doc=sa_phi_sr. Ignored for sa_phi_r
@@ -193,14 +193,32 @@ inline Mode ParseMode(const std::string& s) {
   throw std::invalid_argument("spec.mode: must be 'query' or 'construct', got '" + s + "'");
 }
 
+// Core vocabulary. NOTE the 2026-09 rename: the plain names now denote the
+// PUBLISHED algorithms, which is what they mean in the literature and in the
+// paper. What used to be called "sada" / "ilcp" / "cilcp" -- the variants that
+// drop the value array -- are now "sada-l" / "ilcp-l" / "cilcp-l".
+//
+// The old "-s" spellings are rejected rather than aliased, because "sada" itself
+// changed meaning: silently reinterpreting an old spec would run a different core
+// than its author intended, and the results would look perfectly plausible. Any
+// spec naming a "-s" core therefore fails loudly and must be migrated.
 inline factories::rmq::CoreKind ParseRmqCore(const std::string& s) {
   if (s == "sada")    return factories::rmq::CoreKind::SADA;
   if (s == "ilcp")    return factories::rmq::CoreKind::ILCP;
   if (s == "cilcp")   return factories::rmq::CoreKind::CILCP;
-  if (s == "sada-s")  return factories::rmq::CoreKind::SADA_S;
-  if (s == "ilcp-s")  return factories::rmq::CoreKind::ILCP_S;
-  if (s == "cilcp-s") return factories::rmq::CoreKind::CILCP_S;
-  throw std::invalid_argument("rmq.core: must be 'sada' / 'ilcp' / 'cilcp' / 'sada-s' / 'ilcp-s' / 'cilcp-s', got '" + s + "'");
+  if (s == "sada-l")  return factories::rmq::CoreKind::SADA_L;
+  if (s == "ilcp-l")  return factories::rmq::CoreKind::ILCP_L;
+  if (s == "cilcp-l") return factories::rmq::CoreKind::CILCP_L;
+  if (s == "sada-s" || s == "ilcp-s" || s == "cilcp-s") {
+    const std::string base = s.substr(0, s.size() - 2);
+    throw std::invalid_argument(
+        "rmq.core: '" + s + "' was renamed in 2026-09. The published algorithm now takes "
+        "the plain name, so '" + base + "' is what '" + s + "' used to be, and the "
+        "value-free variant formerly called '" + base + "' is now '" + base + "-l'. "
+        "Migrate the spec: a bare old name now selects the OTHER core.");
+  }
+  throw std::invalid_argument("rmq.core: must be 'sada' / 'ilcp' / 'cilcp' / "
+                              "'sada-l' / 'ilcp-l' / 'cilcp-l', got '" + s + "'");
 }
 
 inline BruteSweep::Kind ParseBruteKind(const std::string& s) {

@@ -30,7 +30,7 @@
     },
     {
       "family": "rmq",
-      "core": ["sada", "ilcp", "cilcp"],
+      "core": ["sada", "ilcp", "cilcp", "cilcp-l"],
       "get_doc": ["da", "slp"],
       "gcda_slp": ["light"],
       "block_size": [512],

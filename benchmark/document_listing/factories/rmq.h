@@ -90,14 +90,14 @@ using GetDocRLCSA = dret::rmq::GetDocRLCSA<TStorage, kWidth>;
 
 // Core template aliases. TGetDoc defaults to the DA backing.
 template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
-using SadaCore = dret::rmq::SadaCore<TStorage,
+using SadaLCore = dret::rmq::SadaLCore<TStorage,
                                       kWidth,
                                       sdsl::rmq_succinct_sct<true>,
                                       sdsl::sd_vector<>,
                                       TGetDoc>;
 
 template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
-using IlcpCore = dret::rmq::IlcpCore<TStorage,
+using IlcpLCore = dret::rmq::IlcpLCore<TStorage,
                                       kWidth,
                                       sdsl::sd_vector<>,
                                       sdsl::rmq_succinct_sct<true>,
@@ -105,7 +105,7 @@ using IlcpCore = dret::rmq::IlcpCore<TStorage,
                                       TGetDoc>;
 
 template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
-using CilcpCore = dret::rmq::CilcpCore<TStorage,
+using CilcpLCore = dret::rmq::CilcpLCore<TStorage,
                                         kWidth,
                                         sdsl::sd_vector<>,
                                         sdsl::rmq_succinct_sct<true>,
@@ -115,7 +115,7 @@ using CilcpCore = dret::rmq::CilcpCore<TStorage,
 // Sadakane-style (-S) parallel cores: same RMQ data, canonical depth-based
 // recursion stop. SADA-S persists prev_doc; ILCP-S and CILCP-S persist
 // run_values. CILCP-S's RLE follows paper Def 1 (CILCP★) and is distinct
-// from existing CilcpCore.
+// from existing CilcpLCore.
 
 // TPrevDoc container choices for SADA-S. Independent of TGetDoc; controls
 // how the persisted per-SA-position prev_doc array is encoded on disk.
@@ -126,7 +126,7 @@ using PrevDoc_VV = sdsl::vlc_vector<>;
 template <typename TStorage,
           typename TGetDoc = GetDocDA<TStorage>,
           typename TPrevDoc = PrevDoc_IV>
-using SadaSCore = dret::rmq::SadaSCore<TStorage,
+using SadaCore = dret::rmq::SadaCore<TStorage,
                                         kWidth,
                                         sdsl::rmq_succinct_sct<true>,
                                         sdsl::sd_vector<>,
@@ -142,7 +142,7 @@ using RunValues_VV = sdsl::vlc_vector<>;   // variable-length codes
 template <typename TStorage,
           typename TGetDoc = GetDocDA<TStorage>,
           typename TRunValues = RunValues_DV>
-using IlcpSCore = dret::rmq::IlcpSCore<TStorage,
+using IlcpCore = dret::rmq::IlcpCore<TStorage,
                                         kWidth,
                                         sdsl::sd_vector<>,
                                         sdsl::rmq_succinct_sct<true>,
@@ -153,7 +153,7 @@ using IlcpSCore = dret::rmq::IlcpSCore<TStorage,
 template <typename TStorage,
           typename TGetDoc = GetDocDA<TStorage>,
           typename TRunValues = RunValues_DV>
-using CilcpSCore = dret::rmq::CilcpSCore<TStorage,
+using CilcpCore = dret::rmq::CilcpCore<TStorage,
                                           kWidth,
                                           sdsl::sd_vector<>,
                                           sdsl::rmq_succinct_sct<true>,
@@ -169,7 +169,14 @@ using Idx = dret::rmq::DocListIdxRMQ<TStorage,
                                       TCore>;
 
 // Which core to build.
-enum class CoreKind { SADA, ILCP, CILCP, SADA_S, ILCP_S, CILCP_S };
+// SADA / ILCP / CILCP are the published algorithms (Sadakane 2007;
+// Gagie, Navarro, Puglisi 2014; Cobas, Makinen, Rossi SPIRE 2020): they keep the
+// array the RMQ was built over and stop the recursion on its values.
+// The -L ("light") cores drop that array -- the whole point of listing without
+// frequencies -- and stop on the reported-document marker instead, or, for
+// CILCP_L, do not stop at all because the marker test is unsound once runs are
+// merged by document.
+enum class CoreKind { SADA, ILCP, CILCP, SADA_L, ILCP_L, CILCP_L };
 
 namespace detail {
 
@@ -353,7 +360,7 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
 
 //~~~~~~~  -S family dispatch (3-arg TCoreT taking <TStorage, TGetDoc, TRunValues>)
 //
-// IlcpSCore / CilcpSCore take an extra TRunValues template parameter on top
+// IlcpCore / CilcpCore take an extra TRunValues template parameter on top
 // of the standard 2-arg core template, so the existing 2-arg MakeOne path
 // doesn't fit. The MakeXxx_S helpers mirror MakeXxx but plumb TRunValues
 // through; MakeOneS_T dispatches on TGetDoc with TRunValues fixed; MakeOneS
@@ -409,8 +416,8 @@ MakeDSLP_S(TStorage t_storage, dret::Config& t_config,
   return {idx, sdsl::size_in_bytes(*idx)};
 }
 
-// NOTE: SA-Phi is not supported for the -S family cores (IlcpLikeSCore /
-// SadaSCore) — their 1-arg constructors don't accept the sa_sampling rate
+// NOTE: SA-Phi is not supported for the -S family cores (IlcpLikeFullCore /
+// SadaCore) — their 1-arg constructors don't accept the sa_sampling rate
 // the inner GetDocSAPhi needs. The MakeOneS_T dispatch below treats
 // SAPhiR / SAPhiSR as no-ops (falls through to DA). Sweep specs should not
 // list sada-s / ilcp-s / cilcp-s under sa_phi_r/sr. The non-S cores
@@ -512,7 +519,7 @@ MakeOneS(TStorage t_storage, dret::Config& t_config,
 // SADA-S has TPrevDoc instead of TRunValues. Mirrors MakeOneS but
 // dispatches on PrevDocVariant; the inner T-dispatch reuses the existing
 // MakeXxx_S helpers (TCoreT here is a 3-arg <TStorage, TGetDoc, TPrevDoc>
-// template — same shape as IlcpSCore / CilcpSCore).
+// template — same shape as IlcpCore / CilcpCore).
 template <template <typename, typename, typename> class TCoreT, typename TStorage>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
 MakeOneSada_S(TStorage t_storage, dret::Config& t_config,
@@ -553,24 +560,24 @@ Make(TStorage t_storage, dret::Config& t_config,
      bench::axes::PrevDocVariant t_prev_doc = bench::axes::PrevDocVariant::IV,
      std::size_t t_sa_sampling = 0) {
   switch (t_core) {
-    case CoreKind::ILCP:
-      return detail::MakeOne<IlcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
+    case CoreKind::ILCP_L:
+      return detail::MakeOne<IlcpLCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                         t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
-    case CoreKind::CILCP:
-      return detail::MakeOne<CilcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
+    case CoreKind::CILCP_L:
+      return detail::MakeOne<CilcpLCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                          t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
-    case CoreKind::SADA_S:
-      return detail::MakeOneSada_S<SadaSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                               t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_prev_doc, t_sa_sampling);
-    case CoreKind::ILCP_S:
-      return detail::MakeOneS<IlcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                          t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
-    case CoreKind::CILCP_S:
-      return detail::MakeOneS<CilcpSCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                           t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
     case CoreKind::SADA:
+      return detail::MakeOneSada_S<SadaCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                               t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_prev_doc, t_sa_sampling);
+    case CoreKind::ILCP:
+      return detail::MakeOneS<IlcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                          t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
+    case CoreKind::CILCP:
+      return detail::MakeOneS<CilcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                           t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
+    case CoreKind::SADA_L:
     default:
-      return detail::MakeOne<SadaCore>(t_storage, t_config, t_block_size, t_storing_factor,
+      return detail::MakeOne<SadaLCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                         t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
   }
 }
