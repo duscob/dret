@@ -166,9 +166,7 @@ std::string PDLKeyPrefix(std::uint32_t bs, float sf,
 }
 
 // Per-core RMQ cache-file prefixes. The FILENAMES keep their historical
-// spelling (sada_s_prev_doc_, cilcp_s_run_values_) so existing index
-// directories stay readable; only the function names follow the 2026-09 core
-// rename. Per-core RMQ key prefixes — the structures dret::rmq::DocListIdxRMQ::construct
+// Per-core RMQ key prefixes — the structures dret::rmq::DocListIdxRMQ::construct
 // actually writes. The SLP / DSLP / DA caches are SHARED with the corresponding
 // GCDA / DGCDA / brute paths and are intentionally NOT deleted; what we wipe
 // is only the RMQ-core-specific data. rmq_n_doc is a one-element int_vector
@@ -191,13 +189,13 @@ std::vector<std::string> CilcpLKeyPrefixes() {
 // A --rebuild of one of these cells therefore does NOT rebuild the shared
 // partition; the -L core owns it. To force that, rebuild CILCP-L / ILCP-L too.
 std::vector<std::string> SadaKeyPrefixes() {
-  return {"sada_s_prev_doc_", "rmq_n_doc_"};
+  return {"sada_prev_doc_", "rmq_n_doc_"};
 }
 std::vector<std::string> IlcpKeyPrefixes() {
-  return {"ilcp_s_run_values_", "rmq_n_doc_"};
+  return {"ilcp_run_values_", "rmq_n_doc_"};
 }
 std::vector<std::string> CilcpKeyPrefixes() {
-  return {"cilcp_s_run_values_", "rmq_n_doc_"};
+  return {"cilcp_run_values_", "rmq_n_doc_"};
 }
 
 // Warmth check: stderr-warn once per cell when --rebuild is off AND the

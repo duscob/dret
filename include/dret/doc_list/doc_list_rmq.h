@@ -259,7 +259,7 @@ class SadaLCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 // query time only. SadaCore persists the prev_doc array (existing SadaLCore
 // discards it after RMQ construction) so the recursion stop can read it as
 // `prev_doc[k] >= bp_subrange` — Sadakane's canonical predicate. Reuses the
-// `kSADA / kRmq` cache file; adds `kSadaS / kPrevDoc` for the value array.
+// `kSADA / kRmq` cache file; adds `kSADA / kPrevDoc` for the value array.
 
 
 template <typename TStorage = GenericStorage,
@@ -346,7 +346,7 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     key_rmq_ = t_keys[kSADA][kRmq].get<std::string>();
     rmq_ = this->template loadItemPtr<TRMQ>(key_rmq_, t_source, true);
 
-    key_prev_doc_ = t_keys[kSadaS][kPrevDoc].get<std::string>();
+    key_prev_doc_ = t_keys[kSADA][kPrevDoc].get<std::string>();
     prev_doc_ = this->template loadItemPtr<TPrevDoc>(key_prev_doc_, t_source, true);
 
     const auto key_n_doc = t_keys[kRmqNDoc].get<std::string>();
@@ -590,12 +590,12 @@ using CilcpLCore = IlcpLikeLeanCore<IlcpLeanVariant::CILCP_L, TStorage, t_width,
 // `run_values[k] >= m` predicate from Cobas, Mäkinen, Rossi SPIRE 2020
 // Lemma 2 (and Sadakane's original ILCP work, Gagie-Navarro-Puglisi 2014).
 //
-// ILCP-S reuses the existing ilcp_run_heads + ilcp_rmq cache files; it only
-// adds a persisted run_values array (kIlcpS / kRunValues). CILCP-S stands in
-// the same relation to CILCP: both build the CILCP* Definition 1 partition of
-// Cobas, Makinen and Rossi (SPIRE 2020) via internal::BuildCilcpRuns and share
-// its cache (kCILCP / kRunHeads, kRmq), so CILCP-S owns only its run values
-// (kCilcpS / kRunValues).
+// ILCP and ILCP-L share the ilcp_run_heads + ilcp_rmq cache files; this core
+// additionally persists the run_values array (kILCP / kRunValues) that its stop
+// consults. CILCP and CILCP-L stand in the same relation: both build the
+// CILCP* Definition 1 partition of Cobas, Makinen and Rossi (SPIRE 2020) via
+// internal::BuildCilcpRuns and share its cache, and only this core stores the
+// values (kCILCP / kRunValues).
 
 
 enum class IlcpFullVariant { ILCP, CILCP };
@@ -743,25 +743,20 @@ class IlcpLikeFullCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
  protected:
   using typename Base::TSource;
 
-  // Both -S cores reuse the partition of their base core and add only
-  // run_values: ILCP-S reads the kILCP cache, CILCP-S the kCILCP one, since
-  // CILCP-S and CILCP build the same CMR20 runs (internal::BuildCilcpRuns).
-  // Only the values live in the kIlcpS / kCilcpS namespace.
-  static std::string_view RleTopKey() {
+  // One namespace per family holds everything the family needs: the partition
+  // (run_heads, rmq), shared with the -L core, and the run values, which only
+  // this core reads. ILCP and ILCP-L share the kILCP runs; CILCP and CILCP-L
+  // share the kCILCP ones, both built by internal::BuildCilcpRuns.
+  static std::string_view TopKey() {
     return kVariantS == IlcpFullVariant::ILCP ? conf::kILCP : conf::kCILCP;
-  }
-
-  static std::string_view ValuesTopKey() {
-    return kVariantS == IlcpFullVariant::ILCP ? conf::kIlcpS : conf::kCilcpS;
   }
 
   void loadInner(TSource& t_source, const JSON& t_keys) override {
     using namespace dret::conf;
-    std::string rle_top(RleTopKey());
-    std::string values_top(ValuesTopKey());
-    key_rmq_ = t_keys[rle_top][kRmq].get<std::string>();
-    key_run_heads_ = t_keys[rle_top][kRunHeads].get<std::string>();
-    key_run_values_ = t_keys[values_top][kRunValues].get<std::string>();
+    std::string top(TopKey());
+    key_rmq_ = t_keys[top][kRmq].get<std::string>();
+    key_run_heads_ = t_keys[top][kRunHeads].get<std::string>();
+    key_run_values_ = t_keys[top][kRunValues].get<std::string>();
 
     rmq_ = this->template loadItemPtr<TRMQ>(key_rmq_, t_source, true);
     run_heads_ = this->template loadItemPtr<TBvRunHeads>(key_run_heads_, t_source, true);
@@ -1094,7 +1089,7 @@ void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc, TPrevDoc>&
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kSADA][kRmq].get<std::string>();
-  auto key_prev_doc = t_config.keys[kSadaS][kPrevDoc].get<std::string>();
+  auto key_prev_doc = t_config.keys[kSADA][kPrevDoc].get<std::string>();
   if (!sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
       || !sdsl::cache_file_exists<TPrevDoc>(key_prev_doc, t_config)) {
     auto event = sdsl::memory_monitor::event(key_prev_doc);
@@ -1232,7 +1227,7 @@ void construct(IlcpLikeFullCore<IlcpFullVariant::ILCP, TStorage, t_width, TBvRun
 
   auto key_rmq = t_config.keys[kILCP][kRmq].get<std::string>();
   auto key_run_heads = t_config.keys[kILCP][kRunHeads].get<std::string>();
-  auto key_run_values = t_config.keys[kIlcpS][kRunValues].get<std::string>();
+  auto key_run_values = t_config.keys[kILCP][kRunValues].get<std::string>();
 
   const bool rle_missing =
       !sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
@@ -1288,7 +1283,7 @@ void construct(IlcpLikeFullCore<IlcpFullVariant::CILCP, TStorage, t_width, TBvRu
 
   auto key_rmq = t_config.keys[kCILCP][kRmq].get<std::string>();
   auto key_run_heads = t_config.keys[kCILCP][kRunHeads].get<std::string>();
-  auto key_run_values = t_config.keys[kCilcpS][kRunValues].get<std::string>();
+  auto key_run_values = t_config.keys[kCILCP][kRunValues].get<std::string>();
 
   const bool rle_missing =
       !sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)

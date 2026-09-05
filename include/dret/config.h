@@ -58,20 +58,9 @@ constexpr std::string_view kRunValues = "runValues";
 constexpr std::string_view kPrevDoc = "prevDoc";
 constexpr std::string_view kRmqNDoc = "rmq_n_doc";
 // Backward interleaved-LCP array (ComputeIlcpBackward). Collection-level and
-// shared by all ILCP-family cores (ILCP / CILCP / ILCP-S / CILCP-S), so it is
-// cached once instead of recomputed per core.
+// shared by every ILCP-family core (ILCP / CILCP and their -L variants), so it
+// is cached once instead of recomputed per core.
 constexpr std::string_view kIlcpArray = "ilcp_array";
-
-// Sadakane-style ("canonical depth-based stop") parallel families. Each is
-// a sibling of the corresponding non-S core (SADA / ILCP / CILCP) and uses
-// the same RMQ when possible. SADA-S and ILCP-S reuse the existing sada_rmq
-// and ilcp_run_heads / ilcp_rmq caches respectively; the -S keys only carry
-// the extra value-array files needed by the depth-based stop. CILCP-S is
-// independent — its RLE matches the paper's CILCP★ (Def. 1) and differs
-// from dret's existing CILCP construction.
-constexpr std::string_view kSadaS = "sada_s";
-constexpr std::string_view kIlcpS = "ilcp_s";
-constexpr std::string_view kCilcpS = "cilcp_s";
 
 // PDL (precomputed document listing) — sparse suffix-tree indexes with
 // per-variant stored-set codecs. kPDL is the umbrella; kTree is the
@@ -117,10 +106,17 @@ struct Keys {
                 {conf::kDocs, "dgcda_docs"},
             },
         },
+        // One namespace per RMQ family, holding every artefact that family can
+        // need. Each core takes the subset it uses: the -L cores stop at the
+        // partition (rmq, run_heads), the published cores additionally read the
+        // value array (prev_doc / run_values) that their value-based stop
+        // consults. There is no separate namespace for the published cores --
+        // they are the base case, not a variant of it.
         {
             conf::kSADA,
             {
                 {conf::kRmq, "sada_rmq"},
+                {conf::kPrevDoc, "sada_prev_doc"},
             },
         },
         {
@@ -128,6 +124,7 @@ struct Keys {
             {
                 {conf::kRmq, "ilcp_rmq"},
                 {conf::kRunHeads, "ilcp_run_heads"},
+                {conf::kRunValues, "ilcp_run_values"},
             },
         },
         {
@@ -135,26 +132,7 @@ struct Keys {
             {
                 {conf::kRmq, "cilcp_rmq"},
                 {conf::kRunHeads, "cilcp_run_heads"},
-            },
-        },
-        {
-            conf::kSadaS,
-            {
-                {conf::kPrevDoc, "sada_s_prev_doc"},
-            },
-        },
-        {
-            conf::kIlcpS,
-            {
-                {conf::kRunValues, "ilcp_s_run_values"},
-            },
-        },
-        {
-            // CILCP-S shares CILCP's partition (kCILCP run_heads + rmq); only the
-            // run values are its own, exactly as ILCP-S does over ILCP.
-            conf::kCilcpS,
-            {
-                {conf::kRunValues, "cilcp_s_run_values"},
+                {conf::kRunValues, "cilcp_run_values"},
             },
         },
         {conf::kRLCSA, "rlcsa"},
