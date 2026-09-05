@@ -944,6 +944,72 @@ void StoreRunHeadsAndRMQ(Config& t_config,
   sdsl::store_to_cache(rmq, t_key_rmq, t_config, true);
 }
 
+// Build the CILCP* run partition of Definition 1 in Cobas, Makinen and Rossi
+// (SPIRE 2020) over the backward-ILCP array: identify the ILCP runs, flag each
+// as single- or multi-document, then greedily merge consecutive single-document
+// runs that share a document, keeping min(ILCP) over what is merged.
+//
+// Multi-document ILCP runs stand alone. Splitting one gains nothing -- the
+// pieces keep the same value, since an ILCP run is value-uniform -- and costs a
+// run head; merging one into a neighbour only lowers that neighbour's stored
+// value and so weakens pruning. Either way the document-aware rule must leave
+// them intact.
+//
+// Shared by CILCP and CILCP-S so the two cores partition IDENTICALLY by
+// construction. They differ in exactly one thing: CILCP-S also stores the run
+// values, which buys it the value-based stop; CILCP omits them and recurses
+// unconditionally instead (see IlcpLikeCore::findDocs).
+inline void BuildCilcpRuns(const sdsl::int_vector<>& t_ilcp,
+                           const sdsl::int_vector<>& t_da,
+                           sdsl::bit_vector& t_run_heads,
+                           std::vector<std::size_t>& t_run_values) {
+  const std::size_t n = t_ilcp.size();
+  t_run_heads = sdsl::bit_vector(n, 0);
+  t_run_values.clear();
+  if (n == 0) return;
+
+  // Phase A -- the ILCP runs, each tagged with its document or kMultiDoc.
+  constexpr std::size_t kMultiDoc = std::numeric_limits<std::size_t>::max();
+  std::vector<std::size_t> starts, values, docs;
+  starts.push_back(0);
+  values.push_back(t_ilcp[0]);
+  std::size_t curr_doc = static_cast<std::size_t>(t_da[0]);
+  bool curr_single = true;
+  for (std::size_t i = 1; i < n; ++i) {
+    if (t_ilcp[i] == t_ilcp[i - 1]) {
+      if (static_cast<std::size_t>(t_da[i]) != curr_doc) curr_single = false;
+    } else {
+      docs.push_back(curr_single ? curr_doc : kMultiDoc);
+      starts.push_back(i);
+      values.push_back(t_ilcp[i]);
+      curr_doc = static_cast<std::size_t>(t_da[i]);
+      curr_single = true;
+    }
+  }
+  docs.push_back(curr_single ? curr_doc : kMultiDoc);
+
+  // Phase B -- greedy merge of consecutive single-document runs sharing a doc.
+  const std::size_t n_runs = starts.size();
+  std::size_t i = 0;
+  while (i < n_runs) {
+    t_run_heads[starts[i]] = 1;
+    std::size_t v = values[i];
+    if (docs[i] != kMultiDoc) {
+      const std::size_t d = docs[i];
+      std::size_t j = i + 1;
+      while (j < n_runs && docs[j] == d) {
+        if (values[j] < v) v = values[j];
+        ++j;
+      }
+      t_run_values.push_back(v);
+      i = j;
+    } else {
+      t_run_values.push_back(v);
+      ++i;
+    }
+  }
+}
+
 }  // namespace internal
 
 // Helper: pack a std::vector<std::size_t> of values into the requested
@@ -1097,7 +1163,7 @@ void construct(IlcpLikeCore<IlcpVariant::ILCP, TStorage, t_width, TBvRunHeads, T
   construct(t_core.get_doc_policy(), t_config);
 }
 
-// CILCP construction: DA-aware RLE rule on backward-ILCP.
+// CILCP construction: the CMR20 CILCP* partition, run values not stored.
 template <typename TStorage,
           uint8_t t_width,
           typename TBvRunHeads,
@@ -1121,27 +1187,15 @@ void construct(IlcpLikeCore<IlcpVariant::CILCP, TStorage, t_width, TBvRunHeads, 
     sdsl::int_vector<> da;
     sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-    sdsl::bit_vector run_heads(ilcp.size(), 0);
+    // Same partition as CILCP-S, by construction. CILCP builds the RMQ over the
+    // run values but does NOT store them: without frequencies there is nothing
+    // the value-based stop is needed for, and dropping the array is the whole
+    // space saving of this core. The traversal pays for it by recursing
+    // unconditionally (Proposition: the marker-based stop is unsound once runs
+    // are merged by document).
+    sdsl::bit_vector run_heads;
     std::vector<std::size_t> run_values;
-    run_values.emplace_back(ilcp[0]);
-    run_heads[0] = 1;
-    for (std::size_t i = 1; i < ilcp.size(); ++i) {
-      std::size_t l = ilcp[i - 1];
-      std::size_t d = da[i - 1];
-      if (l == ilcp[i]) {
-        while (++i < ilcp.size() && l == ilcp[i]) {}
-      } else if (d == da[i]) {
-        do {
-          l = std::min<std::size_t>(l, ilcp[i]);
-        } while (++i < ilcp.size() && d == da[i]);
-      }
-
-      if (i < ilcp.size()) {
-        run_values[run_values.size() - 1] = l;
-        run_values.emplace_back(ilcp[i]);
-        run_heads[i] = 1;
-      }
-    }
+    internal::BuildCilcpRuns(ilcp, da, run_heads, run_values);
 
     internal::StoreRunHeadsAndRMQ<TBvRunHeads, TRMQ>(
         t_config, key_run_heads, key_rmq, std::move(run_heads), run_values);
@@ -1207,10 +1261,9 @@ void construct(IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHead
   construct(t_core.get_doc_policy(), t_config);
 }
 
-// CILCP-S construction: paper's CILCP★ Definition 1. Two-phase scan over
-// ILCP + DA — first identify ILCP runs and their single-doc flag, then
-// greedily merge consecutive single-doc ILCP runs sharing the same doc into
-// one CILCP★ run with min(VILCP). Independent cache files under kCilcpS.
+// CILCP-S construction: the CMR20 CILCP* partition (internal::BuildCilcpRuns,
+// shared with CILCP) plus the stored run values that the value-based stop needs.
+// Independent cache files under kCilcpS.
 template <typename TStorage,
           uint8_t t_width,
           typename TBvRunHeads,
@@ -1238,57 +1291,12 @@ void construct(IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHea
     sdsl::int_vector<> da;
     sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-    // Phase A: scan ILCP + DA in lockstep. For each ILCP run, record its
-    // starting SA position, ILCP value, and either the single doc id (when
-    // |DA[run]| = 1) or kMultiDoc (sentinel) when the run spans multiple
-    // docs.
-    constexpr std::size_t kMultiDoc = std::numeric_limits<std::size_t>::max();
-    std::vector<std::size_t> ilcp_run_starts;
-    std::vector<std::size_t> ilcp_run_values;
-    std::vector<std::size_t> ilcp_run_docs;
-
-    ilcp_run_starts.push_back(0);
-    ilcp_run_values.push_back(ilcp[0]);
-    std::size_t curr_doc = static_cast<std::size_t>(da[0]);
-    bool curr_single = true;
-    for (std::size_t i = 1; i < ilcp.size(); ++i) {
-      if (ilcp[i] == ilcp[i - 1]) {
-        if (static_cast<std::size_t>(da[i]) != curr_doc) curr_single = false;
-      } else {
-        ilcp_run_docs.push_back(curr_single ? curr_doc : kMultiDoc);
-        ilcp_run_starts.push_back(i);
-        ilcp_run_values.push_back(ilcp[i]);
-        curr_doc = static_cast<std::size_t>(da[i]);
-        curr_single = true;
-      }
-    }
-    ilcp_run_docs.push_back(curr_single ? curr_doc : kMultiDoc);
-
-    // Phase B: greedily merge consecutive single-doc ILCP runs sharing the
-    // same doc id into one CILCP★ run with min(VILCP). Multi-doc ILCP runs
-    // become standalone CILCP★ runs (still need fan-out for their distinct
-    // docs at query time).
-    sdsl::bit_vector run_heads(ilcp.size(), 0);
+    // Identical partition to CILCP, by construction -- the two cores differ only
+    // in that CILCP-S also stores the run values below, which is what enables
+    // its value-based stop.
+    sdsl::bit_vector run_heads;
     std::vector<std::size_t> run_values;
-    const std::size_t n_ilcp_runs = ilcp_run_starts.size();
-    std::size_t i = 0;
-    while (i < n_ilcp_runs) {
-      run_heads[ilcp_run_starts[i]] = 1;
-      std::size_t v = ilcp_run_values[i];
-      if (ilcp_run_docs[i] != kMultiDoc) {
-        const std::size_t d = ilcp_run_docs[i];
-        std::size_t j = i + 1;
-        while (j < n_ilcp_runs && ilcp_run_docs[j] == d) {
-          if (ilcp_run_values[j] < v) v = ilcp_run_values[j];
-          ++j;
-        }
-        run_values.push_back(v);
-        i = j;
-      } else {
-        run_values.push_back(v);
-        ++i;
-      }
-    }
+    internal::BuildCilcpRuns(ilcp, da, run_heads, run_values);
 
     internal::StoreRunHeadsAndRMQ<TBvRunHeads, TRMQ>(
         t_config, key_run_heads, key_rmq, std::move(run_heads), run_values);

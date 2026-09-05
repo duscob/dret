@@ -122,3 +122,35 @@ TYPED_TEST(CilcpFanoutTypedTests, lists_every_document_witness_b) {
     EXPECT_THAT(got, testing::ElementsAreArray(BruteForce(kDocsB, p))) << "pattern \"" << p << '"';
   }
 }
+
+// The paper's claim is that CILCP and CILCP-S partition IDENTICALLY -- they are
+// the same CMR20 runs, and differ only in whether the run values are stored.
+// Enforce it here: the run_heads structure must match byte for byte, while
+// CILCP-S must be strictly larger overall by its run_values.
+class CilcpPartitionTest : public BaseConfigTests<8> {
+ protected:
+  void SetUp() override { this->Init(std::string("BCAB\1BCBCBBCAA\1A\1BA\1B\1")); }
+  sri::GenericStorage storage_;
+};
+
+TEST_F(CilcpPartitionTest, cilcp_and_cilcp_s_share_one_partition) {
+  using Cilcp  = dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                     sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                     dret::rmq::CilcpCore<ExternalGenericStorage>>;
+  using CilcpS = dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                     sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                     dret::rmq::CilcpSCore<ExternalGenericStorage>>;
+  auto bytes = [](const auto& idx, const std::string& key) -> std::size_t {
+    for (const auto& [k, v] : idx.core().GetSizeReport())
+      if (k == key) return v;
+    return 0;
+  };
+  Cilcp  a(std::ref(this->storage_)); construct(a, this->config_);
+  CilcpS b(std::ref(this->storage_)); construct(b, this->config_);
+
+  EXPECT_GT(bytes(a, "run_heads"), 0u);
+  EXPECT_EQ(bytes(a, "run_heads"), bytes(b, "run_heads")) << "partitions differ";
+  EXPECT_EQ(bytes(a, "rmq"), bytes(b, "rmq")) << "run counts differ";
+  EXPECT_EQ(bytes(a, "run_values"), 0u) << "CILCP must not store run values";
+  EXPECT_GT(bytes(b, "run_values"), 0u) << "CILCP-S must store run values";
+}
