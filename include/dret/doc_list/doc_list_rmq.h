@@ -743,11 +743,12 @@ class IlcpLikeSCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  protected:
   using typename Base::TSource;
 
-  // ILCP-S reuses the existing ILCP run_heads + rmq cache; only its
-  // run_values are stored under the new kIlcpS namespace. CILCP-S owns
-  // an independent set of cache files under kCilcpS.
+  // Both -S cores reuse the partition of their base core and add only
+  // run_values: ILCP-S reads the kILCP cache, CILCP-S the kCILCP one, since
+  // CILCP-S and CILCP build the same CMR20 runs (internal::BuildCilcpRuns).
+  // Only the values live in the kIlcpS / kCilcpS namespace.
   static std::string_view RleTopKey() {
-    return kVariantS == IlcpVariantS::ILCP_S ? conf::kILCP : conf::kCilcpS;
+    return kVariantS == IlcpVariantS::ILCP_S ? conf::kILCP : conf::kCILCP;
   }
 
   static std::string_view ValuesTopKey() {
@@ -1261,9 +1262,12 @@ void construct(IlcpLikeSCore<IlcpVariantS::ILCP_S, TStorage, t_width, TBvRunHead
   construct(t_core.get_doc_policy(), t_config);
 }
 
-// CILCP-S construction: the CMR20 CILCP* partition (internal::BuildCilcpRuns,
-// shared with CILCP) plus the stored run values that the value-based stop needs.
-// Independent cache files under kCilcpS.
+// CILCP-S construction: reuse CILCP's CMR20 partition (run_heads + rmq under
+// kCILCP, built by internal::BuildCilcpRuns) and additionally persist run_values
+// for the value-based stop. Mirrors ILCP-S over ILCP. If the CILCP caches already
+// exist we only compute the values; otherwise we build both. Storing one copy of
+// a partition the two cores share by construction removes the duplicate on disk,
+// the second ILCP+DA scan, and the chance of the two copies drifting apart.
 template <typename TStorage,
           uint8_t t_width,
           typename TBvRunHeads,
@@ -1276,14 +1280,17 @@ void construct(IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHea
   using namespace dret::conf;
   internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
 
-  auto key_rmq = t_config.keys[kCilcpS][kRmq].get<std::string>();
-  auto key_run_heads = t_config.keys[kCilcpS][kRunHeads].get<std::string>();
+  auto key_rmq = t_config.keys[kCILCP][kRmq].get<std::string>();
+  auto key_run_heads = t_config.keys[kCILCP][kRunHeads].get<std::string>();
   auto key_run_values = t_config.keys[kCilcpS][kRunValues].get<std::string>();
 
-  if (!sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
-      || !sdsl::cache_file_exists<TBvRunHeads>(key_run_heads, t_config)
-      || !sdsl::cache_file_exists<TRunValues>(key_run_values, t_config)) {
-    auto event = sdsl::memory_monitor::event(key_rmq);
+  const bool rle_missing =
+      !sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)
+      || !sdsl::cache_file_exists<TBvRunHeads>(key_run_heads, t_config);
+  const bool values_missing = !sdsl::cache_file_exists<TRunValues>(key_run_values, t_config);
+
+  if (rle_missing || values_missing) {
+    auto event = sdsl::memory_monitor::event(key_run_values);
 
     std::size_t n_doc = internal::ReadNDoc(t_config);
     auto ilcp = internal::LoadOrComputeIlcp<t_width>(t_config, n_doc);
@@ -1298,9 +1305,13 @@ void construct(IlcpLikeSCore<IlcpVariantS::CILCP_S, TStorage, t_width, TBvRunHea
     std::vector<std::size_t> run_values;
     internal::BuildCilcpRuns(ilcp, da, run_heads, run_values);
 
-    internal::StoreRunHeadsAndRMQ<TBvRunHeads, TRMQ>(
-        t_config, key_run_heads, key_rmq, std::move(run_heads), run_values);
-    StoreRunValues<TRunValues>(t_config, key_run_values, run_values);
+    if (rle_missing) {
+      internal::StoreRunHeadsAndRMQ<TBvRunHeads, TRMQ>(
+          t_config, key_run_heads, key_rmq, std::move(run_heads), run_values);
+    }
+    if (values_missing) {
+      StoreRunValues<TRunValues>(t_config, key_run_values, run_values);
+    }
   }
 
   construct(t_core.get_doc_policy(), t_config);
