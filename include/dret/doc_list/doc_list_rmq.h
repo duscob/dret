@@ -482,13 +482,47 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
     // while pending docs remain in the same subrange). Force unconditional
     // recursion for CILCP only; ILCP keeps the early-stop, which is sound
     // for ilcp-constant runs and is a major query-time optimization.
-    constexpr bool kStopOnReported = (kVariant != IlcpLeanVariant::CILCP_L);
-    // CILCP runs merge by document, so a run's stored value is a min that may be
-    // attained outside [sp, ep). Such a run can report a duplicate occurrence
-    // early and suppress the fan-out of a later run holding a new document, so
-    // the fan-out must not be gated on the head doc being new.
+    // The marker-based stop is sound for ILCP-L everywhere: its runs are
+    // value-uniform, so a run's stored value equals the value at each of its
+    // positions and cannot be "borrowed" from outside a query range.
+    //
+    // CILCP-L merges by document, so a run's stored value is a MINIMUM. For a
+    // run lying entirely inside [sp, ep) that minimum is still the minimum over
+    // the run's in-range positions, and value < m still implies the run holds a
+    // first occurrence -- which is what makes the marker test sound there. For
+    // the at most two runs that straddle a range boundary it does not: their
+    // minimum may be attained outside [sp, ep), so such a run can report a
+    // repeat occurrence early and suppress a later run holding a new document.
+    //
+    // So: recurse with the marker stop over the INTERIOR runs, and fan the
+    // boundary runs out separately. Reporting stays unconditional
+    // (kAlwaysReport) because a visited run must still be fanned out even when
+    // its head document is a repeat.
     constexpr bool kAlwaysReport = (kVariant == IlcpLeanVariant::CILCP_L);
-    ListDocsRMQScheme<kStopOnReported, kAlwaysReport>(run_sp, run_ep, *rmq_, get_doc, mr, report);
+    if constexpr (kVariant != IlcpLeanVariant::CILCP_L) {
+      ListDocsRMQScheme<true, kAlwaysReport>(run_sp, run_ep, *rmq_, get_doc, mr, report);
+    } else {
+      const std::size_t first_head = static_cast<std::size_t>(select(run_sp + 1));
+      const std::size_t last = run_ep - 1;
+      const std::size_t after_last =
+          (last + 1 < n_runs_) ? static_cast<std::size_t>(select(last + 2)) : run_heads_->size();
+      const bool clip_lo = first_head < state.sp_orig;        // run starts before sp
+      const bool clip_hi = (after_last - 1) > (state.ep_orig - 1);  // run ends after ep-1
+
+      const std::size_t lo = run_sp + (clip_lo ? 1 : 0);
+      const std::size_t hi = run_ep - (clip_hi ? 1 : 0);
+      if (lo < hi)
+        ListDocsRMQScheme<true, kAlwaysReport>(lo, hi, *rmq_, get_doc, mr, report);
+
+      // AFTER the interior recursion, never before: a boundary run fanned out
+      // first can mark a document whose first occurrence lies in an interior
+      // run, which would then be stopped on spuriously and its other documents
+      // lost. (Measured: doing this first gives wrong answers.)
+      if (clip_lo)
+        report(run_sp, get_doc(run_sp));
+      if (clip_hi && !(clip_lo && run_sp == last))
+        report(last, get_doc(last));
+    }
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
