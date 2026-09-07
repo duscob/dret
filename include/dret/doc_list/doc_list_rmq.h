@@ -490,12 +490,19 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
     // repeat occurrence early and suppress a later run holding a new document.
     //
     // So: recurse with the marker stop over the INTERIOR runs, and fan the
-    // boundary runs out separately. Reporting stays unconditional
-    // (kAlwaysReport) because a visited run must still be fanned out even when
-    // its head document is a repeat.
-    constexpr bool kAlwaysReport = (kVariant == IlcpLeanVariant::CILCP_L);
+    // boundary runs out separately.
+    //
+    // Once the recursion is restricted that way, kAlwaysReport is no longer
+    // needed here and both variants leave it at its default. On an interior run
+    // an already-reported head document forces the run's stored value to be at
+    // least m -- for a merged same-document run because every position after
+    // the head is an adjacent occurrence of that document and so has ILCP >= m,
+    // and for an unmerged run by value-uniformity. Either way the run holds no
+    // first occurrence, so its fan-out cannot yield a new document and skipping
+    // it is free. The boundary runs never reach this code path; they are fanned
+    // out unconditionally below.
     if constexpr (kVariant != IlcpLeanVariant::CILCP_L) {
-      ListDocsRMQScheme<kAlwaysReport>(run_sp, run_ep, *rmq_, get_doc, mr, report);
+      ListDocsRMQScheme(run_sp, run_ep, *rmq_, get_doc, mr, report);
     } else {
       const std::size_t first_head = static_cast<std::size_t>(select(run_sp + 1));
       const std::size_t last = run_ep - 1;
@@ -507,7 +514,7 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
       const std::size_t lo = run_sp + (clip_lo ? 1 : 0);
       const std::size_t hi = run_ep - (clip_hi ? 1 : 0);
       if (lo < hi)
-        ListDocsRMQScheme<kAlwaysReport>(lo, hi, *rmq_, get_doc, mr, report);
+        ListDocsRMQScheme(lo, hi, *rmq_, get_doc, mr, report);
 
       // AFTER the interior recursion, never before: a boundary run fanned out
       // first can mark a document whose first occurrence lies in an interior
