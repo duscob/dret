@@ -53,12 +53,12 @@ std::vector<std::string> AllPatterns(const std::vector<std::string>& docs) {
 
 }  // namespace
 
-// Witness A -- breaks CILCP.  Pattern "BC" has SA range [15, 19) with
-// DA = [1, 0, 1, 1] and ILCP = [1, 1, 2, 3].
+// Witness A -- breaks CILCP-L (the marker-based core).  Pattern "BC" has SA
+// range [15, 19) with DA = [1, 0, 1, 1] and ILCP = [1, 1, 2, 3].
 const std::vector<std::string> kDocsA = {"BCAB", "BCBCBBCAA", "A", "BA", "B"};
 
-// Witness B -- breaks CILCP-S.  Pattern "BB" has SA range [11, 14) with
-// DA = [1, 0, 1] and ILCP = [1, 1, 2].
+// Witness B -- breaks CILCP (the value-based core).  Pattern "BB" has SA
+// range [11, 14) with DA = [1, 0, 1] and ILCP = [1, 1, 2].
 const std::vector<std::string> kDocsB = {"BB", "BCCCBBCBB", "BAB", "A"};
 
 std::string Concat(const std::vector<std::string>& docs) {
@@ -123,10 +123,10 @@ TYPED_TEST(CilcpFanoutTypedTests, lists_every_document_witness_b) {
   }
 }
 
-// The paper's claim is that CILCP and CILCP-S partition IDENTICALLY -- they are
+// The paper's claim is that CILCP-L and CILCP partition IDENTICALLY -- they are
 // the same CMR20 runs, and differ only in whether the run values are stored.
 // Enforce it here: the run_heads structure must match byte for byte, while
-// CILCP-S must be strictly larger overall by its run_values.
+// CILCP must be strictly larger overall by its run_values.
 class CilcpPartitionTest : public BaseConfigTests<8> {
  protected:
   void SetUp() override { this->Init(std::string("BCAB\1BCBCBBCAA\1A\1BA\1B\1")); }
@@ -151,6 +151,6 @@ TEST_F(CilcpPartitionTest, cilcp_and_cilcp_s_share_one_partition) {
   EXPECT_GT(bytes(a, "run_heads"), 0u);
   EXPECT_EQ(bytes(a, "run_heads"), bytes(b, "run_heads")) << "partitions differ";
   EXPECT_EQ(bytes(a, "rmq"), bytes(b, "rmq")) << "run counts differ";
-  EXPECT_EQ(bytes(a, "run_values"), 0u) << "CILCP must not store run values";
-  EXPECT_GT(bytes(b, "run_values"), 0u) << "CILCP-S must store run values";
+  EXPECT_EQ(bytes(a, "run_values"), 0u) << "CILCP-L must not store run values";
+  EXPECT_GT(bytes(b, "run_values"), 0u) << "CILCP must store run values";
 }
