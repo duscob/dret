@@ -87,66 +87,15 @@ TEST_F(ListDocsRMQSchemeTest, empty_range_reports_nothing) {
 }
 
 //~~~~~~~
-// Regression test for the CILCP-specific correctness bug discovered on the
-// `page` collection: the marker-based recursion-stop (kStopOnReported=true)
-// is unsound for CILCP because Rule-2 RLE merges runs by doc-equality, so a
-// subrange's RMQ-min can land on an already-marked doc while pending docs
-// remain in the same subrange. The kStopOnReported=false dispatch (which
-// IlcpLikeCore uses for CILCP) must report every doc in the range.
+// The CILCP marker-stop regression that used to live here has moved to
+// test/cilcp_fanout_test.cpp, where it runs against the real cores instead of
+// against a hand-built run array. It belongs there: the defect was never in
+// this scheme but in the range the caller recurses over, and the fix (restrict
+// the marker stop to the runs contained in the query range, expand the two
+// boundary runs separately) lives in IlcpLikeLeanCore::findDocs. A scheme-level
+// test could only pin behaviour no core asks for.
 //
-// Setup (hand-trace from docs/cilcp_query_perf.md):
-//   docs = [X, X, Y, Z, Y, W]  =  [0, 0, 1, 2, 1, 3]
-//   ilcp = [10, 5, 5, 7, 3, 9]
-// CILCP RLE produces 5 runs with leftmost-docs {X, Y, Z, Y, W} and
-//   run_values = [5, 5, 7, 3, 9].
-// Querying the full run-space [0, 5) must report {X, Y, Z, W}.
-// With kStopOnReported=true the recursion stops prematurely and drops Z;
-// with kStopOnReported=false (the CILCP dispatch) all four are reported.
-
-class ListDocsRMQSchemeCilcpRegressionTest : public ::testing::Test {
- protected:
-  void SetUp() override {
-    // run_values mirror CILCP's per-run min(ilcp); leftmost-doc per run is
-    // what get_doc(run_index) must return. Y appears as the leftmost-doc of
-    // both R1 and R3, which is the structural pattern that breaks the
-    // marker-based stop on the standard scheme.
-    run_values_ = {5, 5, 7, 3, 9};
-    run_leftmost_doc_ = {0, 1, 2, 1, 3};  // X, Y, Z, Y, W
-    n_doc_ = 4;
-    rmq_ = sdsl::rmq_succinct_sct<true>(&run_values_);
-  }
-
-  template <bool kStopOnReported>
-  std::vector<std::size_t> query(std::size_t bp, std::size_t ep) {
-    dret::rmq::MarkedReported mr(n_doc_);
-    std::vector<std::size_t> reported;
-    auto get_doc = [this](std::size_t k) { return run_leftmost_doc_[k]; };
-    auto report = [&mr, &reported](std::size_t /*k*/, std::size_t d) {
-      mr.mark(d);
-      reported.push_back(d);
-    };
-    dret::rmq::ListDocsRMQScheme<kStopOnReported>(bp, ep, rmq_, get_doc, mr, report);
-    std::sort(reported.begin(), reported.end());
-    return reported;
-  }
-
-  std::vector<std::size_t> run_values_;
-  std::vector<std::size_t> run_leftmost_doc_;
-  sdsl::rmq_succinct_sct<true> rmq_;
-  std::size_t n_doc_ = 0;
-};
-
-TEST_F(ListDocsRMQSchemeCilcpRegressionTest, cilcp_dispatch_reports_all_docs) {
-  // The CILCP dispatch (kStopOnReported=false) must enumerate every distinct
-  // leftmost-doc in the run-space range.
-  EXPECT_EQ(query<false>(0, 5), (std::vector<std::size_t>{0, 1, 2, 3}));
-}
-
-TEST_F(ListDocsRMQSchemeCilcpRegressionTest, default_dispatch_drops_doc_on_this_input) {
-  // Documents the bug: with the default marker-based stop, this exact input
-  // misses doc Z (=2). The test asserts the observed wrong behaviour so that
-  // any future change to the default scheme's stop condition surfaces here
-  // and prompts a re-evaluation of the IlcpLikeCore dispatch (currently set
-  // to kStopOnReported = (kVariant != CILCP)).
-  EXPECT_EQ(query<true>(0, 5), (std::vector<std::size_t>{0, 1, 3}));
-}
+// The shape that breaks the stop, for reference: run values [5, 5, 7, 3, 9]
+// with leftmost docs [X, Y, Z, Y, W]. Y leads both run 1 and run 3, and run 3
+// holds the smaller value, so it wins the RMQ over the whole range, reports Y,
+// and stops the recursion before run 2 ever surrenders Z.

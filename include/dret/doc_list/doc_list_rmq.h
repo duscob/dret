@@ -477,11 +477,6 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
       }
     };
 
-    // CILCP's Rule-2 RLE breaks the marker-based recursion-stop invariant
-    // (run-space subranges can have RMQ-min landing on an earlier-marked doc
-    // while pending docs remain in the same subrange). Force unconditional
-    // recursion for CILCP only; ILCP keeps the early-stop, which is sound
-    // for ilcp-constant runs and is a major query-time optimization.
     // The marker-based stop is sound for ILCP-L everywhere: its runs are
     // value-uniform, so a run's stored value equals the value at each of its
     // positions and cannot be "borrowed" from outside a query range.
@@ -500,7 +495,7 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
     // its head document is a repeat.
     constexpr bool kAlwaysReport = (kVariant == IlcpLeanVariant::CILCP_L);
     if constexpr (kVariant != IlcpLeanVariant::CILCP_L) {
-      ListDocsRMQScheme<true, kAlwaysReport>(run_sp, run_ep, *rmq_, get_doc, mr, report);
+      ListDocsRMQScheme<kAlwaysReport>(run_sp, run_ep, *rmq_, get_doc, mr, report);
     } else {
       const std::size_t first_head = static_cast<std::size_t>(select(run_sp + 1));
       const std::size_t last = run_ep - 1;
@@ -512,7 +507,7 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
       const std::size_t lo = run_sp + (clip_lo ? 1 : 0);
       const std::size_t hi = run_ep - (clip_hi ? 1 : 0);
       if (lo < hi)
-        ListDocsRMQScheme<true, kAlwaysReport>(lo, hi, *rmq_, get_doc, mr, report);
+        ListDocsRMQScheme<kAlwaysReport>(lo, hi, *rmq_, get_doc, mr, report);
 
       // AFTER the interior recursion, never before: a boundary run fanned out
       // first can mark a document whose first occurrence lies in an interior
