@@ -57,9 +57,29 @@ std::vector<std::string> AllPatterns(const std::vector<std::string>& docs) {
 // range [15, 19) with DA = [1, 0, 1, 1] and ILCP = [1, 1, 2, 3].
 const std::vector<std::string> kDocsA = {"BCAB", "BCBCBBCAA", "A", "BA", "B"};
 
-// Witness B -- breaks CILCP (the value-based core).  Pattern "BB" has SA
-// range [11, 14) with DA = [1, 0, 1] and ILCP = [1, 1, 2].
+// Witness B -- breaks BOTH merged cores.  Pattern "BB" has SA range [11, 14)
+// with DA = [1, 0, 1] and ILCP = [1, 1, 2]. It was added for CILCP, but it also
+// fails a CILCP-L that recurses over the whole range, so it is the one witness
+// here that still guards both.
 const std::vector<std::string> kDocsB = {"BB", "BCCCBBCBB", "BAB", "A"};
+
+// Witness C -- breaks CILCP-L, and replaces witness A in that role.
+//
+// Verified by deliberately breaking each core and checking which witnesses
+// notice; do that again before trusting any of them, and mind the type index
+// (DocListIdxBrute is 0 here, so CILCP-L is 3 and CILCP is 6).
+//
+// Witness A no longer bites. It was found against the CILCP partition as it
+// stood on 2026-08-29; f3720ff then rebuilt that partition on the CMR20 rule,
+// and under the new runs witness A passes even against a CILCP-L that recurses
+// over the whole range with the fan-out gate on -- the exact defect it was
+// added to catch. It is kept as a correctness case, but it guards nothing.
+//
+// This one was found by cilcp_random_diff_test (seed 20260907, collection 48)
+// and is verified to fail against that same broken build, so it guards the
+// boundary-run handling in IlcpLikeLeanCore::findDocs. Pattern "BAB" returns
+// {0} where the answer is {0, 2}.
+const std::vector<std::string> kDocsC = {"BBBABABAA", "A", "CBCBABAAC"};
 
 std::string Concat(const std::vector<std::string>& docs) {
   std::string s;
@@ -107,6 +127,19 @@ TYPED_TEST(CilcpFanoutTypedTests, lists_every_document_witness_a) {
     index.Search(p, std::ref(got));
     got();
     EXPECT_THAT(got, testing::ElementsAreArray(BruteForce(kDocsA, p))) << "pattern \"" << p << '"';
+  }
+}
+
+TYPED_TEST(CilcpFanoutTypedTests, lists_every_document_witness_c) {
+  this->Init(Concat(kDocsC));
+  TypeParam index(std::ref(this->storage_));
+  construct(index, this->config_);
+
+  for (const auto& p : AllPatterns(kDocsC)) {
+    Collector got;
+    index.Search(p, std::ref(got));
+    got();
+    EXPECT_THAT(got, testing::ElementsAreArray(BruteForce(kDocsC, p))) << "pattern \"" << p << '"';
   }
 }
 
