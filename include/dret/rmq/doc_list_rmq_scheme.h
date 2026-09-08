@@ -44,23 +44,16 @@ namespace dret::rmq {
 // stop — it restricts the range it recurses over to the contained runs and
 // expands the two boundary runs itself. See IlcpLikeLeanCore::findDocs.
 //
-// kAlwaysReport gates whether report() is invoked even when the RMQ-min's doc
-// is already reported. For SADA one RMQ position carries exactly one document,
-// so gating on the marker loses nothing. For the ILCP family a position stands
-// for a whole RUN, and report() is also what fans the run out; a run whose head
-// doc happens to be a duplicate can still hold the FIRST occurrence of other
-// documents, and gating drops them. That is sound only when the run's own
-// values pin down its contents:
-//   - ILCP-L: runs are ilcp-constant, so a run reachable past the stop test
-//     consists purely of first occurrences and its head doc cannot already be
-//     reported — gating is a no-op.
-//   - CILCP-L: runs merge by document, so a run's stored value is a MIN and may
-//     be attained outside [sp, ep). A run can then report a duplicate
-//     occurrence early and suppress the fan-out of a later run that holds a
-//     genuinely new document.
-// report() is responsible for de-duplicating its own head document.
-template <bool kAlwaysReport = false,
-          typename TRMQ, typename TGetDoc, typename TIsReported, typename TReport>
+// The marker test IS the stop, so a run that fails it is neither reported nor
+// descended into. For SADA-L that loses nothing: one RMQ position carries one
+// document. For the ILCP family a position stands for a whole RUN and report()
+// is also what fans the run out, so skipping it would drop any first occurrence
+// deeper in the run -- but a run cannot both fail the test and hold one. An
+// already-reported head forces the run's stored value to at least the pattern
+// length, and every position of such a run is then a repeat. That argument needs
+// the value to be a minimum over positions of the query range, which is why
+// CILCP-L hands us only the contained runs.
+template <typename TRMQ, typename TGetDoc, typename TIsReported, typename TReport>
 void ListDocsRMQScheme(std::size_t bp,
                        std::size_t ep,
                        const TRMQ& rmq,
@@ -71,13 +64,10 @@ void ListDocsRMQScheme(std::size_t bp,
     return;
   const auto k = rmq(bp, ep - 1);
   const auto d = get_doc(k);
-  const bool already = is_reported(k, d);
-  if (!already || kAlwaysReport) {
-    report(k, d);
-  }
-  if (already) return;
-  ListDocsRMQScheme<kAlwaysReport>(bp, k, rmq, get_doc, is_reported, report);
-  ListDocsRMQScheme<kAlwaysReport>(k + 1, ep, rmq, get_doc, is_reported, report);
+  if (is_reported(k, d)) return;
+  report(k, d);
+  ListDocsRMQScheme(bp, k, rmq, get_doc, is_reported, report);
+  ListDocsRMQScheme(k + 1, ep, rmq, get_doc, is_reported, report);
 }
 
 // Canonical Sadakane-style LEFTMOST RMQ traversal: recursion stops by an
@@ -93,9 +83,9 @@ void ListDocsRMQScheme(std::size_t bp,
 //               has ILCP < m, so Lemma 1 / Lemma 2 give no leftmost-doc
 //               here).
 //
-// This traversal does not consult reporting state at all — no is_reported, no
-// kAlwaysReport. Only stop_pred decides where it goes, and every run it reaches
-// is reported. That is not an optimization, it is what makes the scheme correct
+// Unlike the scheme above, this traversal does not consult reporting state at
+// all. Only stop_pred decides where it goes, and every run it reaches is
+// reported. That is not an optimization, it is what makes the scheme correct
 // for ANY partition into runs: pruning is a statement about stored values, and
 // a marker can be set by a run that reported a REPEAT occurrence (a run whose
 // stored minimum was attained outside [sp, ep) can do exactly that), so reading
