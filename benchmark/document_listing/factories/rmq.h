@@ -137,7 +137,7 @@ using SadaCore = dret::rmq::SadaCore<TStorage,
                                         TGetDoc,
                                         TPrevDoc>;
 
-// TRunValues container choices for the -S families. Independent of TGetDoc;
+// TRunValues container choices for the published cores. Independent of TGetDoc;
 // controls how the persisted per-run min(VILCP) array is encoded on disk.
 using RunValues_IV = sdsl::int_vector<>;   // fixed-width, bit-compressed
 using RunValues_DV = sdsl::dac_vector<>;   // direct access codes (default)
@@ -362,12 +362,12 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
   }
 }
 
-//~~~~~~~  -S family dispatch (3-arg TCoreT taking <TStorage, TGetDoc, TRunValues>)
+//~~~~~~~  Published-core dispatch (3-arg TCoreT taking <TStorage, TGetDoc, TRunValues>)
 //
 // IlcpCore / CilcpCore take an extra TRunValues template parameter on top
 // of the standard 2-arg core template, so the existing 2-arg MakeOne path
 // doesn't fit. The MakeXxx_S helpers mirror MakeXxx but plumb TRunValues
-// through; MakeOneS_T dispatches on TGetDoc with TRunValues fixed; MakeOneS
+// through; MakeOnePub_T dispatches on TGetDoc with TRunValues fixed; MakeOnePub
 // fans out across TRunValues.
 
 template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
@@ -420,16 +420,16 @@ MakeDSLP_S(TStorage t_storage, dret::Config& t_config,
   return {idx, sdsl::size_in_bytes(*idx)};
 }
 
-// NOTE: SA-Phi is not supported for the -S family cores (IlcpLikeFullCore /
+// NOTE: SA-Phi is not supported for the published cores (IlcpLikeFullCore /
 // SadaCore) — their 1-arg constructors don't accept the sa_sampling rate
-// the inner GetDocSAPhi needs. The MakeOneS_T dispatch below treats
+// the inner GetDocSAPhi needs. The MakeOnePub_T dispatch below treats
 // SAPhiR / SAPhiSR as no-ops (falls through to DA). Sweep specs should not
 // list sada-s / ilcp-s / cilcp-s under sa_phi_r/sr. The non-S cores
 // (sada / ilcp / cilcp) cover SA-Phi via MakeSAPhi_R / MakeSAPhi_SR above.
 
 template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-MakeOneS_T(TStorage t_storage, dret::Config& t_config,
+MakeOnePub_T(TStorage t_storage, dret::Config& t_config,
            uint32_t t_block_size, float t_storing_factor,
            bench::axes::GetDocEnum t_get_doc,
            bench::axes::GCDASLPVariant t_gcda_slp,
@@ -497,7 +497,7 @@ MakeOneS_T(TStorage t_storage, dret::Config& t_config,
 
 template <template <typename, typename, typename> class TCoreT, typename TStorage>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-MakeOneS(TStorage t_storage, dret::Config& t_config,
+MakeOnePub(TStorage t_storage, dret::Config& t_config,
          uint32_t t_block_size, float t_storing_factor,
          bench::axes::GetDocEnum t_get_doc,
          bench::axes::GCDASLPVariant t_gcda_slp,
@@ -508,25 +508,25 @@ MakeOneS(TStorage t_storage, dret::Config& t_config,
   using bench::axes::RunValuesVariant;
   switch (t_run_values) {
     case RunValuesVariant::IV:
-      return MakeOneS_T<TCoreT, TStorage, RunValues_IV>(
+      return MakeOnePub_T<TCoreT, TStorage, RunValues_IV>(
           t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case RunValuesVariant::VV:
-      return MakeOneS_T<TCoreT, TStorage, RunValues_VV>(
+      return MakeOnePub_T<TCoreT, TStorage, RunValues_VV>(
           t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case RunValuesVariant::DV:
     default:
-      return MakeOneS_T<TCoreT, TStorage, RunValues_DV>(
+      return MakeOnePub_T<TCoreT, TStorage, RunValues_DV>(
           t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
   }
 }
 
-// The published SADA core has TPrevDoc instead of TRunValues. Mirrors MakeOneS but
+// The published SADA core has TPrevDoc instead of TRunValues. Mirrors MakeOnePub but
 // dispatches on PrevDocVariant; the inner T-dispatch reuses the existing
 // MakeXxx_S helpers (TCoreT here is a 3-arg <TStorage, TGetDoc, TPrevDoc>
 // template — same shape as IlcpCore / CilcpCore).
 template <template <typename, typename, typename> class TCoreT, typename TStorage>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-MakeOneSada_S(TStorage t_storage, dret::Config& t_config,
+MakeOnePubadaPub(TStorage t_storage, dret::Config& t_config,
               uint32_t t_block_size, float t_storing_factor,
               bench::axes::GetDocEnum t_get_doc,
               bench::axes::GCDASLPVariant t_gcda_slp,
@@ -537,14 +537,14 @@ MakeOneSada_S(TStorage t_storage, dret::Config& t_config,
   using bench::axes::PrevDocVariant;
   switch (t_prev_doc) {
     case PrevDocVariant::DV:
-      return MakeOneS_T<TCoreT, TStorage, PrevDoc_DV>(
+      return MakeOnePub_T<TCoreT, TStorage, PrevDoc_DV>(
           t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case PrevDocVariant::VV:
-      return MakeOneS_T<TCoreT, TStorage, PrevDoc_VV>(
+      return MakeOnePub_T<TCoreT, TStorage, PrevDoc_VV>(
           t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case PrevDocVariant::IV:
     default:
-      return MakeOneS_T<TCoreT, TStorage, PrevDoc_IV>(
+      return MakeOnePub_T<TCoreT, TStorage, PrevDoc_IV>(
           t_storage, t_config, t_block_size, t_storing_factor, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
   }
 }
@@ -571,13 +571,13 @@ Make(TStorage t_storage, dret::Config& t_config,
       return detail::MakeOne<CilcpLCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                          t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case CoreKind::SADA:
-      return detail::MakeOneSada_S<SadaCore>(t_storage, t_config, t_block_size, t_storing_factor,
+      return detail::MakeOnePubadaPub<SadaCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                                t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_prev_doc, t_sa_sampling);
     case CoreKind::ILCP:
-      return detail::MakeOneS<IlcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
+      return detail::MakeOnePub<IlcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                           t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
     case CoreKind::CILCP:
-      return detail::MakeOneS<CilcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
+      return detail::MakeOnePub<CilcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                            t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
     case CoreKind::SADA_L:
     default:

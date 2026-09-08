@@ -140,7 +140,7 @@ sdsl::int_vector<> ComputeIlcpBackward(Config& t_config, std::size_t t_n_doc) {
 
 // Load the cached backward-ILCP array, or compute it once and cache it. The array
 // is collection-level (independent of core, get-doc, run encoding), so all four
-// ILCP-family cores (ILCP / CILCP / ILCP-S / CILCP-S) share one computation
+// ILCP-family cores (ILCP-L / CILCP-L / ILCP / CILCP) share one computation
 // instead of recomputing the expensive per-document LCP up to 4x on a cold build.
 template <uint8_t t_width>
 sdsl::int_vector<> LoadOrComputeIlcp(Config& t_config, std::size_t t_n_doc) {
@@ -990,10 +990,11 @@ void StoreRunHeadsAndRMQ(Config& t_config,
 // value and so weakens pruning. Either way the document-aware rule must leave
 // them intact.
 //
-// Shared by CILCP and CILCP-S so the two cores partition IDENTICALLY by
-// construction. They differ in exactly one thing: CILCP-S also stores the run
-// values, which buys it the value-based stop; CILCP omits them and recurses
-// unconditionally instead (see IlcpLikeLeanCore::findDocs).
+// Shared by CILCP-L and CILCP so the two cores partition IDENTICALLY by
+// construction. They differ in exactly one thing: CILCP also stores the run
+// values, which buys it the value-based stop; CILCP-L omits them and prunes on
+// the reported-document marker over the runs contained in the query range
+// instead (see IlcpLikeLeanCore::findDocs).
 inline void BuildCilcpRuns(const sdsl::int_vector<>& t_ilcp,
                            const sdsl::int_vector<>& t_da,
                            sdsl::bit_vector& t_run_heads,
@@ -1048,8 +1049,8 @@ inline void BuildCilcpRuns(const sdsl::int_vector<>& t_ilcp,
 }  // namespace internal
 
 // Helper: pack a std::vector<std::size_t> of values into the requested
-// TContainer and persist it under t_key. Used by ILCP-S / CILCP-S to
-// store run_values (per-run min(VILCP)) and by SADA-S to store prev_doc
+// TContainer and persist it under t_key. Used by ILCP / CILCP to
+// store run_values (per-run min(VILCP)) and by SADA to store prev_doc
 // (per SA-position previous occurrence). Compressed containers
 // (sdsl::dac_vector, sdsl::vlc_vector, ...) compress at construction;
 // sdsl::int_vector<> is bit-compressed explicitly to ceil(log2(max))
@@ -1118,7 +1119,7 @@ void construct(SadaLCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, 
   construct(t_core.get_doc_policy(), t_config);
 }
 
-// SADA-S construction: same prev_doc + RMinQ as SADA, plus a persisted
+// SADA construction: same prev_doc + RMinQ as SADA-L, plus a persisted
 // prev_doc array (used by the depth-based recursion-stop at query time).
 // TPrevDoc controls how that array is encoded on disk — int_vector is the
 // natural default (random SA positions don't compress much under DAC/VLC).
@@ -1228,12 +1229,13 @@ void construct(IlcpLikeLeanCore<IlcpLeanVariant::CILCP_L, TStorage, t_width, TBv
     sdsl::int_vector<> da;
     sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-    // Same partition as CILCP-S, by construction. CILCP builds the RMQ over the
+    // Same partition as CILCP, by construction. CILCP-L builds the RMQ over the
     // run values but does NOT store them: without frequencies there is nothing
     // the value-based stop is needed for, and dropping the array is the whole
-    // space saving of this core. The traversal pays for it by recursing
-    // unconditionally (Proposition: the marker-based stop is unsound once runs
-    // are merged by document).
+    // space saving of this core. The traversal pays for it at the endpoints:
+    // the marker-based stop is unsound at a run straddling the query range,
+    // whose stored minimum may be attained outside it, so CILCP-L recurses over
+    // the contained runs and expands those two separately.
     sdsl::bit_vector run_heads;
     std::vector<std::size_t> run_values;
     internal::BuildCilcpRuns(ilcp, da, run_heads, run_values);
@@ -1248,9 +1250,9 @@ void construct(IlcpLikeLeanCore<IlcpLeanVariant::CILCP_L, TStorage, t_width, TBv
 // StorePackedValues / StoreRunValues are defined earlier in the file
 // (right before construct(SadaLCore, ...) — see above).
 
-// ILCP-S construction: reuse the existing ILCP RLE (run_heads + rmq) and
-// additionally persist run_values for the depth-based stop. If the ILCP
-// caches already exist (e.g., built by the existing ILCP construct on a
+// ILCP construction: reuse the existing ILCP-L RLE (run_heads + rmq) and
+// additionally persist run_values for the depth-based stop. If the ILCP-L
+// caches already exist (e.g., built by the existing ILCP-L construct on a
 // prior run), we only recompute the values; otherwise we build both.
 template <typename TStorage,
           uint8_t t_width,
@@ -1302,9 +1304,9 @@ void construct(IlcpLikeFullCore<IlcpFullVariant::ILCP, TStorage, t_width, TBvRun
   construct(t_core.get_doc_policy(), t_config);
 }
 
-// CILCP-S construction: reuse CILCP's CMR20 partition (run_heads + rmq under
+// CILCP construction: reuse CILCP-L's CMR20 partition (run_heads + rmq under
 // kCILCP, built by internal::BuildCilcpRuns) and additionally persist run_values
-// for the value-based stop. Mirrors ILCP-S over ILCP. If the CILCP caches already
+// for the value-based stop. Mirrors ILCP over ILCP-L. If the CILCP-L caches already
 // exist we only compute the values; otherwise we build both. Storing one copy of
 // a partition the two cores share by construction removes the duplicate on disk,
 // the second ILCP+DA scan, and the chance of the two copies drifting apart.
@@ -1338,9 +1340,9 @@ void construct(IlcpLikeFullCore<IlcpFullVariant::CILCP, TStorage, t_width, TBvRu
     sdsl::int_vector<> da;
     sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-    // Identical partition to CILCP, by construction -- the two cores differ only
-    // in that CILCP-S also stores the run values below, which is what enables
-    // its value-based stop.
+    // Identical partition to CILCP-L, by construction -- the two cores differ
+    // only in that CILCP also stores the run values below, which is what
+    // enables its value-based stop.
     sdsl::bit_vector run_heads;
     std::vector<std::size_t> run_values;
     internal::BuildCilcpRuns(ilcp, da, run_heads, run_values);

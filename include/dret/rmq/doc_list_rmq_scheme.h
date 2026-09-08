@@ -87,7 +87,7 @@ void ListDocsRMQScheme(std::size_t bp,
 //
 // stop_pred(k, bp) -> bool returns true when the RMQ-min over the current
 // subrange [bp, ep) cannot contribute any new leftmost-doc occurrence:
-//   - SADA-S:   prev_doc[k] >= bp_subrange (no doc in [bp..k] has its
+//   - SADA:     prev_doc[k] >= bp_subrange (no doc in [bp..k] has its
 //               previous occurrence before bp).
 //   - ILCP / CILCP: run_values[k] >= m (no position in the subrange
 //               has ILCP < m, so Lemma 1 / Lemma 2 give no leftmost-doc

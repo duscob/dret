@@ -49,13 +49,13 @@ DEFINE_string(bare_slp_variants,
 DEFINE_string(run_values_variants,
               "dv",
               "TRunValues container variants for the published ILCP / CILCP cores "
-              "(labelled ILCP-S / CILCP-S in benchmark output): "
+              "(ILCP / CILCP in benchmark output): "
               "comma-separated iv,dv,vv.");
 
 DEFINE_string(prev_doc_variants,
               "iv",
               "TPrevDoc container variants for the published SADA core "
-              "(labelled SADA-S in benchmark output): comma-separated iv,dv,vv.");
+              "(SADA in benchmark output): comma-separated iv,dv,vv.");
 
 DEFINE_string(dgcda_slp_variants,
               "default,otf,crl,ev,dv,vv",

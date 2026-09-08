@@ -111,9 +111,8 @@ enum class BareSLPVariant {
   DiffVV,
 };
 
-// TRunValues container choice for the Sadakane-style (-S) doc-listing
-// families (IndexEnum::ILCP / CILCP_S, i.e. ILCP / CILCP). The persisted
-// per-run min(VILCP) array
+// TRunValues container choice for the published doc-listing cores
+// (IndexEnum::ILCP / CILCP). The persisted per-run min(VILCP) array
 // can be encoded fixed-width and bit-compressed (IV) or with variable-
 // length per-element codes (DV / VV).
 enum class RunValuesVariant {
