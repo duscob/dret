@@ -93,34 +93,34 @@ void ListDocsRMQScheme(std::size_t bp,
 //               has ILCP < m, so Lemma 1 / Lemma 2 give no leftmost-doc
 //               here).
 //
-// is_reported still gates the *emission* of doc d (same MarkedReported as
-// the original scheme) — multiple runs can share a leftmost-doc, and we
-// don't want to double-emit. It no longer gates the recursion.
-// kAlwaysReport carries the same meaning as in ListDocsRMQScheme above: the
-// ILCP-family cores whose runs merge by document (CILCP) must fan a visited run
-// out even when its head document is already reported. Here that is required
-// rather than merely helpful, because this traversal recurses over the whole
-// range, boundary runs included.
-template <bool kAlwaysReport = false,
-          typename TRMQ, typename TGetDoc, typename TStopPred,
-          typename TIsReported, typename TReport>
+// This traversal does not consult reporting state at all — no is_reported, no
+// kAlwaysReport. Only stop_pred decides where it goes, and every run it reaches
+// is reported. That is not an optimization, it is what makes the scheme correct
+// for ANY partition into runs: pruning is a statement about stored values, and
+// a marker can be set by a run that reported a REPEAT occurrence (a run whose
+// stored minimum was attained outside [sp, ep) can do exactly that), so reading
+// it here would prune on evidence the values never supported.
+//
+// De-duplicating the emission is therefore the caller's business, and every
+// core's report() does it. Measured over the differential corpus: an
+// is_reported gate here would have fired 0 times in 31059 reported runs for
+// ILCP, and 166 times in 31229 for CILCP, of which 5 carried a document that
+// nothing else would have listed. SADA would have fired 15185 times in 55480,
+// all of them redundant emissions its report() now absorbs.
+template <typename TRMQ, typename TGetDoc, typename TStopPred, typename TReport>
 void ListDocsRMQSchemeDepth(std::size_t bp,
                             std::size_t ep,
                             const TRMQ& rmq,
                             const TGetDoc& get_doc,
                             const TStopPred& stop_pred,
-                            const TIsReported& is_reported,
                             TReport& report) {
   if (bp >= ep)
     return;
   const auto k = rmq(bp, ep - 1);
   if (stop_pred(k, bp)) return;
-  const auto d = get_doc(k);
-  if (!is_reported(k, d) || kAlwaysReport) {
-    report(k, d);
-  }
-  ListDocsRMQSchemeDepth<kAlwaysReport>(bp, k, rmq, get_doc, stop_pred, is_reported, report);
-  ListDocsRMQSchemeDepth<kAlwaysReport>(k + 1, ep, rmq, get_doc, stop_pred, is_reported, report);
+  report(k, get_doc(k));
+  ListDocsRMQSchemeDepth(bp, k, rmq, get_doc, stop_pred, report);
+  ListDocsRMQSchemeDepth(k + 1, ep, rmq, get_doc, stop_pred, report);
 }
 
 //~~~~~~~

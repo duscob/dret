@@ -298,7 +298,11 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       return;
 
     MarkedReported mr(n_doc_);
+    // The traversal no longer gates on reporting state, so de-duplicate here.
+    // One RMQ position carries exactly one document for SADA, so this absorbs a
+    // repeat emission rather than suppressing a fan-out.
     auto report = [&mr, &t_report](std::size_t /*k*/, std::size_t d) {
+      if (mr(0, d)) return;
       mr.mark(d);
       t_report(d);
     };
@@ -306,7 +310,7 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       return static_cast<std::size_t>((*prev_doc_)[k]) >= bp;
     };
 
-    ListDocsRMQSchemeDepth(t_sp, t_ep, *rmq_, get_doc_, stop_pred, mr, report);
+    ListDocsRMQSchemeDepth(t_sp, t_ep, *rmq_, get_doc_, stop_pred, report);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
@@ -711,8 +715,8 @@ class IlcpLikeFullCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
           t_report(dd);
         }
       };
-      // See IlcpLikeLeanCore::findDocs: CILCP★ merges by document too, so a visited
-      // run must be fanned out even when its head doc is already reported.
+      // Every visited run is fanned out; the traversal does not gate on reporting
+      // state, so the head document is de-duplicated here like any other.
       report_dedup(doc);
 
       const std::size_t head = static_cast<std::size_t>(select(i + 1));
@@ -734,8 +738,7 @@ class IlcpLikeFullCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
       }
     };
 
-    constexpr bool kAlwaysReport = (kVariantS == IlcpFullVariant::CILCP);
-    ListDocsRMQSchemeDepth<kAlwaysReport>(run_sp, run_ep, *rmq_, get_doc, stop_pred, mr, report);
+    ListDocsRMQSchemeDepth(run_sp, run_ep, *rmq_, get_doc, stop_pred, report);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
