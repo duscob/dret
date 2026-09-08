@@ -75,13 +75,17 @@ void ListDocsRMQScheme(std::size_t bp,
 // used by the SADA, ILCP and CILCP★ papers (Sadakane 2007; Gagie, Navarro,
 // Puglisi 2014; Cobas, Mäkinen, Rossi SPIRE 2020).
 //
-// stop_pred(k, bp) -> bool returns true when the RMQ-min over the current
-// subrange [bp, ep) cannot contribute any new leftmost-doc occurrence:
-//   - SADA:     prev_doc[k] >= bp_subrange (no doc in [bp..k] has its
-//               previous occurrence before bp).
-//   - ILCP / CILCP: run_values[k] >= m (no position in the subrange
-//               has ILCP < m, so Lemma 1 / Lemma 2 give no leftmost-doc
-//               here).
+// stop_pred(k) -> bool returns true when the RMQ-min over the current subrange
+// cannot contribute any new leftmost-doc occurrence. Every predicate is a
+// question about k alone, against the ORIGINAL query range -- none of them
+// needs the current subrange start, which is why none is passed:
+//   - SADA:     prev_doc[k] >= sp (no position in the subrange has its previous
+//               occurrence before sp, so none is a first occurrence).
+//   - ILCP / CILCP: run_values[k] >= m (no position in the subrange has
+//               ILCP < m, so Lemma 1 / Lemma 2 give no leftmost-doc here).
+// Testing SADA against the subrange start instead would still be sound but
+// prunes less, and would let the traversal report a position that is first in
+// its subrange without being first in the range -- that is, a duplicate.
 //
 // Unlike the scheme above, this traversal does not consult reporting state at
 // all. Only stop_pred decides where it goes, and every run it reaches is
@@ -107,7 +111,7 @@ void ListDocsRMQSchemeDepth(std::size_t bp,
   if (bp >= ep)
     return;
   const auto k = rmq(bp, ep - 1);
-  if (stop_pred(k, bp)) return;
+  if (stop_pred(k)) return;
   report(k, get_doc(k));
   ListDocsRMQSchemeDepth(bp, k, rmq, get_doc, stop_pred, report);
   ListDocsRMQSchemeDepth(k + 1, ep, rmq, get_doc, stop_pred, report);
