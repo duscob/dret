@@ -513,25 +513,37 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
     if constexpr (kVariant != IlcpLeanVariant::CILCP_L) {
       ListDocsRMQScheme(run_sp, run_ep, *rmq_, get_doc, mr, report);
     } else {
-      const std::size_t first_head = static_cast<std::size_t>(select(run_sp + 1));
       const std::size_t last = run_ep - 1;
       const std::size_t after_last =
           (last + 1 < n_runs_) ? static_cast<std::size_t>(select(last + 2)) : run_heads_->size();
-      const bool clip_lo = first_head < state.sp_orig;        // run starts before sp
       const bool clip_hi = (after_last - 1) > (state.ep_orig - 1);  // run ends after ep-1
 
-      const std::size_t lo = run_sp + (clip_lo ? 1 : 0);
+      // Only the RIGHT straddler has to sit outside the recursion. The left one
+      // is safe inside it, because it cannot report a repeat occurrence and so
+      // cannot poison the marker for anyone else. Position sp always satisfies
+      // ILCP[sp] < m -- the previous occurrence of DA[sp] lies before sp, hence
+      // outside the range, hence shares fewer than m symbols -- so sp is the
+      // first occurrence of its document. If the run is ilcp-constant that value
+      // is the whole run's, so every in-range position of it is a first
+      // occurrence; if it is a merged same-document run, every position carries
+      // DA[sp], whose first occurrence is sp, and the peek skips the fan-out
+      // anyway. Either way every document it emits, it emits from that
+      // document's first occurrence.
+      //
+      // The marker cannot fire at it either. That would need some earlier run to
+      // have reported DA[sp] from a repeat, which needs value < v(L) < m while
+      // holding a repeat -- impossible for an ilcp-constant run, and possible
+      // for a merged run only by borrowing a minimum from outside the range,
+      // which is exactly what excluding the right straddler rules out.
       const std::size_t hi = run_ep - (clip_hi ? 1 : 0);
-      if (lo < hi)
-        ListDocsRMQScheme(lo, hi, *rmq_, get_doc, mr, report);
+      if (run_sp < hi)
+        ListDocsRMQScheme(run_sp, hi, *rmq_, get_doc, mr, report);
 
-      // AFTER the interior recursion, never before: a boundary run fanned out
-      // first can mark a document whose first occurrence lies in an interior
-      // run, which would then be stopped on spuriously and its other documents
-      // lost. (Measured: doing this first gives wrong answers.)
-      if (clip_lo)
-        report(run_sp, get_doc(run_sp));
-      if (clip_hi && !(clip_lo && run_sp == last))
+      // AFTER the recursion, never before: the right straddler's stored minimum
+      // may be attained outside the range, so fanning it out first can mark a
+      // document whose first occurrence lies inside and cause a spurious stop
+      // there. (Measured: doing this first gives wrong answers.)
+      if (clip_hi)
         report(last, get_doc(last));
     }
   }
