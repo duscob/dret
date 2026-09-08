@@ -874,12 +874,12 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
   for (auto core : sw.core) {
     Factory<>::IndexEnum core_idx{};
     switch (core) {
-      case fac::rmq::CoreKind::SADA_L:    core_idx = Factory<>::IndexEnum::SADA;    break;
-      case fac::rmq::CoreKind::ILCP_L:    core_idx = Factory<>::IndexEnum::ILCP;    break;
-      case fac::rmq::CoreKind::CILCP_L:   core_idx = Factory<>::IndexEnum::CILCP;   break;
-      case fac::rmq::CoreKind::SADA:  core_idx = Factory<>::IndexEnum::SADA_S;  break;
-      case fac::rmq::CoreKind::ILCP:  core_idx = Factory<>::IndexEnum::ILCP_S;  break;
-      case fac::rmq::CoreKind::CILCP: core_idx = Factory<>::IndexEnum::CILCP_S; break;
+      case fac::rmq::CoreKind::SADA_L:    core_idx = Factory<>::IndexEnum::SADA_L;    break;
+      case fac::rmq::CoreKind::ILCP_L:    core_idx = Factory<>::IndexEnum::ILCP_L;    break;
+      case fac::rmq::CoreKind::CILCP_L:   core_idx = Factory<>::IndexEnum::CILCP_L;   break;
+      case fac::rmq::CoreKind::SADA:  core_idx = Factory<>::IndexEnum::SADA;  break;
+      case fac::rmq::CoreKind::ILCP:  core_idx = Factory<>::IndexEnum::ILCP;  break;
+      case fac::rmq::CoreKind::CILCP: core_idx = Factory<>::IndexEnum::CILCP; break;
     }
     for (auto gd : sw.get_doc) {
       const bool needs_bs_sf = (gd == GetDocEnum::SLP) || (gd == GetDocEnum::DSLP);
@@ -1535,6 +1535,12 @@ void RegisterConstructBrute(const bench::spec::BruteSweep& sw, dret::Config& con
 }  // namespace
 
 int main(int argc, char** argv) {
+  // Stamp the vocabulary these labels are written in. experiments/analyze.py
+  // refuses a file without it, and migrate_result_names.py skips a file that
+  // has it -- which is what stops the migrator renaming an already-correct
+  // fresh run (its rewrite is not idempotent: SADA would become SADA-L).
+  benchmark::AddCustomContext("core_naming", "2026-09");
+
   gflags::AllowCommandLineReparsing();
   gflags::ParseCommandLineFlags(&argc, &argv, false);
 

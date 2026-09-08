@@ -23,26 +23,22 @@ enum class IndexEnum {
   BRUTE_SR_INDEX,
   GCDA,
   DGCDA,    // variant axis selects Default / OTF / CRL / EV / DV / VV (see DGCDASLPVariant)
-  // NOTE ON NAMES. These enumerator names, and the benchmark labels built from
-  // them, are the OLD vocabulary on purpose: the plain names here select the
-  // value-free (-L) cores and the _S names the published ones. The 2026-09 core
-  // rename swapped that sense everywhere else, so the two vocabularies COLLIDE.
-  // Result files are translated after the fact by migrate_result_names.py, which
-  // stamps context.core_naming = "2026-09"; experiments/analyze.py refuses any
-  // file without that stamp. Do not "fix" the names here without changing the
-  // migrator and re-stamping the corpus in the same commit -- half a rename
-  // silently inverts every RMQ row.
-  SADA,     // -> SadaLCore:  RMinQ on prev_doc, marker-based stop
-  ILCP,     // -> IlcpLCore:  RMinQ on backward-ILCP runs, marker-based stop
-  CILCP,    // -> CilcpLCore: doc-aware merged runs, no stored values
+  // These names, and the benchmark labels built from them, are the 2026-09
+  // vocabulary: the plain names are the published algorithms and the -L names
+  // the value-free variants. Producers stamp context.core_naming = "2026-09",
+  // which is what experiments/analyze.py requires and what makes
+  // migrate_result_names.py skip a fresh file instead of renaming it again.
+  SADA_L,   // -> SadaLCore:  RMinQ on prev_doc, marker-based stop
+  ILCP_L,   // -> IlcpLCore:  RMinQ on backward-ILCP runs, marker-based stop
+  CILCP_L,  // -> CilcpLCore: doc-aware merged runs, no stored values
   SLP_NS,   // Phase C: dret::DocListIdxSLP — non-sampled grammar::SLP<>
   PDL,      // Precomputed Document Listing — variant axis selects Plain/RP/BC
   // The published algorithms: same runs as the cores above, plus the stored
   // array their value-based recursion stop consults (Sadakane 2007; Gagie,
   // Navarro, Puglisi 2014; Cobas, Mäkinen, Rossi SPIRE 2020).
-  SADA_S,   // -> SadaCore
-  ILCP_S,   // -> IlcpCore
-  CILCP_S,  // -> CilcpCore: the SAME CMR20 Definition 1 partition as CILCP,
+  SADA,     // -> SadaCore
+  ILCP,     // -> IlcpCore
+  CILCP,    // -> CilcpCore: the SAME CMR20 Definition 1 partition as CILCP_L,
             // built by one shared routine; the two differ only in whether the
             // per-run minima are stored, not in where the runs fall.
 };
@@ -116,7 +112,7 @@ enum class BareSLPVariant {
 };
 
 // TRunValues container choice for the Sadakane-style (-S) doc-listing
-// families (IndexEnum::ILCP_S / CILCP_S, i.e. ILCP / CILCP). The persisted
+// families (IndexEnum::ILCP / CILCP_S, i.e. ILCP / CILCP). The persisted
 // per-run min(VILCP) array
 // can be encoded fixed-width and bit-compressed (IV) or with variable-
 // length per-element codes (DV / VV).
@@ -127,7 +123,7 @@ enum class RunValuesVariant {
 };
 
 // TPrevDoc container choice for the Sadakane-style SADA family
-// (IndexEnum::SADA_S). The
+// (IndexEnum::SADA). The
 // persisted prev_doc array stores per-SA-position previous-occurrence
 // SA positions — values cover [0, n) roughly uniformly, so the natural
 // default is fixed-width int_vector (DAC / VLC have little to compress

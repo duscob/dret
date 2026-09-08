@@ -263,7 +263,7 @@ class Factory {
         break;
       }
 
-      case IndexEnum::SADA: {
+      case IndexEnum::SADA_L: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
@@ -275,7 +275,7 @@ class Factory {
         break;
       }
 
-      case IndexEnum::ILCP: {
+      case IndexEnum::ILCP_L: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
@@ -305,7 +305,7 @@ class Factory {
         break;
       }
 
-      case IndexEnum::CILCP: {
+      case IndexEnum::CILCP_L: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
@@ -317,7 +317,7 @@ class Factory {
         break;
       }
 
-      case IndexEnum::SADA_S: {
+      case IndexEnum::SADA: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
@@ -329,7 +329,7 @@ class Factory {
         break;
       }
 
-      case IndexEnum::ILCP_S: {
+      case IndexEnum::ILCP: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
@@ -341,7 +341,7 @@ class Factory {
         break;
       }
 
-      case IndexEnum::CILCP_S: {
+      case IndexEnum::CILCP: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,

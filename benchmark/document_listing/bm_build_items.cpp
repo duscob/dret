@@ -371,6 +371,12 @@ static std::vector<int64_t> powersOfTwo(int32_t t_min, int32_t t_max) {
 
 
 int main(int argc, char** argv) {
+  // Stamp the vocabulary these labels are written in. experiments/analyze.py
+  // refuses a file without it, and migrate_result_names.py skips a file that
+  // has it -- which is what stops the migrator renaming an already-correct
+  // fresh run (its rewrite is not idempotent: SADA would become SADA-L).
+  benchmark::AddCustomContext("core_naming", "2026-09");
+
   gflags::SetUsageMessage("This program calculates the ri items for the given text.");
   gflags::AllowCommandLineReparsing();
   gflags::ParseCommandLineFlags(&argc, &argv, false);
