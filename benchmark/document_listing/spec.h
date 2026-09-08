@@ -136,11 +136,11 @@ struct RMQSweep {
   std::vector<axes::BareSLPVariant> bare_slp{axes::BareSLPVariant::IV};
   // DGCDA variant axis for get_doc=dslp (the differential get-doc backend).
   std::vector<axes::DGCDASLPVariant> dgcda_slp{axes::DGCDASLPVariant::Default};
-  // TRunValues axis for the -S sub-family (ILCP-S / CILCP-S). Default DV
+  // TRunValues axis for the published ILCP / CILCP cores. Default DV
   // matches IlcpLikeFullCore's default; other variants in {iv, dv, vv} fan
   // the -S cores out across the run-values container.
   std::vector<axes::RunValuesVariant> run_values{axes::RunValuesVariant::DV};
-  // TPrevDoc axis for SADA-S. Default IV matches SadaCore's default;
+  // TPrevDoc axis for the published SADA core. Default IV matches its default;
   // other variants in {iv, dv, vv}.
   std::vector<axes::PrevDocVariant> prev_doc{axes::PrevDocVariant::IV};
   // SA-Phi sampling rate axis for get_doc=sa_phi_sr. Ignored for sa_phi_r

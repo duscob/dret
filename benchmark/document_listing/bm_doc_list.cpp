@@ -181,13 +181,15 @@ std::vector<std::string> CilcpLKeyPrefixes() {
   return {"cilcp_rmq_", "cilcp_run_heads_", "rmq_n_doc_"};
 }
 
-// The -L cores each reuse their base core's structures and wipe only the extra
-// cache they own. SADA-S reuses sada_rmq_; ILCP-S reuses ilcp_rmq_ +
-// ilcp_run_heads_; CILCP-S reuses cilcp_rmq_ + cilcp_run_heads_, since it builds
-// the same CMR20 partition as CILCP and now shares its cache.
+// Ownership runs the other way round from what the -L suffix suggests: the -L
+// cores OWN the shared structures, and each published core reuses them and wipes
+// only the extra array it adds. SADA reuses sada_rmq_ and owns sada_prev_doc_;
+// ILCP reuses ilcp_rmq_ + ilcp_run_heads_ and owns ilcp_run_values_; CILCP
+// reuses cilcp_rmq_ + cilcp_run_heads_ and owns cilcp_run_values_, since CILCP
+// and CILCP-L build the same CMR20 partition and share one cache for it.
 //
-// A --rebuild of one of these cells therefore does NOT rebuild the shared
-// partition; the -L core owns it. To force that, rebuild CILCP-L / ILCP-L too.
+// A --rebuild of a published cell therefore does NOT rebuild the shared
+// partition. To force that, rebuild CILCP-L / ILCP-L / SADA-L too.
 std::vector<std::string> SadaKeyPrefixes() {
   return {"sada_prev_doc_", "rmq_n_doc_"};
 }
@@ -903,7 +905,7 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
           return {sw.dgcda_slp.begin(), sw.dgcda_slp.end()};
         return {bench::axes::DGCDASLPVariant::Default};
       }();
-      // ILCP-S / CILCP-S fan out across TRunValues; SADA-S fans across
+      // ILCP / CILCP fan out across TRunValues; SADA fans across
       // TPrevDoc; non-S cores ignore both axes. Use single-element default
       // lists for irrelevant axes so the inner loop doesn't duplicate
       // registrations.

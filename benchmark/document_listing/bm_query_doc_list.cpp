@@ -48,12 +48,14 @@ DEFINE_string(bare_slp_variants,
 
 DEFINE_string(run_values_variants,
               "dv",
-              "TRunValues container variants for the -S families (ILCP-S / CILCP-S): "
+              "TRunValues container variants for the published ILCP / CILCP cores "
+              "(labelled ILCP-S / CILCP-S in benchmark output): "
               "comma-separated iv,dv,vv.");
 
 DEFINE_string(prev_doc_variants,
               "iv",
-              "TPrevDoc container variants for SADA-S: comma-separated iv,dv,vv.");
+              "TPrevDoc container variants for the published SADA core "
+              "(labelled SADA-S in benchmark output): comma-separated iv,dv,vv.");
 
 DEFINE_string(dgcda_slp_variants,
               "default,otf,crl,ev,dv,vv",
@@ -336,7 +338,7 @@ int main(int argc, char* argv[]) {
       idx_configs.push_back({"SADA-DA", Factory<>::Config{Factory<>::IndexEnum::SADA}, false});
       idx_configs.push_back({"ILCP-DA", Factory<>::Config{Factory<>::IndexEnum::ILCP}, false});
       idx_configs.push_back({"CILCP-DA", Factory<>::Config{Factory<>::IndexEnum::CILCP}, false});
-      // SADA-S fans out across the TPrevDoc axis.
+      // The published SADA core fans out across the TPrevDoc axis.
       for (const auto prev_doc : prev_doc_variants) {
         const auto pd_suffix = std::string("-") +
             bench::axes::EnumTraits<bench::axes::PrevDocVariant>::Name(prev_doc);
@@ -344,7 +346,7 @@ int main(int argc, char* argv[]) {
         sada_s_cfg.prev_doc = prev_doc;
         idx_configs.push_back({"SADA-S-DA" + pd_suffix, sada_s_cfg, false});
       }
-      // ILCP-S / CILCP-S fan out across the TRunValues axis.
+      // The published ILCP / CILCP cores fan out across the TRunValues axis.
       for (const auto run_values : run_values_variants) {
         const auto rv_suffix = std::string("-") +
             bench::axes::EnumTraits<bench::axes::RunValuesVariant>::Name(run_values);
@@ -376,7 +378,7 @@ int main(int argc, char* argv[]) {
         idx_configs.push_back({"SADA-SLP-NS" + suffix, sada_cfg, false});
         idx_configs.push_back({"ILCP-SLP-NS" + suffix, ilcp_cfg, false});
         idx_configs.push_back({"CILCP-SLP-NS" + suffix, cilcp_cfg, false});
-        // SADA-S fans out across TPrevDoc at this bare_slp.
+        // The published SADA core fans out across TPrevDoc at this bare_slp.
         for (const auto prev_doc : prev_doc_variants) {
           const auto pd_suffix = std::string("-") +
               bench::axes::EnumTraits<bench::axes::PrevDocVariant>::Name(prev_doc);
@@ -386,7 +388,7 @@ int main(int argc, char* argv[]) {
           sada_s_cfg.prev_doc = prev_doc;
           idx_configs.push_back({"SADA-S-SLP-NS" + suffix + pd_suffix, sada_s_cfg, false});
         }
-        // ILCP-S / CILCP-S fan out across TRunValues at this bare_slp.
+        // The published ILCP / CILCP cores fan out across TRunValues here.
         for (const auto run_values : run_values_variants) {
           const auto rv_suffix = std::string("-") +
               bench::axes::EnumTraits<bench::axes::RunValuesVariant>::Name(run_values);
@@ -507,7 +509,7 @@ int main(int argc, char* argv[]) {
           idx_configs.push_back({"SADA" + suffix, sada_cfg, false});
           idx_configs.push_back({"ILCP" + suffix, ilcp_cfg, false});
           idx_configs.push_back({"CILCP" + suffix, cilcp_cfg, false});
-          // SADA-S fans out across TPrevDoc at this (bs, sf, get_doc, gcda_slp).
+          // The published SADA core fans out across TPrevDoc at this cell.
           for (const auto prev_doc : prev_doc_variants) {
             const auto pd_suffix = std::string("-") +
                 bench::axes::EnumTraits<bench::axes::PrevDocVariant>::Name(prev_doc);
@@ -516,7 +518,7 @@ int main(int argc, char* argv[]) {
             sada_s_cfg.prev_doc = prev_doc;
             idx_configs.push_back({"SADA-S" + suffix + pd_suffix, sada_s_cfg, false});
           }
-          // ILCP-S / CILCP-S fan out across TRunValues at this (bs, sf, get_doc, gcda_slp).
+          // The published ILCP / CILCP cores fan out across TRunValues here.
           for (const auto run_values : run_values_variants) {
             const auto rv_suffix = std::string("-") +
                 bench::axes::EnumTraits<bench::axes::RunValuesVariant>::Name(run_values);

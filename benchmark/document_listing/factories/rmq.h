@@ -112,12 +112,16 @@ using CilcpLCore = dret::rmq::CilcpLCore<TStorage,
                                         sdsl::sd_vector<>,
                                         TGetDoc>;
 
-// Sadakane-style (-S) parallel cores: same RMQ data, canonical depth-based
-// recursion stop. SADA-S persists prev_doc; ILCP-S and CILCP-S persist
-// run_values. CILCP-S's RLE follows paper Def 1 (CILCP★) and is distinct
-// from existing CilcpLCore.
+// The published cores (labelled -S in benchmark output, see axes.h): same runs
+// as their -L counterparts, plus the array their canonical value-based recursion
+// stop consults. SADA persists prev_doc; ILCP and CILCP persist run_values.
+// CILCP does NOT have its own partition: it and CilcpLCore both build the CMR20
+// Definition 1 runs through one shared routine and their run_heads are
+// byte-identical, which CilcpPartitionTest asserts. They differ only in whether
+// the per-run minima are stored.
 
-// TPrevDoc container choices for SADA-S. Independent of TGetDoc; controls
+// TPrevDoc container choices for the published SADA core. Independent of
+// TGetDoc; controls
 // how the persisted per-SA-position prev_doc array is encoded on disk.
 using PrevDoc_IV = sdsl::int_vector<>;   // fixed-width, bit-compressed (default)
 using PrevDoc_DV = sdsl::dac_vector<>;
@@ -516,7 +520,7 @@ MakeOneS(TStorage t_storage, dret::Config& t_config,
   }
 }
 
-// SADA-S has TPrevDoc instead of TRunValues. Mirrors MakeOneS but
+// The published SADA core has TPrevDoc instead of TRunValues. Mirrors MakeOneS but
 // dispatches on PrevDocVariant; the inner T-dispatch reuses the existing
 // MakeXxx_S helpers (TCoreT here is a 3-arg <TStorage, TGetDoc, TPrevDoc>
 // template — same shape as IlcpCore / CilcpCore).

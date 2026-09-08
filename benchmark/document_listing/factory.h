@@ -73,10 +73,10 @@ class Factory {
     // initialisers in the benchmark binaries keep landing in the correct
     // fields. New code should prefer designated init.
     DGCDASLPVariant dgcda_slp = DGCDASLPVariant::Default;
-    // TRunValues axis for the -S families (ILCP-S / CILCP-S). Ignored by
+    // TRunValues axis for the published ILCP / CILCP cores. Ignored by
     // every other index family. Default DV matches IlcpLikeFullCore's default.
     RunValuesVariant run_values = RunValuesVariant::DV;
-    // TPrevDoc axis for SADA-S. Ignored by every other index family.
+    // TPrevDoc axis for the published SADA core. Ignored by every other family.
     // Default IV matches SadaCore's default (prev_doc values are random
     // SA positions; int_vector with bit_compress is the natural choice).
     PrevDocVariant prev_doc = PrevDocVariant::IV;
