@@ -163,6 +163,14 @@ class Factory {
     n_doc_ = doc_endings_rank_.item(doc_endings_.item.size());
   }
 
+  // Occurrences of t_pattern in the text: the size of its suffix-array range in the
+  // brute baseline's r-index (half-open -- RIndexCount treats start >= end as empty).
+  // Loads the r-index on first use, so it needs the same cache files as BruteRI.
+  std::size_t CountOccurrences(const std::string& t_pattern) {
+    const auto [start, end] = rIndex().Count(t_pattern);
+    return end > start ? end - start : 0;
+  }
+
  private:
   // Lazy accessors for the brute baselines' shared r-index / sr-index
   // instances. First call constructs + loads from the cache; later

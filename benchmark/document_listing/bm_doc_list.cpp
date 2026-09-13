@@ -18,14 +18,21 @@
 #include <format>
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
+
+#if defined(__x86_64__) || defined(__i386__)
+#include <x86intrin.h>
+#endif
 
 #include <benchmark/benchmark.h>
 #include <gflags/gflags.h>
@@ -63,6 +70,11 @@ DEFINE_string(print_results_dir, "",
               "If set, write each query index's per-pattern sorted doc-id lists to "
               "<dir>/<sanitized-name>.txt — all indexes must produce identical files "
               "(cross-index correctness verification; brute is the ground truth).");
+DEFINE_string(per_pattern_dir, "",
+              "If set, time every pattern of each query benchmark and write "
+              "<dir>/<sanitized-name>.tsv (pattern index, length, occs, ndocs, minimum "
+              "time in ns), plus Time_x_Pattern_p50/_p90/_p99 counters. Occs come from "
+              "the r-index, so BruteRI's cache files must exist.");
 
 namespace {
 
@@ -247,6 +259,109 @@ struct DocListResult {
   void operator()(std::size_t d) { docs.push_back(d); }
 };
 
+// Benchmark name -> file name: keep [A-Za-z0-9.-], map everything else to '_'.
+std::string SanitizeName(std::string t_name) {
+  for (char& c : t_name)
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9') || c == '-' || c == '.'))
+      c = '_';
+  return t_name;
+}
+
+//~~~~~~~  Per-pattern timing (-per_pattern_dir) ~~~~~~~
+//
+// shannon is a Xen guest whose clocksource is `xen`, where steady_clock::now()
+// costs ~1 us -- against 7-20 us for a whole query on page -- so it cannot
+// bracket a single query. A TSC read costs ~11 ns there (constant_tsc), so the
+// timed loop carries ~23 ns per pattern. Ticks are converted to ns with one
+// factor calibrated against steady_clock at startup.
+namespace per_pattern_timing {
+
+inline std::uint64_t ReadTicks() {
+#if defined(__x86_64__) || defined(__i386__)
+  return __rdtsc();
+#else
+  return static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+#endif
+}
+
+double CalibrateNsPerTick() {
+#if defined(__x86_64__) || defined(__i386__)
+  using Clock = std::chrono::steady_clock;
+  const auto t0 = Clock::now();
+  const auto c0 = ReadTicks();
+  std::this_thread::sleep_for(std::chrono::milliseconds(250));
+  const auto c1 = ReadTicks();
+  const auto t1 = Clock::now();
+  return std::chrono::duration<double, std::nano>(t1 - t0).count() / static_cast<double>(c1 - c0);
+#else
+  return std::chrono::duration<double, std::nano>(std::chrono::steady_clock::duration(1)).count();
+#endif
+}
+
+// Shared by every benchmark of the run: the patterns and the text do not change
+// between configurations, so occurrences are counted once, before timing starts.
+struct Context {
+  double ns_per_tick = 0;
+  std::vector<std::size_t> occs;
+  std::string patterns_path;
+};
+
+Context& Ctx() {
+  static Context ctx;
+  return ctx;
+}
+
+// Nearest-rank quantile of an ascending vector.
+double Quantile(const std::vector<double>& t_sorted, double t_q) {
+  if (t_sorted.empty()) return 0;
+  const auto rank = static_cast<std::size_t>(t_q * static_cast<double>(t_sorted.size()));
+  return t_sorted[std::min(rank, t_sorted.size() - 1)];
+}
+
+// Writes the sidecar and the quantile counters. Runs after the timed loop.
+void Report(benchmark::State& t_state,
+            const std::vector<std::string>& t_patterns,
+            const std::vector<std::uint64_t>& t_ticks,
+            const std::vector<std::size_t>& t_ndocs) {
+  const auto& ctx = Ctx();
+  const auto n = t_patterns.size();
+
+  std::vector<double> ns(n);
+  for (std::size_t i = 0; i < n; ++i) ns[i] = static_cast<double>(t_ticks[i]) * ctx.ns_per_tick;
+
+  const auto path = FLAGS_per_pattern_dir + "/" + SanitizeName(t_state.name()) + ".tsv";
+  std::ofstream os(path);
+  if (!os) {
+    std::cerr << "ERROR: cannot write per-pattern times to " << path << "\n";
+  } else {
+    os << "# benchmark\t" << t_state.name() << '\n'
+       << "# patterns\t" << ctx.patterns_path << '\n'
+       << "# pattern_idx counts the non-empty lines of the patterns file, from 0\n"
+       << "# ns_per_tick\t" << std::setprecision(9) << ctx.ns_per_tick << '\n'
+       << "# time_ns is the minimum over " << t_state.iterations() << " iteration(s)\n"
+       << "pattern_idx\tlength\toccs\tndocs\ttime_ns\n"
+       << std::fixed << std::setprecision(1);
+    for (std::size_t i = 0; i < n; ++i)
+      os << i << '\t' << t_patterns[i].size() << '\t' << ctx.occs[i] << '\t'
+         << t_ndocs[i] << '\t' << ns[i] << '\n';
+  }
+
+  // A document cannot be reported without an occurrence in it.
+  std::size_t ndocs_above_occs = 0;
+  for (std::size_t i = 0; i < n; ++i) ndocs_above_occs += (t_ndocs[i] > ctx.occs[i]);
+  if (ndocs_above_occs)
+    std::cerr << "[VALIDATE] " << t_state.name() << ": " << ndocs_above_occs
+              << " pattern(s) report more documents than occurrences\n";
+
+  std::sort(ns.begin(), ns.end());
+  t_state.counters["Time_x_Pattern_p50"] = Quantile(ns, 0.50) * 1e-9;
+  t_state.counters["Time_x_Pattern_p90"] = Quantile(ns, 0.90) * 1e-9;
+  t_state.counters["Time_x_Pattern_p99"] = Quantile(ns, 0.99) * 1e-9;
+}
+
+}  // namespace per_pattern_timing
+
 //~~~~~~~  Counter helpers (inlined to avoid pulling in bm_query.h's BM_WarmUp) ~~~~~~~
 
 void SetupQueryCounters(benchmark::State& t_state) {
@@ -265,11 +380,40 @@ auto BM_Query = [](benchmark::State& t_state,
                    std::size_t t_seq_size) {
   auto [idx, idx_size] = t_factory->Make(t_config);
 
-  for (auto _ : t_state) {
-    for (const auto& pattern : *t_patterns) {
-      DocListResult result;
-      idx->Search(pattern, std::ref(result));
-      benchmark::DoNotOptimize(result);
+  // The per-pattern variant is a separate loop so the default path stays exactly
+  // the plain one. It adds two TSC reads and two stores per pattern, into vectors
+  // sized before the timed region; each pattern keeps its fastest iteration.
+  const bool per_pattern = !FLAGS_per_pattern_dir.empty() && idx;
+  std::vector<std::uint64_t> pattern_ticks;
+  std::vector<std::size_t> pattern_ndocs;
+  if (per_pattern) {
+    pattern_ticks.assign(t_patterns->size(), std::numeric_limits<std::uint64_t>::max());
+    pattern_ndocs.assign(t_patterns->size(), 0);
+  }
+
+  if (!per_pattern) {
+    for (auto _ : t_state) {
+      for (const auto& pattern : *t_patterns) {
+        DocListResult result;
+        idx->Search(pattern, std::ref(result));
+        benchmark::DoNotOptimize(result);
+      }
+    }
+  } else {
+    for (auto _ : t_state) {
+      for (std::size_t i = 0; i < t_patterns->size(); ++i) {
+        const auto t0 = per_pattern_timing::ReadTicks();
+        std::size_t n_docs;
+        {
+          DocListResult result;
+          idx->Search((*t_patterns)[i], std::ref(result));
+          benchmark::DoNotOptimize(result);
+          n_docs = result.docs.size();
+        }
+        const auto t1 = per_pattern_timing::ReadTicks();
+        pattern_ticks[i] = std::min(pattern_ticks[i], t1 - t0);
+        pattern_ndocs[i] = n_docs;
+      }
     }
   }
 
@@ -283,11 +427,7 @@ auto BM_Query = [](benchmark::State& t_state,
   // duplicates makes such a bug surface as a file/md5 mismatch, and we also
   // count them for a direct, self-contained signal on stderr.
   if (!FLAGS_print_results_dir.empty() && idx) {
-    std::string fname = t_state.name();
-    for (char& c : fname)
-      if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '-' || c == '.'))
-        c = '_';
+    const std::string fname = SanitizeName(t_state.name());
     std::ofstream os(FLAGS_print_results_dir + "/" + fname + ".txt");
     std::size_t dup_count = 0;
     std::size_t patterns_with_dups = 0;
@@ -309,6 +449,8 @@ auto BM_Query = [](benchmark::State& t_state,
                 << " duplicate doc-id(s) across " << patterns_with_dups
                 << " pattern(s) (expected 0 — possible index bug)\n";
   }
+
+  if (per_pattern) per_pattern_timing::Report(t_state, *t_patterns, pattern_ticks, pattern_ndocs);
 
   SetupQueryCounters(t_state);
 
@@ -1612,6 +1754,17 @@ int main(int argc, char** argv) {
   if (spec.mode == bench::spec::Mode::Query) {
     factory = std::make_unique<Factory<>>(config);
     seq_size = factory->SequenceSize();
+
+    if (!FLAGS_per_pattern_dir.empty()) {
+      std::filesystem::create_directories(FLAGS_per_pattern_dir);
+      auto& ctx = per_pattern_timing::Ctx();
+      ctx.patterns_path = spec.dataset.patterns;
+      ctx.ns_per_tick = per_pattern_timing::CalibrateNsPerTick();
+      ctx.occs.reserve(patterns.size());
+      for (const auto& pattern : patterns) ctx.occs.push_back(factory->CountOccurrences(pattern));
+      std::cerr << "per-pattern timing: " << patterns.size() << " patterns, ns/tick = "
+                << ctx.ns_per_tick << ", writing to " << FLAGS_per_pattern_dir << std::endl;
+    }
   }
 
   // Dispatch each sweep block per mode.
