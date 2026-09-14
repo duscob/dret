@@ -21,6 +21,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -72,7 +73,8 @@ DEFINE_string(print_results_dir, "",
               "(cross-index correctness verification; brute is the ground truth).");
 DEFINE_string(per_pattern_dir, "",
               "If set, time every pattern of each query benchmark and write "
-              "<dir>/<sanitized-name>.tsv (pattern index, length, occs, ndocs, minimum "
+              "<dir>/<sanitized-name>.call<k>.tsv, one per call of the benchmark "
+              "function (pattern index, length, occs, ndocs, minimum "
               "time in ns), plus Time_x_Pattern_p50/_p90/_p99 counters. Occs come from "
               "the r-index, so BruteRI's cache files must exist.");
 
@@ -330,12 +332,19 @@ void Report(benchmark::State& t_state,
   std::vector<double> ns(n);
   for (std::size_t i = 0; i < n; ++i) ns[i] = static_cast<double>(t_ticks[i]) * ctx.ns_per_tick;
 
-  const auto path = FLAGS_per_pattern_dir + "/" + SanitizeName(t_state.name()) + ".tsv";
+  // Google Benchmark calls the benchmark function once per trial run (while it sizes
+  // the iteration count) and once per repetition, so every call gets its own file;
+  // the iteration count in the header tells trial runs from measured repetitions.
+  static std::map<std::string, int> calls;
+  const int call = ++calls[t_state.name()];
+  const auto path = FLAGS_per_pattern_dir + "/" + SanitizeName(t_state.name()) + ".call" +
+                    std::to_string(call) + ".tsv";
   std::ofstream os(path);
   if (!os) {
     std::cerr << "ERROR: cannot write per-pattern times to " << path << "\n";
   } else {
     os << "# benchmark\t" << t_state.name() << '\n'
+       << "# call\t" << call << '\n'
        << "# patterns\t" << ctx.patterns_path << '\n'
        << "# pattern_idx counts the non-empty lines of the patterns file, from 0\n"
        << "# ns_per_tick\t" << std::setprecision(9) << ctx.ns_per_tick << '\n'
