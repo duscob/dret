@@ -223,15 +223,16 @@ void construct(GetDocSLP<TStorage, t_width, TSLP>& t_get_doc, Config& t_config) 
 // samples a lookup jumps to before skipping by span lengths. It is the RMQ
 // backend that stands for GCDA's differential grammar without the sampled tree
 // (GetDocDSLP's DifferentialLightSLP carries that tree, and lookups never touch
-// it). A differential cache entry is therefore keyed "bs{b}_" + kSLPNS; a plain
-// TSLP has no sampling and ignores the block size.
+// it). A differential TSLP is therefore keyed by DiffNoTreeCacheKey: at the
+// GCDA-nolists block size it shares that index's grammar file, otherwise it gets
+// a "bs{b}_" entry of its own. A plain TSLP has no sampling, ignores the block
+// size and keeps kSLPNS.
 template <typename TSLP>
 std::string SlpNsCacheKey(const JSON& t_keys, uint32_t t_block_size) {
-  const auto key = t_keys[conf::kSLPNS].template get<std::string>();
   if constexpr (is_differential_slp_v<TSLP>)
-    return std::format("bs{}_", t_block_size) + key;
+    return DiffNoTreeCacheKey(t_keys, t_block_size);
   else
-    return key;
+    return t_keys[conf::kSLPNS].template get<std::string>();
 }
 
 template <typename TStorage = GenericStorage,

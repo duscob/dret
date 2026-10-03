@@ -633,8 +633,9 @@ TEST_F(RMQSLPCacheReuseTest, rmq_slp_reuses_gcda_slp_cache) {
 
 // The RMQ backend for GCDA's differential grammar without the sampled tree: a
 // bare DifferentialSLP whose block size is the sample spacing. Each block size
-// must answer correctly and get its own "bs{b}_" cache entry, so the cells of a
-// block-size sweep never load one another's grammar.
+// must answer correctly and get its own cache entry, so the cells of a
+// block-size sweep never load one another's grammar -- except at the GCDA-nolists
+// block size, which keeps that index's plain kDSLPNS key (see the next test).
 TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_sweeps_block_size) {
   using S = ExternalGenericStorage;
   using TDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
@@ -670,9 +671,38 @@ TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_sweeps_block_size) {
     check.template operator()<IlcpL>(bs, "ILCP-L");
     check.template operator()<CilcpL>(bs, "CILCP-L");
 
-    const auto key = std::format("bs{}_{}", bs, config_.keys[dret::conf::kSLPNS].get<std::string>());
+    const auto key = dret::DiffNoTreeCacheKey(config_.keys, bs);
+    EXPECT_EQ(key.starts_with("bs"), bs != dret::kDiffBlockSize) << key;
     EXPECT_TRUE(std::filesystem::exists(sdsl::cache_file_name<TDiff>(key, config_))) << key;
   }
+}
+
+// At the GCDA-nolists block size the RMQ backend must load the grammar file that
+// the GCDA-nolists differential index (DocListIdxSLP) built, not rebuild its own.
+TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_reuses_gcda_nolists_grammar) {
+  using S = ExternalGenericStorage;
+  using TDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
+  using TGetDoc = dret::rmq::GetDocSLP_NS<S, dret::Alphabet<>::int_width, TDiff>;
+  using CilcpL = dret::rmq::CilcpLCore<S, dret::Alphabet<>::int_width, sdsl::sd_vector<>,
+                                       sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
+
+  dret::DocListIdxSLP<S, dret::Alphabet<>, RMQCountIdx<S>, TDiff> nolists(std::ref(storage_));
+  construct(nolists, config_);
+
+  const auto key = config_.keys[dret::conf::kDSLPNS].get<std::string>();
+  const auto path = sdsl::cache_file_name<TDiff>(key, config_);
+  ASSERT_TRUE(std::filesystem::exists(path));
+  const auto before_time = std::filesystem::last_write_time(path);
+
+  CilcpL core(std::ref(storage_), dret::kDiffBlockSize, 0.0f);
+  dret::rmq::DocListIdxRMQ<S, dret::Alphabet<>, RMQCountIdx<S>, CilcpL> rmq(std::ref(storage_), core);
+  construct(rmq, config_);
+
+  EXPECT_EQ(std::filesystem::last_write_time(path), before_time);
+  EXPECT_EQ(dret::DiffNoTreeCacheKey(config_.keys, dret::kDiffBlockSize), key);
+  // ...and no second copy under a block-size key.
+  EXPECT_FALSE(std::filesystem::exists(
+      sdsl::cache_file_name<TDiff>(std::format("bs{}_{}", dret::kDiffBlockSize, key), config_)));
 }
 
 TEST_F(RMQSLPCacheReuseTest, rmq_dslp_reuses_dgcda_dslp_cache) {

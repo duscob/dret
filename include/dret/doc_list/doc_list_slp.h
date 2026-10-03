@@ -59,6 +59,15 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
 // this is an internal constant — not an exposed bs/sf axis.
 inline constexpr std::uint32_t kDiffBlockSize = 512;
 
+// Cache key of a bare differential grammar sampled every t_block_size positions.
+// At kDiffBlockSize it is the plain kDSLPNS key, the one DocListIdxSLP builds and
+// loads, so a get-doc backend at that block size (rmq::GetDocSLP_NS) reuses the
+// GCDA-nolists grammar file; any other block size gets its own "bs{b}_" entry.
+inline std::string DiffNoTreeCacheKey(const JSON& t_keys, uint32_t t_block_size) {
+  const auto key = t_keys[conf::kDSLPNS].get<std::string>();
+  return t_block_size == kDiffBlockSize ? key : std::format("bs{}_", t_block_size) + key;
+}
+
 //~~~~~~~  SLP-NS range expansion, dispatched by SLP type  ~~~~~~~
 
 // Plain grammar::SLP: split [sp, ep) into a span cover, expand each variable.
@@ -109,7 +118,7 @@ struct SlpNsTraits<DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRoo
   using TDiff = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
   static constexpr std::string_view kKey = conf::kDSLPNS;
   static void build(Config& t_config) {
-    const auto key = t_config.keys[conf::kDSLPNS].get<std::string>();
+    const auto key = DiffNoTreeCacheKey(t_config.keys, kDiffBlockSize);
     if (sdsl::cache_file_exists<TDiff>(key, t_config)) return;
     auto event = sdsl::memory_monitor::event(key);
     TDiff dslp;
