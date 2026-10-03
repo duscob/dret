@@ -118,4 +118,23 @@ void ExpandSLP(const grammar::CompactLOUDSSLP<Ts...>& slp,
   }
 }
 
+// ---- ExpandSLPUntil overload ----
+//
+// The ExpandSLP above is already in position order, but
+// grammar::ExpandCompactSLPForward offers no way to stop, so this keeps the
+// order and drops everything after the report asks to stop. Correct, not
+// faster: LOUDS still expands the whole range.
+template<typename... Ts, typename Report>
+void ExpandSLPUntil(const grammar::CompactLOUDSSLP<Ts...>& slp,
+                    std::size_t bp,
+                    std::size_t ep,
+                    Report& report) {
+  bool going = true;
+  auto filtered = [&report, &going](auto v) {
+    if (going)
+      going = report(v);
+  };
+  ExpandSLP(slp, bp, ep, filtered);
+}
+
 }  // namespace dret

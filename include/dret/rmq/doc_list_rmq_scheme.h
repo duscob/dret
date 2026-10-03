@@ -70,6 +70,22 @@ void ListDocsRMQScheme(std::size_t bp,
   ListDocsRMQScheme(k + 1, ep, rmq, get_doc, is_reported, report);
 }
 
+// ListDocsRMQScheme with the head lookup, the marker test and the report fused
+// into visit(k): it reads the run at k, reports it unless its head document is
+// already reported, and returns whether it did. The ILCP family visits a run in
+// one in-order backend expansion (VisitRun in doc_list_rmq.h) instead of a head
+// lookup followed by a fan-out that locates its start again. The stop is the
+// marker stop above, with the same soundness conditions.
+template <typename TRMQ, typename TVisit>
+void ListDocsRMQSchemeVisit(std::size_t bp, std::size_t ep, const TRMQ& rmq, const TVisit& visit) {
+  if (bp >= ep)
+    return;
+  const auto k = rmq(bp, ep - 1);
+  if (!visit(k)) return;
+  ListDocsRMQSchemeVisit(bp, k, rmq, visit);
+  ListDocsRMQSchemeVisit(k + 1, ep, rmq, visit);
+}
+
 // Canonical Sadakane-style LEFTMOST RMQ traversal: recursion stops by an
 // explicit value-based predicate, not by marker state. This is the algorithm
 // used by the SADA, ILCP and CILCP★ papers (Sadakane 2007; Gagie, Navarro,
@@ -115,6 +131,23 @@ void ListDocsRMQSchemeDepth(std::size_t bp,
   report(k, get_doc(k));
   ListDocsRMQSchemeDepth(bp, k, rmq, get_doc, stop_pred, report);
   ListDocsRMQSchemeDepth(k + 1, ep, rmq, get_doc, stop_pred, report);
+}
+
+// ListDocsRMQSchemeDepth with the lookup and the report fused into visit(k), as
+// in ListDocsRMQSchemeVisit; the value predicate alone still decides the descent.
+template <typename TRMQ, typename TStopPred, typename TVisit>
+void ListDocsRMQSchemeDepthVisit(std::size_t bp,
+                                 std::size_t ep,
+                                 const TRMQ& rmq,
+                                 const TStopPred& stop_pred,
+                                 const TVisit& visit) {
+  if (bp >= ep)
+    return;
+  const auto k = rmq(bp, ep - 1);
+  if (stop_pred(k)) return;
+  visit(k);
+  ListDocsRMQSchemeDepthVisit(bp, k, rmq, stop_pred, visit);
+  ListDocsRMQSchemeDepthVisit(k + 1, ep, rmq, stop_pred, visit);
 }
 
 //~~~~~~~

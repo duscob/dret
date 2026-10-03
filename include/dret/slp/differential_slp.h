@@ -214,7 +214,13 @@ void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::F
   auto report_span_sum = [&raw_span_sums](auto /*var*/, auto sum) {
     raw_span_sums.emplace_back(static_cast<uint64_t>(sum));
   };
-  auto [min_ss, max_ss] = grammar::ComputeSpanSums(tslp, diff_base_seq_, report_span_sum);
+  // A grammar with no rules (a sequence RePair cannot shorten) has no span sums,
+  // and grammar::ComputeSpanSums would dereference the end of an empty range for
+  // their minimum, so skip it. Only tiny inputs get here: the random differential
+  // test's collections did, at 700 of them.
+  int64_t min_ss = 0;
+  if (tslp.GetRules().size() / 2 > 0)
+    min_ss = grammar::ComputeSpanSums(tslp, diff_base_seq_, report_span_sum).first;
   diff_base_sums_ = (min_ss < 0) ? static_cast<uint64_t>(-min_ss) : 0;
 
   // 4. Compute samples at block_size granularity
@@ -340,6 +346,99 @@ void ExpandSLP(const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleR
     return;
   auto wrapper = slp.MakeWrapper();
   grammar::ExpandDifferentialSLP(wrapper, bp, ep - 1, report);
+}
+
+//~~~~~~~
+
+// In-order expansion of [bp, ep) that stops as soon as the report returns false
+// (see ExpandSLPUntil in slp_tools.h for why the RMQ cores need it). This is
+// grammar::ExpandDifferentialSLP with a stop: the same sample jump, the same
+// skipping by span lengths, and the same running sum of differences. It lives
+// here rather than in the grammar library, which dret takes from a pinned branch.
+namespace internal {
+
+template <typename TDiff, typename Report>
+bool DiffUntilFromLeft(const TDiff& slp, std::size_t var, std::size_t& length, Report& report) {
+  if (slp.IsTerminal(var)) {
+    --length;
+    return report(var);
+  }
+  const auto& children = slp[var];
+  if (!DiffUntilFromLeft(slp, children.first, length, report))
+    return false;
+  if (0 < length)
+    return DiffUntilFromLeft(slp, children.second, length, report);
+  return true;
+}
+
+// Skips the first sp terminals of var by span lengths, then reports up to length.
+template <typename TDiff, typename Report, typename Skip>
+bool DiffUntilFromLeft(const TDiff& slp, std::size_t var, std::size_t& sp, std::size_t& length, Report& report,
+                       const Skip& skip) {
+  const auto& children = slp[var];
+  const auto left_len = slp.SpanLength(children.first);
+  if (sp < left_len) {
+    if (!DiffUntilFromLeft(slp, children.first, sp, length, report, skip))
+      return false;
+  } else {
+    skip(children.first);
+    sp -= left_len;
+  }
+
+  if (0 < sp)
+    return DiffUntilFromLeft(slp, children.second, sp, length, report, skip);
+  if (0 < length)
+    return DiffUntilFromLeft(slp, children.second, length, report);
+  return true;
+}
+
+}  // namespace internal
+
+template <typename TSLP,
+          typename TRoots,
+          typename TSpanSums,
+          typename TSamples,
+          typename TSampleRootsPos,
+          typename TBV,
+          typename Report>
+void ExpandSLPUntil(const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& dslp,
+                    std::size_t bp,
+                    std::size_t ep,
+                    Report& t_report) {
+  if (bp >= ep)
+    return;
+  const auto slp = dslp.MakeWrapper();
+
+  const auto sample = slp.Sample(bp);
+  auto idx_root = slp.SampleFirstRoot(sample);
+  std::size_t sp = bp - slp.SamplePosition(sample);
+  std::size_t length = ep - bp;
+
+  auto sum = slp.SampleValue(sample);
+  const auto diff_base = slp.DifferentialBase();
+  auto report = [&t_report, &sum, &diff_base](const auto& terminal) {
+    sum += terminal - diff_base;
+    return t_report(sum);
+  };
+  const auto skip = [&sum, &slp](const auto var) { sum += slp.SpanSum(var); };
+
+  std::size_t root;
+  std::size_t span_length;
+  while (root = slp.Root(idx_root), (span_length = slp.SpanLength(root)) <= sp) {
+    skip(root);
+    sp -= span_length;
+    ++idx_root;
+  }
+  if (0 < sp) {
+    if (!internal::DiffUntilFromLeft(slp, root, sp, length, report, skip))
+      return;
+    ++idx_root;
+  }
+  while (0 < length) {
+    if (!internal::DiffUntilFromLeft(slp, slp.Root(idx_root), length, report))
+      return;
+    ++idx_root;
+  }
 }
 
 //~~~~~~~

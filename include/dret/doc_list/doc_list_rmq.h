@@ -155,6 +155,48 @@ sdsl::int_vector<> LoadOrComputeIlcp(Config& t_config, std::size_t t_n_doc) {
   return ilcp;
 }
 
+
+// Reads one run of an ILCP-family core, its in-range positions [b, e), in a
+// single in-order expansion of the backend (TGetDoc::ExpandUntil). The head
+// document comes first. With stop_if_reported, an already-reported head ends the
+// visit there -- the marker stop -- and the run is neither reported nor fanned
+// out; otherwise the head is reported and the rest of the run fans out. With
+// kPeek (CILCP), a second position that holds the head's document ends the
+// fan-out: IlcpLikeLeanCore::findDocs explains why that is sound.
+//
+// This replaces a head lookup, a peek and a range expansion that each located
+// their start position again. Returns false iff the visit stopped at a head that
+// was already reported.
+template <bool kPeek, typename TGetDoc, typename TIsReported, typename TReportDedup>
+bool VisitRun(const TGetDoc& t_get_doc,
+              std::size_t t_b,
+              std::size_t t_e,
+              bool t_stop_if_reported,
+              const TIsReported& t_is_reported,
+              TReportDedup& t_report_dedup) {
+  std::size_t seen = 0;
+  std::size_t head_doc = 0;
+  bool reported = true;
+  t_get_doc.ExpandUntil(t_b, t_e, [&](std::size_t d) {
+    if (seen++ == 0) {
+      head_doc = d;
+      if (t_stop_if_reported && t_is_reported(d)) {
+        reported = false;
+        return false;
+      }
+      t_report_dedup(d);
+      return true;
+    }
+    if constexpr (kPeek) {
+      if (seen == 2 && d == head_doc)
+        return false;
+    }
+    t_report_dedup(d);
+    return true;
+  });
+  return reported;
+}
+
 }  // namespace internal
 
 //~~~~~~~
@@ -439,52 +481,42 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
     MarkedReported mr(n_doc_);
     const auto& select = *select_;
 
-    auto get_doc = [this, &select, &state](std::size_t i) {
-      const std::size_t head = static_cast<std::size_t>(select(i + 1));
-      return get_doc_(std::max(state.sp_orig, head));
+    auto report_dedup = [&mr, &t_report](std::size_t d) {
+      if (!mr(0, d)) {
+        mr.mark(d);
+        t_report(d);
+      }
     };
+    auto is_reported = [&mr](std::size_t d) { return mr(0, d); };
 
-    auto report = [this, &mr, &t_report, &select, &state](std::size_t i, std::size_t doc) {
-      auto report_dedup = [&mr, &t_report](auto d) {
-        const auto dd = static_cast<std::size_t>(d);
-        if (!mr(0, dd)) {
-          mr.mark(dd);
-          t_report(dd);
-        }
-      };
-      // The head doc is de-duplicated like any other: CILCP reaches report()
-      // even for an already-reported head, because the fan-out below may still
-      // hold the first occurrence of some other document.
-      report_dedup(doc);
-
-      // Fan out remaining positions in this run within [sp_orig, ep_orig). For
-      // the last run select(i+2) is undefined; run_heads_->size() is the safe sentinel.
+    // Visits run i over its positions inside [sp_orig, ep_orig): the head
+    // document first, then -- unless the marker stop fires at the head -- the
+    // fan-out of the rest of the run, all in one backend expansion (VisitRun).
+    // For the last run select(i+2) is undefined; run_heads_->size() is the safe
+    // sentinel.
+    //
+    // CILCP-L adds a peek on the first leftover position. It is sound because a
+    // CILCP run is either (a) a same-doc run, where nothing past the head is
+    // new, or (b) an ilcp-constant run, where the peek fires only if the run's
+    // first two in-range positions share a document -- so the second is not
+    // that document's first occurrence, its ILCP value is >= m, and since the
+    // run is ilcp-constant EVERY position in it is a repeat occurrence that some
+    // other run reports. (The converse case, first two positions in different
+    // documents, does not fire the peek and fans out normally.)
+    //
+    // The head document is de-duplicated like any other: CILCP reaches a run
+    // even with an already-reported head when the run straddles the right end
+    // of the range (stop_if_reported = false below), because its fan-out may
+    // still hold the first occurrence of some other document.
+    auto visit = [this, &select, &state, &is_reported, &report_dedup](std::size_t i, bool stop_if_reported) {
       const std::size_t head = static_cast<std::size_t>(select(i + 1));
       const std::size_t run_start = std::max(state.sp_orig, head);
       const std::size_t next_head = (i + 1 < n_runs_) ? static_cast<std::size_t>(select(i + 2)) : run_heads_->size();
       const std::size_t run_end = std::min(state.ep_orig - 1, next_head - 1);
-      // Both ILCP and CILCP issue a single range-based SLP/DSLP descent so
-      // grammar-compressed GetDoc backends pay O(|cover|*height + L) per run
-      // instead of L * O(height) for L per-position descents.
-      //
-      // CILCP adds a peek on the first leftover position. It is sound because a
-      // CILCP run is either (a) a same-doc run, where nothing past the head is
-      // new, or (b) an ilcp-constant run, where the peek fires only if the
-      // run's first two in-range positions share a document -- so the second is
-      // not that document's first occurrence, its ILCP value is >= m, and since
-      // the run is ilcp-constant EVERY position in it is a repeat occurrence
-      // that some other run reports. (The converse case, first two positions in
-      // different documents, does not fire the peek and fans out normally.)
-      const std::size_t b = run_start + 1;
-      const std::size_t e = run_end + 1;
-      if constexpr (kVariant == IlcpLeanVariant::CILCP_L) {
-        if (b < e && get_doc_(b) != doc)
-          get_doc_(b, e, report_dedup);
-      } else {
-        if (b < e)
-          get_doc_(b, e, report_dedup);
-      }
+      return internal::VisitRun<kVariant == IlcpLeanVariant::CILCP_L>(
+          get_doc_, run_start, run_end + 1, stop_if_reported, is_reported, report_dedup);
     };
+    auto visit_marked = [&visit](std::size_t i) { return visit(i, true); };
 
     // The marker-based stop is sound for ILCP-L everywhere: its runs are
     // value-uniform, so a run's stored value equals the value at each of its
@@ -511,7 +543,7 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
     // it is free. The boundary runs never reach this code path; they are fanned
     // out unconditionally below.
     if constexpr (kVariant != IlcpLeanVariant::CILCP_L) {
-      ListDocsRMQScheme(run_sp, run_ep, *rmq_, get_doc, mr, report);
+      ListDocsRMQSchemeVisit(run_sp, run_ep, *rmq_, visit_marked);
     } else {
       const std::size_t last = run_ep - 1;
       const std::size_t after_last =
@@ -537,14 +569,14 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
       // which is exactly what excluding the right straddler rules out.
       const std::size_t hi = run_ep - (clip_hi ? 1 : 0);
       if (run_sp < hi)
-        ListDocsRMQScheme(run_sp, hi, *rmq_, get_doc, mr, report);
+        ListDocsRMQSchemeVisit(run_sp, hi, *rmq_, visit_marked);
 
       // AFTER the recursion, never before: the right straddler's stored minimum
       // may be attained outside the range, so fanning it out first can mark a
       // document whose first occurrence lies inside and cause a spurious stop
       // there. (Measured: doing this first gives wrong answers.)
       if (clip_hi)
-        report(last, get_doc(last));
+        visit(last, false);
     }
   }
 
@@ -715,47 +747,34 @@ class IlcpLikeFullCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
     MarkedReported mr(n_doc_);
     const auto& select = *select_;
 
-    auto get_doc = [this, &select, &state](std::size_t i) {
-      const std::size_t head = static_cast<std::size_t>(select(i + 1));
-      return get_doc_(std::max(state.sp_orig, head));
-    };
-
     auto stop_pred = [this, t_m](std::size_t k) {
       return static_cast<std::size_t>((*run_values_)[k]) >= t_m;
     };
 
-    auto report = [this, &mr, &t_report, &select, &state](std::size_t i, std::size_t doc) {
-      auto report_dedup = [&mr, &t_report](auto d) {
-        const auto dd = static_cast<std::size_t>(d);
-        if (!mr(0, dd)) {
-          mr.mark(dd);
-          t_report(dd);
-        }
-      };
-      // Every visited run is fanned out; the traversal does not gate on reporting
-      // state, so the head document is de-duplicated here like any other.
-      report_dedup(doc);
+    auto report_dedup = [&mr, &t_report](std::size_t d) {
+      if (!mr(0, d)) {
+        mr.mark(d);
+        t_report(d);
+      }
+    };
+    auto is_reported = [&mr](std::size_t d) { return mr(0, d); };
 
+    // Every visited run is fanned out -- the traversal does not gate on
+    // reporting state -- so the head document is de-duplicated here like any
+    // other, and VisitRun never stops at the head. CILCP★ runs can be either
+    // single-doc (merged) or multi-doc (a non-merged, hence ilcp-constant, ILCP
+    // run); the peek is sound for both, by the argument in
+    // IlcpLikeLeanCore::findDocs.
+    auto visit = [this, &select, &state, &is_reported, &report_dedup](std::size_t i) {
       const std::size_t head = static_cast<std::size_t>(select(i + 1));
       const std::size_t run_start = std::max(state.sp_orig, head);
       const std::size_t next_head = (i + 1 < n_runs_) ? static_cast<std::size_t>(select(i + 2)) : run_heads_->size();
       const std::size_t run_end = std::min(state.ep_orig - 1, next_head - 1);
-
-      const std::size_t b = run_start + 1;
-      const std::size_t e = run_end + 1;
-      if constexpr (kVariantS == IlcpFullVariant::CILCP) {
-        // CILCP★ runs can be either single-doc (merged) or multi-doc (a
-        // non-merged, hence ilcp-constant, ILCP run). The peek is sound for
-        // both, by the argument spelled out in IlcpLikeLeanCore::findDocs.
-        if (b < e && get_doc_(b) != doc)
-          get_doc_(b, e, report_dedup);
-      } else {
-        if (b < e)
-          get_doc_(b, e, report_dedup);
-      }
+      internal::VisitRun<kVariantS == IlcpFullVariant::CILCP>(
+          get_doc_, run_start, run_end + 1, /*stop_if_reported=*/false, is_reported, report_dedup);
     };
 
-    ListDocsRMQSchemeDepth(run_sp, run_ep, *rmq_, get_doc, stop_pred, report);
+    ListDocsRMQSchemeDepthVisit(run_sp, run_ep, *rmq_, stop_pred, visit);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {

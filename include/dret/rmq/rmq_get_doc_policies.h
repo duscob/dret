@@ -64,6 +64,18 @@ void ExpandSLP(const grammar::SLP<TVars, TLens>& slp,
   }
 }
 
+// In-order (the cover is left to right) but without a way to stop inside
+// grammar::ExpandSLPForward, so this drops what follows a stop request.
+template <typename TVars, typename TLens, typename Report>
+void ExpandSLPUntil(const grammar::SLP<TVars, TLens>& slp, std::size_t bp, std::size_t ep, Report& report) {
+  bool going = true;
+  auto filtered = [&report, &going](auto d) {
+    if (going)
+      going = report(d);
+  };
+  ExpandSLP(slp, bp, ep, filtered);
+}
+
 }  // namespace dret
 
 namespace dret::rmq {
@@ -89,6 +101,15 @@ class GetDocDA : public IndexBaseWithExternalStorage<TStorage, t_width> {
   void operator()(std::size_t b, std::size_t e, TReport& r) const {
     for (std::size_t i = b; i < e; ++i)
       r(static_cast<std::size_t>((*da_)[i]));
+  }
+
+  // In-order expansion of [b, e) that stops once f returns false (see
+  // ExpandSLPUntil in slp_tools.h for why the RMQ cores need it).
+  template <typename F>
+  void ExpandUntil(std::size_t b, std::size_t e, F&& f) const {
+    for (std::size_t i = b; i < e; ++i)
+      if (!f(static_cast<std::size_t>((*da_)[i])))
+        return;
   }
 
   // Total number of SA positions. Used by IlcpLikeCore for the last-run sentinel.
@@ -160,6 +181,13 @@ class GetDocSLP : public IndexBaseWithExternalStorage<TStorage, t_width> {
   template <typename TReport>
   void operator()(std::size_t b, std::size_t e, TReport& r) const {
     ExpandSLP(*slp_, b, e, r);
+  }
+
+  // In-order expansion of [b, e) that stops once f returns false.
+  template <typename F>
+  void ExpandUntil(std::size_t b, std::size_t e, F&& f) const {
+    auto report = [&f](auto d) { return f(static_cast<std::size_t>(d)); };
+    ExpandSLPUntil(*slp_, b, e, report);
   }
 
   uint32_t block_size() const {
@@ -268,6 +296,13 @@ class GetDocSLP_NS : public IndexBaseWithExternalStorage<TStorage, t_width> {
     ExpandSLP(*slp_, b, e, r);
   }
 
+  // In-order expansion of [b, e) that stops once f returns false.
+  template <typename F>
+  void ExpandUntil(std::size_t b, std::size_t e, F&& f) const {
+    auto report = [&f](auto d) { return f(static_cast<std::size_t>(d)); };
+    ExpandSLPUntil(*slp_, b, e, report);
+  }
+
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     return slp_ ? sdsl::serialize(*slp_, out, child, "slp") : sdsl::serialize_empty_object<TSLP>(out, child, "slp");
@@ -349,6 +384,13 @@ class GetDocDSLP : public IndexBaseWithExternalStorage<TStorage, t_width> {
   template <typename TReport>
   void operator()(std::size_t b, std::size_t e, TReport& r) const {
     ExpandSLP(*dslp_, b, e, r);
+  }
+
+  // In-order expansion of [b, e) that stops once f returns false.
+  template <typename F>
+  void ExpandUntil(std::size_t b, std::size_t e, F&& f) const {
+    auto report = [&f](auto d) { return f(static_cast<std::size_t>(d)); };
+    ExpandSLPUntil(*dslp_, b, e, report);
   }
 
   uint32_t block_size() const {

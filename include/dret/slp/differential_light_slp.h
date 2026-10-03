@@ -233,6 +233,26 @@ void ExpandSLP(const DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, 
             report);
 }
 
+// Same upcast for the in-order, early-stopping expansion.
+template <typename TSLP,
+          typename TSampledSLP,
+          typename TRoots,
+          typename TSpanSums,
+          typename TSamples,
+          typename TSampleRootsPos,
+          typename TBV,
+          typename Report>
+void ExpandSLPUntil(
+    const DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& slp,
+    std::size_t bp,
+    std::size_t ep,
+    Report& report) {
+  ExpandSLPUntil(static_cast<const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>&>(slp),
+                 bp,
+                 ep,
+                 report);
+}
+
 //~~~~~~~
 
 

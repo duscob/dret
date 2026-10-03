@@ -76,6 +76,16 @@ class GetDocRLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
     delete[] res;
   }
 
+  // In-order expansion of [b, e) that stops once f returns false. RMQ x RLCSA
+  // is never built (the factory falls back to DA, see above), so this only has
+  // to be correct: single lookups, left to right.
+  template <typename F>
+  void ExpandUntil(std::size_t t_b, std::size_t t_e, F&& f) const {
+    for (std::size_t i = t_b; i < t_e; ++i)
+      if (!f((*this)(i)))
+        return;
+  }
+
   // Serialize the RLCSA sidecar base path so the istream reload path can
   // reopen the sidecar without needing a Config object.
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v,

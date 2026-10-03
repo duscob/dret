@@ -45,6 +45,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <vector>
 #include <string>
 #include <utility>
 
@@ -109,6 +110,18 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
       t_report(d);
     };
     range_get_doc_(t_b, t_e, report);
+  }
+
+  // In-order expansion of [b, e) that stops once f returns false (see
+  // ExpandSLPUntil in slp_tools.h for why the RMQ cores need it). Each BWT run
+  // is walked once from its end, as in range_get_doc_; its documents come out
+  // high to low, so they are collected and replayed low to high. The first run
+  // is walked from its end down to b, which is exactly the walk a single lookup
+  // at b makes, so an RMQ run's head and its fan-out share that walk.
+  template <typename F>
+  void ExpandUntil(std::size_t t_b, std::size_t t_e, F&& f) const {
+    const std::function<bool(std::size_t)> until = [&f](std::size_t d) { return f(d); };
+    range_until_(t_b, t_e, until);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
@@ -225,8 +238,44 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
         }
       });
     };
+
+    // The in-order, early-stopping variant of range_get_doc_: the same walk per
+    // BWT run, replayed low to high, and no further runs once f has stopped.
+    range_until_ = [cref_bwt, cref_samples, phi, doc_at = doc_at_, n](
+        std::size_t b, std::size_t e,
+        const std::function<bool(std::size_t)>& f) {
+      if (b >= e) return;
+      thread_local std::vector<std::size_t> docs;
+      bool going = true;
+      cref_bwt.get().splitInRuns(b, e, [&](auto run_rnk, auto /*c*/,
+                                            auto run_start, auto run_end_excl) {
+        if (!going) return;
+        std::size_t sa = (cref_samples.get()[run_rnk] + 1) % n;
+        std::size_t pos = run_end_excl - 1;
+        while (pos >= e) {
+          sa = phi(sa).first;
+          --pos;
+        }
+        const std::size_t stop = b > run_start ? b : run_start;
+        docs.clear();
+        while (true) {
+          docs.push_back(doc_at(sa));
+          if (pos == stop) break;
+          sa = phi(sa).first;
+          --pos;
+        }
+        for (auto it = docs.rbegin(); it != docs.rend(); ++it) {
+          if (!f(*it)) {
+            going = false;
+            return;
+          }
+        }
+      });
+    };
   }
 
+  // (b, e, f) -> calls f(doc_at_(SA[i])) for i = b, b + 1, ... until f returns false.
+  std::function<void(std::size_t, std::size_t, const std::function<bool(std::size_t)>&)> range_until_;
   std::function<std::size_t(std::size_t)> sa_at_;   // i   -> SA[i]
   std::function<std::size_t(std::size_t)> doc_at_;  // pos -> rank1(doc_ends, pos)
   // (b, e, report) -> reports doc_at_(SA[i]) for each i in [b, e), using a

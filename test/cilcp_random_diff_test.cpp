@@ -18,6 +18,8 @@
 //
 
 #include <algorithm>
+#include <cstdint>
+#include <type_traits>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -31,6 +33,8 @@
 
 #include "dret/doc_list/doc_list_brute.h"
 #include "dret/doc_list/doc_list_rmq.h"
+#include "dret/rmq/rmq_get_doc_policies.h"
+#include "dret/rmq/rmq_get_doc_sa_phi.h"
 
 #include "base_test.h"
 
@@ -116,6 +120,40 @@ class RandomDiffTypedTests : public BaseConfigTests<8> {
   sri::GenericStorage storage_;
 };
 
+using S = ExternalGenericStorage;
+using TCount = sri::RIndexCount<S, dret::Alphabet<>>;
+constexpr auto kW = dret::Alphabet<>::int_width;
+
+// The grammar backends answer a run head that falls inside a sampled leaf (or
+// between differential samples) differently from one at its start, so they are
+// built at a tiny block size: even these short collections then span many
+// leaves and samples, and the mid-leaf cases are the common ones.
+template <typename TCore, std::uint32_t kBlock = 4>
+class WithBlock : public dret::rmq::DocListIdxRMQ<S, dret::Alphabet<>, TCount, TCore> {
+  using Base = dret::rmq::DocListIdxRMQ<S, dret::Alphabet<>, TCount, TCore>;
+
+ public:
+  explicit WithBlock(const S& t_storage) : Base(t_storage, TCore(t_storage, kBlock, 2.0f)) {}
+};
+
+template <typename TCore>
+using Plain = dret::rmq::DocListIdxRMQ<S, dret::Alphabet<>, TCount, TCore>;
+
+using TBareDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
+using GDCached = dret::rmq::GetDocSLP<S, kW>;
+using GDDiffTree = dret::rmq::GetDocDSLP<S, kW>;
+using GDDiff = dret::rmq::GetDocSLP_NS<S, kW, TBareDiff>;
+using GDSAPhi = dret::rmq::GetDocSAPhi<S, kW>;
+
+template <typename TGetDoc>
+using IlcpL = dret::rmq::IlcpLCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
+template <typename TGetDoc>
+using CilcpL = dret::rmq::CilcpLCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
+template <typename TGetDoc>
+using Ilcp = dret::rmq::IlcpCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
+template <typename TGetDoc>
+using Cilcp = dret::rmq::CilcpCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
+
 using RandomDiffTypes = ::testing::Types<
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                              sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
@@ -134,7 +172,13 @@ using RandomDiffTypes = ::testing::Types<
                              dret::rmq::IlcpCore<ExternalGenericStorage>>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                              sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::CilcpCore<ExternalGenericStorage>>>;
+                             dret::rmq::CilcpCore<ExternalGenericStorage>>,
+    // The run fan-out over every other backend: the ILCP family is what expands
+    // runs, so it is what a backend's range expansion can get wrong.
+    WithBlock<IlcpL<GDCached>>, WithBlock<CilcpL<GDCached>>, WithBlock<Ilcp<GDCached>>, WithBlock<Cilcp<GDCached>>,
+    WithBlock<IlcpL<GDDiffTree>>, WithBlock<CilcpL<GDDiffTree>>, WithBlock<Ilcp<GDDiffTree>>, WithBlock<Cilcp<GDDiffTree>>,
+    WithBlock<IlcpL<GDDiff>>, WithBlock<CilcpL<GDDiff>>, WithBlock<Ilcp<GDDiff>>, WithBlock<Cilcp<GDDiff>>,
+    Plain<IlcpL<GDSAPhi>>, Plain<CilcpL<GDSAPhi>>, Plain<Ilcp<GDSAPhi>>, Plain<Cilcp<GDSAPhi>>>;
 
 TYPED_TEST_SUITE(RandomDiffTypedTests, RandomDiffTypes);
 
@@ -179,4 +223,85 @@ TYPED_TEST(RandomDiffTypedTests, lists_every_document) {
   // would look exactly like a passing one.
   std::cout << "[          ] " << n_queries << " queries over " << n_collections
             << " collections (seed " << seed << ")" << std::endl;
+}
+
+//~~~~~~~  ExpandUntil: the in-order, early-stopping contract of every backend  ~~~~~~~
+//
+// The listing test above cannot see the ORDER in which a backend emits a run:
+// an ILCP-family run is either all first occurrences or all repeats, so the
+// documents listed do not depend on it. The order is what lets a visit stop at
+// the run's head without expanding the rest (VisitRun), so it is checked here
+// directly: for every range [b, e) of the document array and every stop point,
+// ExpandUntil must emit exactly DA[b], DA[b + 1], ... and nothing after the stop.
+
+// A backend plus an ILCP-L index over it, built first so the caches it loads
+// from exist.
+template <typename TGetDoc, typename TIndex>
+struct Backend {
+  using GetDoc = TGetDoc;
+  using Index = TIndex;
+  static TGetDoc Make(const S& t_storage) {
+    if constexpr (std::is_constructible_v<TGetDoc, const S&, std::uint32_t, float>)
+      return TGetDoc(t_storage, 4, 2.0f);
+    else
+      return TGetDoc(t_storage);
+  }
+};
+
+template <typename T>
+class ExpandUntilTypedTests : public RandomDiffTypedTests<T> {};
+
+using ExpandUntilTypes = ::testing::Types<
+    Backend<dret::rmq::GetDocDA<S, kW>, Plain<IlcpL<dret::rmq::GetDocDA<S, kW>>>>,
+    Backend<GDCached, WithBlock<IlcpL<GDCached>>>,
+    Backend<GDDiffTree, WithBlock<IlcpL<GDDiffTree>>>,
+    Backend<GDDiff, WithBlock<IlcpL<GDDiff>>>,
+    Backend<GDSAPhi, Plain<IlcpL<GDSAPhi>>>>;
+
+TYPED_TEST_SUITE(ExpandUntilTypedTests, ExpandUntilTypes);
+
+TYPED_TEST(ExpandUntilTypedTests, emits_in_order_and_stops) {
+  const auto seed = EnvOr("DRET_DIFF_SEED", 20260907u);
+  const auto n_collections = EnvOr("DRET_DIFF_COLLECTIONS", 200u) / 4;
+  std::mt19937 gen(static_cast<std::mt19937::result_type>(seed));
+
+  std::size_t n_checks = 0;
+  std::size_t n_wrong = 0;
+  for (std::size_t c = 0; c < n_collections; ++c) {
+    const auto docs = RandomCollection(gen);
+    this->InitFresh(Concat(docs));
+
+    typename TypeParam::Index index(std::ref(this->storage_));
+    construct(index, this->config_);
+
+    dret::rmq::GetDocDA<S, kW> truth(std::ref(this->storage_));
+    truth.load(this->config_);
+    auto get_doc = TypeParam::Make(std::ref(this->storage_));
+    get_doc.load(this->config_);
+
+    const std::size_t n = truth.size();
+    for (std::size_t b = 0; b < n; ++b) {
+      for (std::size_t e = b + 1; e <= n; ++e) {
+        for (std::size_t stop : {std::size_t{1}, std::size_t{2}, e - b}) {
+          std::vector<std::size_t> got;
+          get_doc.ExpandUntil(b, e, [&got, stop](std::size_t d) {
+            got.push_back(d);
+            return got.size() < stop;
+          });
+          std::vector<std::size_t> want;
+          for (std::size_t i = b; i < e && want.size() < stop; ++i)
+            want.push_back(truth(i));
+          ++n_checks;
+          if (got != want && ++n_wrong <= 5) {
+            ADD_FAILURE() << "collection " << c << ", [" << b << ", " << e << "), stop " << stop << '\n'
+                          << "  docs: " << testing::PrintToString(docs) << '\n'
+                          << "  got:  " << testing::PrintToString(got) << '\n'
+                          << "  want: " << testing::PrintToString(want);
+          }
+        }
+      }
+    }
+  }
+  EXPECT_EQ(n_wrong, 0u) << n_wrong << " wrong expansions out of " << n_checks;
+  std::cout << "[          ] " << n_checks << " expansions over " << n_collections << " collections" << std::endl;
 }
