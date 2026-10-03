@@ -212,13 +212,15 @@ MakeSLP(TStorage t_storage, dret::Config& t_config,
   return {idx, sdsl::size_in_bytes(*idx)};
 }
 
-// Build one RMQ-SLP-NS variant for a specific bare-SLP choice (no bs/sf).
+// Build one RMQ-SLP-NS variant for a specific bare-SLP choice. No storing
+// factor; the block size is the sample spacing of a differential TSLP and is
+// ignored by a plain one (see GetDocSLP_NS).
 template <template <typename, typename> class TCoreT, typename TStorage, typename TSLP>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-MakeSLP_NS(TStorage t_storage, dret::Config& t_config) {
+MakeSLP_NS(TStorage t_storage, dret::Config& t_config, uint32_t t_block_size) {
   using TCore = TCoreT<TStorage, GetDocSLP_NS<TStorage, TSLP>>;
   using TIndex = Idx<TStorage, TCore>;
-  TCore core(t_storage);
+  TCore core(t_storage, t_block_size, 0.0f);
   auto idx = std::make_shared<TIndex>(t_storage, core);
   construct(*idx, t_config);
   idx->load(t_config);
@@ -306,22 +308,22 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
     case GetDocEnum::SLP_NS:
       switch (t_bare_slp) {
         case BareSLPVariant::Raw:
-          return MakeSLP_NS<TCoreT, TStorage, BareSLP_Raw>(t_storage, t_config);
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_Raw>(t_storage, t_config, t_block_size);
         case BareSLPVariant::DV:
-          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DV>(t_storage, t_config);
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DV>(t_storage, t_config, t_block_size);
         case BareSLPVariant::VV:
-          return MakeSLP_NS<TCoreT, TStorage, BareSLP_VV>(t_storage, t_config);
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_VV>(t_storage, t_config, t_block_size);
         case BareSLPVariant::Diff:
-          return MakeSLP_NS<TCoreT, TStorage, BareSLP_Diff>(t_storage, t_config);
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_Diff>(t_storage, t_config, t_block_size);
         case BareSLPVariant::DiffEV:
-          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DiffEV>(t_storage, t_config);
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DiffEV>(t_storage, t_config, t_block_size);
         case BareSLPVariant::DiffDV:
-          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DiffDV>(t_storage, t_config);
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DiffDV>(t_storage, t_config, t_block_size);
         case BareSLPVariant::DiffVV:
-          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DiffVV>(t_storage, t_config);
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_DiffVV>(t_storage, t_config, t_block_size);
         case BareSLPVariant::IV:
         default:
-          return MakeSLP_NS<TCoreT, TStorage, BareSLP_IV>(t_storage, t_config);
+          return MakeSLP_NS<TCoreT, TStorage, BareSLP_IV>(t_storage, t_config, t_block_size);
       }
     case GetDocEnum::DSLP:
       switch (t_dgcda_slp) {
@@ -396,10 +398,10 @@ MakeSLP_S(TStorage t_storage, dret::Config& t_config,
 
 template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TSLP, typename TRunValues>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-MakeSLP_NS_S(TStorage t_storage, dret::Config& t_config) {
+MakeSLP_NS_S(TStorage t_storage, dret::Config& t_config, uint32_t t_block_size) {
   using TCore = TCoreT<TStorage, GetDocSLP_NS<TStorage, TSLP>, TRunValues>;
   using TIndex = Idx<TStorage, TCore>;
-  TCore core(t_storage);
+  TCore core(t_storage, t_block_size, 0.0f);
   auto idx = std::make_shared<TIndex>(t_storage, core);
   construct(*idx, t_config);
   idx->load(t_config);
@@ -456,22 +458,22 @@ MakeOnePub_T(TStorage t_storage, dret::Config& t_config,
     case GetDocEnum::SLP_NS:
       switch (t_bare_slp) {
         case BareSLPVariant::Raw:
-          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_Raw, TRunValues>(t_storage, t_config);
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_Raw, TRunValues>(t_storage, t_config, t_block_size);
         case BareSLPVariant::DV:
-          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DV, TRunValues>(t_storage, t_config);
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DV, TRunValues>(t_storage, t_config, t_block_size);
         case BareSLPVariant::VV:
-          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_VV, TRunValues>(t_storage, t_config);
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_VV, TRunValues>(t_storage, t_config, t_block_size);
         case BareSLPVariant::Diff:
-          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_Diff, TRunValues>(t_storage, t_config);
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_Diff, TRunValues>(t_storage, t_config, t_block_size);
         case BareSLPVariant::DiffEV:
-          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DiffEV, TRunValues>(t_storage, t_config);
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DiffEV, TRunValues>(t_storage, t_config, t_block_size);
         case BareSLPVariant::DiffDV:
-          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DiffDV, TRunValues>(t_storage, t_config);
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DiffDV, TRunValues>(t_storage, t_config, t_block_size);
         case BareSLPVariant::DiffVV:
-          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DiffVV, TRunValues>(t_storage, t_config);
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_DiffVV, TRunValues>(t_storage, t_config, t_block_size);
         case BareSLPVariant::IV:
         default:
-          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_IV, TRunValues>(t_storage, t_config);
+          return MakeSLP_NS_S<TCoreT, TStorage, BareSLP_IV, TRunValues>(t_storage, t_config, t_block_size);
       }
     case GetDocEnum::DSLP:
       switch (t_dgcda_slp) {

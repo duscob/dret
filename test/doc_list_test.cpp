@@ -631,6 +631,50 @@ TEST_F(RMQSLPCacheReuseTest, rmq_slp_reuses_gcda_slp_cache) {
   EXPECT_EQ(std::filesystem::last_write_time(slp_path), before_time);
 }
 
+// The RMQ backend for GCDA's differential grammar without the sampled tree: a
+// bare DifferentialSLP whose block size is the sample spacing. Each block size
+// must answer correctly and get its own "bs{b}_" cache entry, so the cells of a
+// block-size sweep never load one another's grammar.
+TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_sweeps_block_size) {
+  using S = ExternalGenericStorage;
+  using TDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
+  using TGetDoc = dret::rmq::GetDocSLP_NS<S, dret::Alphabet<>::int_width, TDiff>;
+  using TCount = RMQCountIdx<S>;
+  using SadaL = dret::rmq::SadaLCore<S, dret::Alphabet<>::int_width, sdsl::rmq_succinct_sct<true>,
+                                     sdsl::sd_vector<>, TGetDoc>;
+  using IlcpL = dret::rmq::IlcpLCore<S, dret::Alphabet<>::int_width, sdsl::sd_vector<>,
+                                     sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
+  using CilcpL = dret::rmq::CilcpLCore<S, dret::Alphabet<>::int_width, sdsl::sd_vector<>,
+                                       sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
+
+  const std::vector<std::pair<std::string, std::vector<std::size_t>>> expected = {
+      {"TAT", {0}}, {"LAT", {1}}, {"LAL", {2}}, {"TA", {0, 1}},
+      {"LA", {1, 2}}, {"A", {0, 1, 2}}, {"TAL", {}},
+  };
+
+  auto check = [&]<typename TCore>(std::uint32_t bs, const char* core_name) {
+    TCore core(std::ref(storage_), bs, 0.0f);
+    dret::rmq::DocListIdxRMQ<S, dret::Alphabet<>, TCount, TCore> index(std::ref(storage_), core);
+    construct(index, config_);
+    index.load(config_);
+    for (const auto& [pattern, docs] : expected) {
+      DocListResultVector result;
+      index.Search(pattern, std::ref(result));
+      result();
+      EXPECT_THAT(result, testing::ElementsAreArray(docs)) << core_name << " bs=" << bs << " " << pattern;
+    }
+  };
+
+  for (std::uint32_t bs : {2u, 4u, 512u}) {
+    check.template operator()<SadaL>(bs, "SADA-L");
+    check.template operator()<IlcpL>(bs, "ILCP-L");
+    check.template operator()<CilcpL>(bs, "CILCP-L");
+
+    const auto key = std::format("bs{}_{}", bs, config_.keys[dret::conf::kSLPNS].get<std::string>());
+    EXPECT_TRUE(std::filesystem::exists(sdsl::cache_file_name<TDiff>(key, config_))) << key;
+  }
+}
+
 TEST_F(RMQSLPCacheReuseTest, rmq_dslp_reuses_dgcda_dslp_cache) {
   using GetDocDSLP = RMQGetDocDSLP<ExternalGenericStorage>;
   using TDSLP = typename GetDocDSLP::DSLP;

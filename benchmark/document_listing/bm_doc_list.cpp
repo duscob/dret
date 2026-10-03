@@ -1034,7 +1034,11 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
     }
     for (auto gd : sw.get_doc) {
       const bool needs_bs_sf = (gd == GetDocEnum::SLP) || (gd == GetDocEnum::DSLP);
-      auto bs_list = needs_bs_sf ? sw.block_size : std::vector<std::uint32_t>{0};
+      // A bare differential grammar has a block size (its sample spacing) but
+      // no storing factor; a bare plain grammar has neither.
+      const bool slp_ns_has_diff = (gd == GetDocEnum::SLP_NS) &&
+          std::any_of(sw.bare_slp.begin(), sw.bare_slp.end(), IsBareDiff);
+      auto bs_list = (needs_bs_sf || slp_ns_has_diff) ? sw.block_size : std::vector<std::uint32_t>{0};
       auto sf_list = needs_bs_sf ? sw.storing_factor : std::vector<float>{0.0f};
       // Inner SLP axis: gcda_slp for get_doc=slp; bare_slp for slp_ns; ignored otherwise.
       auto inner_vec = [&]() -> std::vector<std::pair<GCDASLPVariant, BareSLPVariant>> {
@@ -1077,6 +1081,10 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
       for (auto bs : bs_list) {
         for (auto sf : sf_list) {
           for (auto pair : inner_vec) {
+            const bool bare_diff = (gd == GetDocEnum::SLP_NS) && IsBareDiff(pair.second);
+            // A bare plain grammar ignores the block size: register it once.
+            if (gd == GetDocEnum::SLP_NS && !bare_diff && bs != bs_list.front())
+              continue;
             for (auto dslp : dslp_vec) {
               for (auto rv : rv_list) {
                 for (auto pd : pd_list) {
@@ -1105,6 +1113,8 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
                     if (needs_bs_sf) {
                       kv.push_back({"block-size", IntStr(bs)});
                       kv.push_back({"storing-factor", SfStr(sf)});
+                    } else if (bare_diff) {
+                      kv.push_back({"block-size", IntStr(bs)});
                     }
                     if (sada_s)      kv.push_back({"prev-doc", PrevDocValue(pd)});
                     if (ilcp_s_like) kv.push_back({"run-values", RunValuesValue(rv)});
@@ -1115,7 +1125,7 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
                     cfg.gcda_slp = pair.first;
                     cfg.bare_slp = pair.second;
                     cfg.dgcda_slp = dslp;
-                    cfg.block_size = needs_bs_sf ? bs : 512;
+                    cfg.block_size = (needs_bs_sf || bare_diff) ? bs : 512;
                     cfg.storing_factor = needs_bs_sf ? sf : 4.0f;
                     cfg.run_values = rv;
                     cfg.prev_doc = pd;
@@ -1171,8 +1181,16 @@ void RegisterQueryPDL(const bench::spec::PDLSweep& sw, Factory<>& factory,
             emit({{"slp", SlpPlainValue(v)}}, v, BareSLPVariant::IV, DGCDASLPVariant::Default);
           break;
         case GetDocEnum::SLP_NS:
-          for (auto v : sw.bare_slp)
-            emit({{"slp-container", BareValue(v)}}, GCDASLPVariant::Light, v, DGCDASLPVariant::Default);
+          // Name bare-diff variants as RegisterQueryRMQ does: BareValue maps
+          // every diff variant to "iv", so without slp=diff a differential
+          // backend would take the plain iv backend's name.
+          for (auto v : sw.bare_slp) {
+            if (IsBareDiff(v))
+              emit({{"slp", "diff"}, {"slp-container", DiffContainerValue(v)}},
+                   GCDASLPVariant::Light, v, DGCDASLPVariant::Default);
+            else
+              emit({{"slp-container", BareValue(v)}}, GCDASLPVariant::Light, v, DGCDASLPVariant::Default);
+          }
           break;
         case GetDocEnum::DSLP:
           for (auto v : sw.dgcda_slp) {
@@ -1400,6 +1418,12 @@ void RegisterRMQOneCore(const std::string& core_name,
             case BareSLPVariant::Raw: RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_Raw>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
             case BareSLPVariant::DV:  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_DV>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
             case BareSLPVariant::VV:  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_VV>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
+            // A bare differential grammar sweeps the block size (its sample
+            // spacing) with no storing factor, hence the single sf of 0.
+            case BareSLPVariant::Diff:   RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_Diff>, true>(core_name, suffix, config, sw.block_size, {0.0f}, memory_trace, rebuild_hook); break;
+            case BareSLPVariant::DiffEV: RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_DiffEV>, true>(core_name, suffix, config, sw.block_size, {0.0f}, memory_trace, rebuild_hook); break;
+            case BareSLPVariant::DiffDV: RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_DiffDV>, true>(core_name, suffix, config, sw.block_size, {0.0f}, memory_trace, rebuild_hook); break;
+            case BareSLPVariant::DiffVV: RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_DiffVV>, true>(core_name, suffix, config, sw.block_size, {0.0f}, memory_trace, rebuild_hook); break;
             case BareSLPVariant::IV:
             default:                  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
           }

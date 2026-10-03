@@ -218,6 +218,22 @@ void construct(GetDocSLP<TStorage, t_width, TSLP>& t_get_doc, Config& t_config) 
 // matches `dret::DocListIdxSLP<>`'s default so the typed cache file is shared;
 // any drift between the two defaults silently desyncs the on-disk cache and
 // produces two parallel SLP files for the same logical "Default" variant.
+//
+// The one knob is the block size of a differential TSLP: the spacing of the
+// samples a lookup jumps to before skipping by span lengths. It is the RMQ
+// backend that stands for GCDA's differential grammar without the sampled tree
+// (GetDocDSLP's DifferentialLightSLP carries that tree, and lookups never touch
+// it). A differential cache entry is therefore keyed "bs{b}_" + kSLPNS; a plain
+// TSLP has no sampling and ignores the block size.
+template <typename TSLP>
+std::string SlpNsCacheKey(const JSON& t_keys, uint32_t t_block_size) {
+  const auto key = t_keys[conf::kSLPNS].template get<std::string>();
+  if constexpr (is_differential_slp_v<TSLP>)
+    return std::format("bs{}_", t_block_size) + key;
+  else
+    return key;
+}
+
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>
@@ -227,9 +243,14 @@ class GetDocSLP_NS : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using SLP = TSLP;
   using typename Base::size_type;
 
-  explicit GetDocSLP_NS(const TStorage& t_storage) : Base(t_storage) {}
+  explicit GetDocSLP_NS(const TStorage& t_storage, uint32_t t_block_size = 512, float /*t_storing_factor*/ = 0)
+      : Base(t_storage), block_size_(t_block_size) {}
 
   GetDocSLP_NS() = default;
+
+  uint32_t block_size() const {
+    return block_size_;
+  }
 
   std::size_t operator()(std::size_t i) const {
     std::size_t value = 0;
@@ -262,12 +283,13 @@ class GetDocSLP_NS : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using typename Base::TSource;
 
   void loadInner(TSource& t_source, const JSON& t_keys) override {
-    key_slp_ = t_keys[conf::kSLPNS].get<std::string>();
+    key_slp_ = SlpNsCacheKey<TSLP>(t_keys, block_size_);
     slp_ = this->template loadItemPtr<TSLP>(key_slp_, t_source, true);
   }
 
   std::string key_slp_;
   const TSLP* slp_ = nullptr;
+  uint32_t block_size_ = 512;
 };
 
 // Build the bare-SLP cache (kSLPNS) by delegating to dret::construct(grammar::SLP&,
@@ -275,10 +297,10 @@ class GetDocSLP_NS : public IndexBaseWithExternalStorage<TStorage, t_width> {
 // exists. DA is guaranteed by the surrounding RMQ core's construct(), which calls
 // EnsureBasicStructures before invoking this through construct(get_doc_policy()).
 template <typename TStorage, uint8_t t_width, typename TSLP>
-void construct(GetDocSLP_NS<TStorage, t_width, TSLP>& /*unused*/, Config& t_config) {
+void construct(GetDocSLP_NS<TStorage, t_width, TSLP>& t_get_doc, Config& t_config) {
   using namespace conf;
 
-  const auto key_slp = t_config.keys[kSLPNS].get<std::string>();
+  const auto key_slp = SlpNsCacheKey<TSLP>(t_config.keys, t_get_doc.block_size());
   if (sdsl::cache_file_exists<TSLP>(key_slp, t_config))
     return;
 
@@ -288,10 +310,9 @@ void construct(GetDocSLP_NS<TStorage, t_width, TSLP>& /*unused*/, Config& t_conf
     // Bare-diff variant: TSLP is dret::DifferentialSLP<...>. Its construct
     // overload (differential_slp.h:405) needs (config, block_size, cache_key)
     // rather than (config, da_filepath). The base RePair grammar is bs-invariant
-    // (LoadOrBuildDiffGrammar caches it once), so the block_size only affects
-    // the per-span compact_seq sampling — pick a fixed sensible value so the
-    // cache is deterministic across callers using this get-doc policy.
-    dret::construct(slp, t_config, /*block_size=*/512u, key_slp);
+    // (LoadOrBuildDiffGrammar caches it once), so the block_size only sets the
+    // sample spacing, and the cache key carries it.
+    dret::construct(slp, t_config, t_get_doc.block_size(), key_slp);
   } else {
     // Plain bare-SLP variant: TSLP is grammar::SLP<...>. Construct from the DA
     // file via dret::construct(grammar::SLP&, Config&, datafile).
