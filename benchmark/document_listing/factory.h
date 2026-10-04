@@ -84,6 +84,11 @@ class Factory {
     // analogue of RLCSA). Ignored when get_doc != SAPhiSR; r-index variant
     // (sa_phi_r) has no sampling knob.
     std::size_t sa_sampling = 0;
+    // Block size of PDL's GCDA backend (get_doc=slp, light), the grammar that
+    // answers the ranges PDL's sampled nodes do not cover. 1024 is the value it
+    // was pinned at; its storing factor stays 32 (it only shapes the document
+    // lists, which the backend does not load). Ignored by every other family.
+    uint32_t pdl_backend_block_size = 1024;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -110,6 +115,8 @@ class Factory {
         return run_values < t_c.run_values;
       if (prev_doc != t_c.prev_doc)
         return prev_doc < t_c.prev_doc;
+      if (pdl_backend_block_size != t_c.pdl_backend_block_size)
+        return pdl_backend_block_size < t_c.pdl_backend_block_size;
       return sa_sampling < t_c.sa_sampling;
     }
   };
@@ -301,7 +308,7 @@ class Factory {
             t_config.block_size, t_config.storing_factor,
             t_config.pdl_variant, t_config.get_doc, t_config.pdl_storage_policy,
             t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
-            t_config.sa_sampling);
+            t_config.sa_sampling, t_config.pdl_backend_block_size);
         index = {idx, size};
         break;
       }

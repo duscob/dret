@@ -1148,7 +1148,8 @@ void RegisterQueryPDL(const bench::spec::PDLSweep& sw, Factory<>& factory,
     for (auto gd : sw.get_doc) {
       // Register every (policy, bs, sf) for one fixed get-doc backend variant.
       auto emit = [&](const KV& variant_kv, GCDASLPVariant gslp,
-                      BareSLPVariant bslp, DGCDASLPVariant dslp) {
+                      BareSLPVariant bslp, DGCDASLPVariant dslp,
+                      std::uint32_t backend_bs = 1024) {
         for (auto policy : sw.policy) {
           for (auto bs : sw.block_size) {
             for (auto sf : sw.storing_factor) {
@@ -1169,6 +1170,7 @@ void RegisterQueryPDL(const bench::spec::PDLSweep& sw, Factory<>& factory,
               cfg.gcda_slp = gslp;
               cfg.bare_slp = bslp;
               cfg.dgcda_slp = dslp;
+              cfg.pdl_backend_block_size = backend_bs;
               benchmark::RegisterBenchmark(KeyedName("PDL", kv), BM_Query,
                                             &factory, cfg, patterns, seq_size);
             }
@@ -1177,8 +1179,15 @@ void RegisterQueryPDL(const bench::spec::PDLSweep& sw, Factory<>& factory,
       };
       switch (gd) {
         case GetDocEnum::SLP:
-          for (auto v : sw.gcda_slp)
-            emit({{"slp", SlpPlainValue(v)}}, v, BareSLPVariant::IV, DGCDASLPVariant::Default);
+          // The backend's block size joins the name only when it differs from
+          // the default 1024, so every existing PDL name stays what it was.
+          for (auto v : sw.gcda_slp) {
+            for (auto bbs : sw.backend_block_size) {
+              KV vkv{{"slp", SlpPlainValue(v)}};
+              if (bbs != 1024) vkv.push_back({"backend-block-size", IntStr(bbs)});
+              emit(vkv, v, BareSLPVariant::IV, DGCDASLPVariant::Default, bbs);
+            }
+          }
           break;
         case GetDocEnum::SLP_NS:
           // Name bare-diff variants as RegisterQueryRMQ does: BareValue maps

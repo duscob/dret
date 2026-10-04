@@ -107,7 +107,8 @@ MakeForCodec(TStorage t_storage, dret::Config& t_config,
              bench::axes::GCDASLPVariant t_gcda_slp,
              bench::axes::BareSLPVariant t_bare_slp,
              bench::axes::DGCDASLPVariant t_dgcda_slp,
-             std::size_t t_sa_sampling = 0) {
+             std::size_t t_sa_sampling = 0,
+             uint32_t t_backend_block_size = 1024) {
   using namespace bench::axes;
   std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t> result;
 
@@ -128,15 +129,16 @@ MakeForCodec(TStorage t_storage, dret::Config& t_config,
         case GCDASLPVariant::Combined:     build(Tag<GetDocsSLP<TStorage, gcda::SLP_Combined>>{}); break;
         case GCDASLPVariant::Light:
         default: {
-          // PDL-GCDA-light: pin the SLP backing to the GCDA-light knee
-          // (block_size=1024, storing_factor=32 — see docs/gcda_report.md §6.1)
-          // independently of PDL's own (block_size, storing_factor). The default
-          // DocListIdxPDL ctor would leave the inner SLP at GetDocSLP's defaults
-          // (512, 4); the externally-supplied get_docs ctor lets us pass a
-          // pre-built GetDocSLP with the chosen operating point.
+          // PDL-GCDA-light: the SLP backing has its own block size,
+          // t_backend_block_size (default 1024, the value it used to be pinned
+          // at), independent of PDL's (block_size, storing_factor). Its storing
+          // factor stays 32: it only shapes GCDA's document lists, which the
+          // backing does not load. The default DocListIdxPDL ctor would leave the
+          // inner SLP at GetDocSLP's defaults (512, 4); the externally-supplied
+          // get_docs ctor lets us pass a pre-built GetDocSLP instead.
           using TGetDocs = GetDocsSLP<TStorage, gcda::SLP_Light>;
           using TIndex = TCodec<TStorage, TGetDocs>;
-          typename TGetDocs::Inner inner(t_storage, 1024, 32.0f);
+          typename TGetDocs::Inner inner(t_storage, t_backend_block_size, 32.0f);
           TGetDocs get_docs(std::move(inner));
           auto idx = std::make_shared<TIndex>(t_storage, get_docs,
                                               t_block_size, t_storing_factor, lib_policy);
@@ -210,23 +212,24 @@ Make(TStorage t_storage,
      bench::axes::GCDASLPVariant t_gcda_slp = bench::axes::GCDASLPVariant::Light,
      bench::axes::BareSLPVariant t_bare_slp = bench::axes::BareSLPVariant::IV,
      bench::axes::DGCDASLPVariant t_dgcda_slp = bench::axes::DGCDASLPVariant::Default,
-     std::size_t t_sa_sampling = 0) {
+     std::size_t t_sa_sampling = 0,
+     uint32_t t_backend_block_size = 1024) {
   using namespace bench::axes;
   const auto lib_policy = toPDLStoragePolicy(t_policy);
   switch (t_codec) {
     case PDLVariant::RP:
       return detail::MakeForCodec<IdxRP>(t_storage, t_config, t_block_size, t_storing_factor,
                                          lib_policy, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp,
-                                         t_sa_sampling);
+                                         t_sa_sampling, t_backend_block_size);
     case PDLVariant::BC:
       return detail::MakeForCodec<IdxBC>(t_storage, t_config, t_block_size, t_storing_factor,
                                          lib_policy, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp,
-                                         t_sa_sampling);
+                                         t_sa_sampling, t_backend_block_size);
     case PDLVariant::Plain:
     default:
       return detail::MakeForCodec<IdxPlain>(t_storage, t_config, t_block_size, t_storing_factor,
                                             lib_policy, t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp,
-                                            t_sa_sampling);
+                                            t_sa_sampling, t_backend_block_size);
   }
 }
 
