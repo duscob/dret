@@ -15,6 +15,7 @@ cxx_executable_with_flags(bm_query_doc_freq_index "" "${benchmark_LIBS}" documen
 cxx_executable_with_flags(bm_build_items "" "${benchmark_LIBS}" document_listing/bm_build_items.cpp)
 cxx_executable_with_flags(bm_query_doc_list "" "${benchmark_LIBS}" document_listing/bm_query_doc_list.cpp)
 cxx_executable_with_flags(bm_doc_list "" "${benchmark_LIBS}" document_listing/bm_doc_list.cpp)
+cxx_executable_with_flags(migrate_cache_components "" "${benchmark_LIBS}" document_listing/migrate_cache_components.cpp)
 
 # The benchmarks shell out to two external-project binaries at run time: PDL-BC
 # to vnmextract (dsextract) and GCDA/DGCDA to irepair (repair). Their paths are
