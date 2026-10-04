@@ -58,12 +58,14 @@ template <typename TStorage>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
 Make(TStorage t_storage,
      dret::Config& t_config,
-     bench::axes::BareSLPVariant t_slp) {
+     bench::axes::BareSLPVariant t_slp,
+     uint32_t t_spacing = dret::kDiffBlockSize) {
   std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t> result;
 
+  // t_spacing: sample spacing of a differential TSLP; plain ones ignore it.
   auto build = [&](auto type_tag) {
     using TIndex = typename decltype(type_tag)::type;
-    auto idx = std::make_shared<TIndex>(t_storage);
+    auto idx = std::make_shared<TIndex>(t_storage, t_spacing);
     construct(*idx, t_config);
     idx->load(t_config);
     result = {idx, sdsl::size_in_bytes(*idx)};

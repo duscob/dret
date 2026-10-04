@@ -4,6 +4,10 @@
 
 #pragma once
 
+#include <format>
+#include <string>
+#include <string_view>
+
 #include "dret/repair.h"
 
 #include "sr-index/alphabet.h"
@@ -48,6 +52,15 @@ constexpr std::string_view kSLPNS = "slpNS";
 // DifferentialLightSLP cache — bare-diff has a single fixed internal sample
 // block_size and no storing_factor.
 constexpr std::string_view kDSLPNS = "dslpNS";
+// The RePair base grammar of a bare differential SLP: it does not depend on the
+// sample spacing, so every spacing (and the GCDA-nolists index) shares it.
+constexpr std::string_view kDSLPNSGrammar = "dslpNSGrammar";
+// Prefix patterns for cache keys that carry parameters. Every parameterised key
+// is built from one of these through PrefixedKey, so the file names an index can
+// produce are all declared here, next to the component names.
+constexpr std::string_view kPrefix = "prefix";
+constexpr std::string_view kBsSf = "bsSf";        // block size, storing factor
+constexpr std::string_view kSpacing = "spacing";  // sample spacing of a differential SLP
 
 constexpr std::string_view kSADA = "sada";
 constexpr std::string_view kILCP = "ilcp";
@@ -90,6 +103,14 @@ struct Keys {
         {conf::kDA, "da"},
         {conf::kSLPNS, "slp_ns"},
         {conf::kDSLPNS, "dslp_ns"},
+        {conf::kDSLPNSGrammar, "dslp_ns_grammar"},
+        {
+            conf::kPrefix,
+            {
+                {conf::kBsSf, "{}-{}_"},
+                {conf::kSpacing, "bs{}_"},
+            },
+        },
         {
             conf::kGCDA,
             {
@@ -175,6 +196,15 @@ template <uint8_t t_width>
 const auto& createDefaultKeys() {
   static Keys<t_width> keys;
   return keys.keys;
+}
+
+// Builds a parameterised cache key: the prefix pattern t_keys[prefix][t_scheme],
+// formatted with t_args, followed by t_name. The only place such keys are built.
+template <typename... TArgs>
+std::string PrefixedKey(const JSON& t_keys, std::string_view t_scheme, const std::string& t_name,
+                        const TArgs&... t_args) {
+  const auto pattern = t_keys[conf::kPrefix][t_scheme].template get<std::string>();
+  return std::vformat(pattern, std::make_format_args(t_args...)) + t_name;
 }
 
 struct Config : public sri::Config {

@@ -60,12 +60,19 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
 inline constexpr std::uint32_t kDiffBlockSize = 512;
 
 // Cache key of a bare differential grammar sampled every t_block_size positions.
-// At kDiffBlockSize it is the plain kDSLPNS key, the one DocListIdxSLP builds and
-// loads, so a get-doc backend at that block size (rmq::GetDocSLP_NS) reuses the
-// GCDA-nolists grammar file; any other block size gets its own "bs{b}_" entry.
+// At kDiffBlockSize it is the plain kDSLPNS key, so that spacing keeps the file
+// GCDA-nolists has always used, and a get-doc backend at that spacing
+// (rmq::GetDocSLP_NS) reuses it; any other spacing gets the prefix
+// conf::kSpacing of the common keys.
 inline std::string DiffNoTreeCacheKey(const JSON& t_keys, uint32_t t_block_size) {
   const auto key = t_keys[conf::kDSLPNS].get<std::string>();
-  return t_block_size == kDiffBlockSize ? key : std::format("bs{}_", t_block_size) + key;
+  return t_block_size == kDiffBlockSize ? key : PrefixedKey(t_keys, conf::kSpacing, key, t_block_size);
+}
+
+// Cache key of the RePair base grammar of a bare differential SLP. It does not
+// depend on the spacing, so one file serves every spacing.
+inline std::string DiffNoTreeGrammarKey(const JSON& t_keys) {
+  return t_keys[conf::kDSLPNSGrammar].get<std::string>();
 }
 
 //~~~~~~~  SLP-NS range expansion, dispatched by SLP type  ~~~~~~~
@@ -95,12 +102,15 @@ void SlpNsExpandRange(const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, T
 template <typename TSLP>
 struct SlpNsTraits;  // primary left undefined — only the two SLP kinds below
 
-// Plain bare grammar::SLP — RePair build under kSLPNS (unchanged behaviour).
+// Plain bare grammar::SLP — RePair build under kSLPNS (unchanged behaviour). It
+// has no sampling, so it ignores the spacing.
 template <typename TVarsContainer, typename TLengthsContainer>
 struct SlpNsTraits<grammar::SLP<TVarsContainer, TLengthsContainer>> {
   using TSLP = grammar::SLP<TVarsContainer, TLengthsContainer>;
-  static constexpr std::string_view kKey = conf::kSLPNS;
-  static void build(Config& t_config) {
+  static std::string key(const JSON& t_keys, uint32_t /*t_spacing*/) {
+    return t_keys[conf::kSLPNS].get<std::string>();
+  }
+  static void build(Config& t_config, uint32_t /*t_spacing*/) {
     const auto key = t_config.keys[conf::kSLPNS].get<std::string>();
     if (sdsl::cache_file_exists<TSLP>(key, t_config)) return;
     auto event = sdsl::memory_monitor::event(key);
@@ -111,18 +121,21 @@ struct SlpNsTraits<grammar::SLP<TVarsContainer, TLengthsContainer>> {
   }
 };
 
-// Bare-diff — base DifferentialSLP under kDSLPNS, at the fixed kDiffBlockSize.
+// Bare-diff — base DifferentialSLP sampled every t_spacing positions, under
+// DiffNoTreeCacheKey; every spacing shares one RePair base grammar.
 template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples,
           typename TSampleRootsPos, typename TBV>
 struct SlpNsTraits<DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>> {
   using TDiff = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
-  static constexpr std::string_view kKey = conf::kDSLPNS;
-  static void build(Config& t_config) {
-    const auto key = DiffNoTreeCacheKey(t_config.keys, kDiffBlockSize);
+  static std::string key(const JSON& t_keys, uint32_t t_spacing) {
+    return DiffNoTreeCacheKey(t_keys, t_spacing);
+  }
+  static void build(Config& t_config, uint32_t t_spacing) {
+    const auto key = DiffNoTreeCacheKey(t_config.keys, t_spacing);
     if (sdsl::cache_file_exists<TDiff>(key, t_config)) return;
     auto event = sdsl::memory_monitor::event(key);
     TDiff dslp;
-    construct(dslp, t_config, kDiffBlockSize, key);
+    construct(dslp, t_config, t_spacing, key, DiffNoTreeGrammarKey(t_config.keys));
   }
 };
 
@@ -138,7 +151,9 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
   using TDocId = std::size_t;
   using size_type = std::size_t;
 
-  explicit DocListIdxSLP(const TStorage& t_storage) : StorageBase(t_storage), count_idx_(t_storage) {}
+  // t_spacing is the sample spacing of a differential TSLP; a plain one ignores it.
+  explicit DocListIdxSLP(const TStorage& t_storage, uint32_t t_spacing = kDiffBlockSize)
+      : StorageBase(t_storage), count_idx_(t_storage), spacing_(t_spacing) {}
 
   DocListIdxSLP(const TStorage& t_storage, const TCountIdx& t_count_idx)
       : StorageBase(t_storage), count_idx_(t_count_idx) {}
@@ -176,18 +191,20 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
   const TCountIdx& count_idx() const { return count_idx_; }
 
+  uint32_t spacing() const { return spacing_; }
+
  protected:
   void loadInner(typename StorageBaseImpl::TSource& t_source, const JSON& t_keys) override {
     using namespace conf;
 
     std::visit([this](auto&& tt_source) { count_idx_.load(tt_source.get()); }, t_source);
 
-    slp_ = this->template loadItemPtr<TSLP>(
-        t_keys[SlpNsTraits<TSLP>::kKey].template get<std::string>(), t_source, true);
+    slp_ = this->template loadItemPtr<TSLP>(SlpNsTraits<TSLP>::key(t_keys, spacing_), t_source, true);
   }
 
   TCountIdx count_idx_;
   const TSLP* slp_ = nullptr;
+  uint32_t spacing_ = kDiffBlockSize;
 };
 
 //~~~~~~~
@@ -236,7 +253,7 @@ void construct(DocListIdxSLP<TStorage, TAlphabet, TCountIdx, TSLP>& t_index, Con
 
   // Build the SLP cache — plain bare grammar::SLP under kSLPNS, or the base
   // differential SLP (bare-diff) under kDSLPNS — dispatched by TSLP.
-  SlpNsTraits<TSLP>::build(t_config);
+  SlpNsTraits<TSLP>::build(t_config, t_index.spacing());
 
   auto count_idx = t_index.count_idx();
   construct(count_idx, t_config.data_path, t_config);

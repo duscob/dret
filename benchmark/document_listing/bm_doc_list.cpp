@@ -1018,19 +1018,27 @@ void RegisterQueryDGCDA(const bench::spec::DGCDASweep& sw, Factory<>& factory,
 void RegisterQuerySLPNS(const bench::spec::SLPNSSweep& sw, Factory<>& factory,
                         const std::vector<std::string>* patterns, std::size_t seq_size) {
   for (auto tslp : sw.tslp) {
-    // bare-diff: non-sampled differential SLP, slp=diff + container axis.
-    // Plain bare keeps slp=bare|slp-container=… ; both are tree=none.
-    const auto name = IsBareDiff(tslp)
-        ? KeyedName("GCDA", {{"slp", "diff"},
-                             {"slp-container", DiffContainerValue(tslp)},
-                             {"tree", "none"}})
-        : KeyedName("GCDA", {{"slp", "bare"},
-                             {"slp-container", BareValue(tslp)},
-                             {"tree", "none"}});
-    Factory<>::Config cfg{};
-    cfg.index_t = Factory<>::IndexEnum::SLP_NS;
-    cfg.bare_slp = tslp;
-    benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
+    // A differential variant sweeps its sample spacing; a plain one has no
+    // sampling and registers once. The spacing joins the name only when it is
+    // not the default 512, so every existing GCDA-nolists name is unchanged.
+    const auto spacings = IsBareDiff(tslp) ? sw.block_size : std::vector<std::uint32_t>{512};
+    for (auto bs : spacings) {
+      // bare-diff: non-sampled differential SLP, slp=diff + container axis.
+      // Plain bare keeps slp=bare|slp-container=… ; both are tree=none.
+      const auto name = IsBareDiff(tslp)
+          ? KeyedName("GCDA", {{"slp", "diff"},
+                               {"slp-container", DiffContainerValue(tslp)},
+                               {"tree", "none"},
+                               {"block-size", bs == 512 ? std::string() : IntStr(bs)}})
+          : KeyedName("GCDA", {{"slp", "bare"},
+                               {"slp-container", BareValue(tslp)},
+                               {"tree", "none"}});
+      Factory<>::Config cfg{};
+      cfg.index_t = Factory<>::IndexEnum::SLP_NS;
+      cfg.bare_slp = tslp;
+      cfg.block_size = bs;
+      benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
+    }
   }
 }
 

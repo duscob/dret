@@ -350,8 +350,7 @@ void construct(GetDocSLP_NS<TStorage, t_width, TSLP>& t_get_doc, Config& t_confi
     // sample spacing, and the cache key carries it. The base grammar does not
     // depend on the block size, so it is cached once under the GCDA-nolists
     // key -- the file DocListIdxSLP builds -- and every block size reuses it.
-    dret::construct(slp, t_config, t_get_doc.block_size(), key_slp,
-                    DiffNoTreeCacheKey(t_config.keys, kDiffBlockSize) + "_grammar");
+    dret::construct(slp, t_config, t_get_doc.block_size(), key_slp, DiffNoTreeGrammarKey(t_config.keys));
   } else {
     // Plain bare-SLP variant: TSLP is grammar::SLP<...>. Construct from the DA
     // file via dret::construct(grammar::SLP&, Config&, datafile).

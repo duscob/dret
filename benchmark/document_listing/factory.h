@@ -321,7 +321,7 @@ class Factory {
 
       case IndexEnum::SLP_NS: {
         auto [idx, size] = bench::factories::slp_ns::Make(
-            std::ref(storage_), config_, t_config.bare_slp);
+            std::ref(storage_), config_, t_config.bare_slp, t_config.block_size);
         index = {idx, size};
         break;
       }

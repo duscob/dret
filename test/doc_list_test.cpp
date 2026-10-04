@@ -759,6 +759,54 @@ TEST_F(RMQSLPCacheReuseTest, pdl_rp_converts_legacy_core) {
   }
 }
 
+// GCDA-nolists' differential index sweeps the same sample spacing as the RMQ
+// backend: each spacing answers correctly, keeps its own file (512 the one
+// GCDA-nolists always used), and all of them share one base grammar.
+TEST_F(RMQSLPCacheReuseTest, gcda_nolists_diff_sweeps_spacing) {
+  using S = ExternalGenericStorage;
+  using TDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
+  using Index = dret::DocListIdxSLP<S, dret::Alphabet<>, RMQCountIdx<S>, TDiff>;
+  const std::vector<std::pair<std::string, std::vector<std::size_t>>> expected = {
+      {"TAT", {0}}, {"LAT", {1}}, {"LAL", {2}}, {"TA", {0, 1}},
+      {"LA", {1, 2}}, {"A", {0, 1, 2}}, {"TAL", {}},
+  };
+  std::vector<std::size_t> sizes;
+  for (std::uint32_t spacing : {2u, 4u, 512u}) {
+    Index index(std::ref(storage_), spacing);
+    construct(index, config_);
+    sizes.push_back(sdsl::size_in_bytes(index));
+    for (const auto& [pattern, docs] : expected) {
+      DocListResultVector result;
+      index.Search(pattern, std::ref(result));
+      result();
+      EXPECT_THAT(result, testing::ElementsAreArray(docs)) << "spacing " << spacing << " " << pattern;
+    }
+    const auto key = dret::DiffNoTreeCacheKey(config_.keys, spacing);
+    EXPECT_EQ(key == config_.keys[dret::conf::kDSLPNS].get<std::string>(), spacing == dret::kDiffBlockSize);
+    EXPECT_TRUE(std::filesystem::exists(sdsl::cache_file_name<TDiff>(key, config_))) << key;
+  }
+  const auto dir = std::filesystem::path(
+      sdsl::cache_file_name<TDiff>(dret::DiffNoTreeCacheKey(config_.keys, 2u), config_)).parent_path();
+  std::size_t n_grammars = 0;
+  for (const auto& e : std::filesystem::directory_iterator(dir))
+    n_grammars += e.path().filename().string().find(dret::DiffNoTreeGrammarKey(config_.keys)) != std::string::npos;
+  EXPECT_EQ(n_grammars, 1u);
+  // The spacing is real: a denser sampling stores more samples.
+  EXPECT_GT(sizes[0], sizes[2]);
+}
+
+// PrefixedKey reproduces the parameterised file names dret used to format by
+// hand, so moving a call site to it renames nothing.
+TEST(PrefixedKeyTest, matches_the_formats_in_use) {
+  const auto keys = dret::Keys<8>().keys;
+  EXPECT_EQ(dret::PrefixedKey(keys, dret::conf::kBsSf, "gcda_slp", 512u, 4.0f), std::format("{}-{}_gcda_slp", 512u, 4.0f));
+  EXPECT_EQ(dret::PrefixedKey(keys, dret::conf::kBsSf, "gcda_docs", 1024u, 32.0f), "1024-32_gcda_docs");
+  EXPECT_EQ(dret::PrefixedKey(keys, dret::conf::kSpacing, "dslp_ns", 128u), "bs128_dslp_ns");
+  EXPECT_EQ(dret::DiffNoTreeCacheKey(keys, 128u), "bs128_dslp_ns");
+  EXPECT_EQ(dret::DiffNoTreeCacheKey(keys, 512u), "dslp_ns");
+  EXPECT_EQ(dret::DiffNoTreeGrammarKey(keys), "dslp_ns_grammar");
+}
+
 TEST_F(RMQSLPCacheReuseTest, rmq_dslp_reuses_dgcda_dslp_cache) {
   using GetDocDSLP = RMQGetDocDSLP<ExternalGenericStorage>;
   using TDSLP = typename GetDocDSLP::DSLP;
