@@ -504,7 +504,8 @@ template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples,
 void construct(DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& t_dslp,
                Config& t_config,
                uint32_t block_size,
-               const std::string& cache_key) {
+               const std::string& cache_key,
+               const std::string& grammar_key = "") {
   using namespace conf;
   using DSLP = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
 
@@ -514,8 +515,12 @@ void construct(DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPo
   // Load-or-build the bs-independent RePair grammar (shared across container
   // variants), then finish the bs-dependent sampling. Convert into t_dslp to
   // bit-compress the base (per-field containers are already compressed).
+  // grammar_key names the cached base grammar; callers whose cache_key carries
+  // the block size pass a block-size-free one, or every block size would
+  // re-run RePair -- hours on some document arrays.
   DSLP tmp;
-  auto compact_seq = LoadOrBuildDiffGrammar<TSLP>(tmp, da, t_config, cache_key + "_grammar");
+  auto compact_seq = LoadOrBuildDiffGrammar<TSLP>(
+      tmp, da, t_config, grammar_key.empty() ? cache_key + "_grammar" : grammar_key);
   tmp.FinishCompute(block_size, compact_seq);
   auto bit_compress = [](auto& v) {
     if constexpr (std::is_same_v<std::decay_t<decltype(v)>, sdsl::int_vector<>>)

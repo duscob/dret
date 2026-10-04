@@ -347,8 +347,11 @@ void construct(GetDocSLP_NS<TStorage, t_width, TSLP>& t_get_doc, Config& t_confi
     // overload (differential_slp.h:405) needs (config, block_size, cache_key)
     // rather than (config, da_filepath). The base RePair grammar is bs-invariant
     // (LoadOrBuildDiffGrammar caches it once), so the block_size only sets the
-    // sample spacing, and the cache key carries it.
-    dret::construct(slp, t_config, t_get_doc.block_size(), key_slp);
+    // sample spacing, and the cache key carries it. The base grammar does not
+    // depend on the block size, so it is cached once under the GCDA-nolists
+    // key -- the file DocListIdxSLP builds -- and every block size reuses it.
+    dret::construct(slp, t_config, t_get_doc.block_size(), key_slp,
+                    DiffNoTreeCacheKey(t_config.keys, kDiffBlockSize) + "_grammar");
   } else {
     // Plain bare-SLP variant: TSLP is grammar::SLP<...>. Construct from the DA
     // file via dret::construct(grammar::SLP&, Config&, datafile).

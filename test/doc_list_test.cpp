@@ -691,6 +691,15 @@ TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_sweeps_block_size) {
     EXPECT_EQ(key.starts_with("bs"), bs != dret::kDiffBlockSize) << key;
     EXPECT_TRUE(std::filesystem::exists(sdsl::cache_file_name<TDiff>(key, config_))) << key;
   }
+
+  // The RePair base grammar does not depend on the block size: one cached copy,
+  // under the GCDA-nolists key, serves every block size.
+  std::size_t n_grammars = 0;
+  const auto dir = std::filesystem::path(
+      sdsl::cache_file_name<TDiff>(dret::DiffNoTreeCacheKey(config_.keys, 4u), config_)).parent_path();
+  for (const auto& e : std::filesystem::directory_iterator(dir))
+    n_grammars += e.path().filename().string().find("_grammar_") != std::string::npos;
+  EXPECT_EQ(n_grammars, 1u);
 }
 
 // At the GCDA-nolists block size the RMQ backend must load the grammar file that
