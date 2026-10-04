@@ -245,6 +245,27 @@ struct EnumTraits<PDLVariant> {
 };
 
 template <>
+struct EnumTraits<GCDASetsCodec> {
+  static constexpr const char* flag_name() { return "gcda_sets"; }
+  static constexpr bool has_default() { return true; }
+  static constexpr GCDASetsCodec default_value() { return GCDASetsCodec::RP; }
+
+  static std::optional<GCDASetsCodec> TryParse(std::string_view s) {
+    if (s == "rp")    return GCDASetsCodec::RP;
+    if (s == "plain") return GCDASetsCodec::Plain;
+    return std::nullopt;
+  }
+
+  static const char* Name(GCDASetsCodec v) {
+    switch (v) {
+      case GCDASetsCodec::RP:    return "RP";
+      case GCDASetsCodec::Plain: return "Plain";
+    }
+    return "UNKNOWN";
+  }
+};
+
+template <>
 struct EnumTraits<PDLStoragePolicy> {
   static constexpr const char* flag_name() { return "pdl_storage_policy"; }
   static constexpr bool has_default() { return true; }

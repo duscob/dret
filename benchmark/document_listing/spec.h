@@ -111,12 +111,15 @@ struct GCDASweep {
   std::vector<axes::GCDASLPVariant> tslp{axes::GCDASLPVariant::Light};
   std::vector<std::uint32_t> block_size{512};
   std::vector<float> storing_factor{4.0f};
+  // Document-set codec: "rp" (default) or "plain".
+  std::vector<axes::GCDASetsCodec> sets{axes::GCDASetsCodec::RP};
 };
 
 struct DGCDASweep {
   std::vector<axes::DGCDASLPVariant> tslp{axes::DGCDASLPVariant::Default};
   std::vector<std::uint32_t> block_size{512};
   std::vector<float> storing_factor{4.0f};
+  std::vector<axes::GCDASetsCodec> sets{axes::GCDASetsCodec::RP};
 };
 
 struct SLPNSSweep {
@@ -270,6 +273,7 @@ inline GCDASweep ParseGCDA(const nlohmann::json& j) {
   s.tslp = ParseEnumList<axes::GCDASLPVariant>(j, "tslp", s.tslp);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
   s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
+  s.sets = ParseEnumList<axes::GCDASetsCodec>(j, "sets", s.sets);
   return s;
 }
 
@@ -278,6 +282,7 @@ inline DGCDASweep ParseDGCDA(const nlohmann::json& j) {
   s.tslp = ParseEnumList<axes::DGCDASLPVariant>(j, "tslp", s.tslp);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
   s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
+  s.sets = ParseEnumList<axes::GCDASetsCodec>(j, "sets", s.sets);
   return s;
 }
 

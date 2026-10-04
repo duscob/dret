@@ -50,14 +50,23 @@ using SLP_Combined        = grammar::CombinedSLPWithUnitCover<
                          grammar::SampledSLP<>,
                          sdsl::int_vector<>>>;
 
+
+// Document-set containers (GCDASetsCodec): Re-Pair compressed, the family
+// default, or plain -- the sorted lists, bit-packed.
+using Sets_RP = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>,
+                                  true,
+                                  grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>;
+using Sets_Plain = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>;
+
 // Storage-parameterised typed-index template alias. The default TSLP matches
 // the dret::gcda::DocListIdxGCDA default (SLP_Light = grammar::LightSLP<...>).
-template <typename TStorage, typename TSLP = SLP_Light>
+template <typename TStorage, typename TSLP = SLP_Light, typename TSets = Sets_RP>
 using Idx = dret::gcda::DocListIdxGCDA<
     TStorage,
     dret::Alphabet<>,
     sri::RIndexCount<TStorage, dret::Alphabet<>>,
-    TSLP>;
+    TSLP,
+    TSets>;
 
 // Factory-path entry. Builds (constructs caches if missing, then loads)
 // a typed index variant selected by `slp` and returns the type-erased
@@ -68,7 +77,8 @@ Make(TStorage t_storage,
      dret::Config& t_config,
      uint32_t t_block_size,
      float t_storing_factor,
-     bench::axes::GCDASLPVariant t_slp) {
+     bench::axes::GCDASLPVariant t_slp,
+     bench::axes::GCDASetsCodec t_sets = bench::axes::GCDASetsCodec::RP) {
   std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t> result;
 
   auto build = [&](auto type_tag) {
@@ -79,18 +89,23 @@ Make(TStorage t_storage,
     result = {idx, sdsl::size_in_bytes(*idx)};
   };
 
-  struct T_Light      { using type = Idx<TStorage, SLP_Light>; };
-  struct T_CompactBP    { using type = Idx<TStorage, SLP_CompactBP>; };
-  struct T_CompactLOUDS { using type = Idx<TStorage, SLP_CompactLOUDS>; };
-  struct T_CSLP         { using type = Idx<TStorage, SLP_Combined>; };
-
-  switch (t_slp) {
-    case bench::axes::GCDASLPVariant::CompactBP:    build(T_CompactBP{});    break;
-    case bench::axes::GCDASLPVariant::CompactLOUDS: build(T_CompactLOUDS{}); break;
-    case bench::axes::GCDASLPVariant::Combined:         build(T_CSLP{});         break;
-    case bench::axes::GCDASLPVariant::Light:
-    default:                                        build(T_Light{});      break;
-  }
+  auto by_slp = [&]<typename TSets>() {
+    struct T_Light        { using type = Idx<TStorage, SLP_Light, TSets>; };
+    struct T_CompactBP    { using type = Idx<TStorage, SLP_CompactBP, TSets>; };
+    struct T_CompactLOUDS { using type = Idx<TStorage, SLP_CompactLOUDS, TSets>; };
+    struct T_CSLP         { using type = Idx<TStorage, SLP_Combined, TSets>; };
+    switch (t_slp) {
+      case bench::axes::GCDASLPVariant::CompactBP:    build(T_CompactBP{});    break;
+      case bench::axes::GCDASLPVariant::CompactLOUDS: build(T_CompactLOUDS{}); break;
+      case bench::axes::GCDASLPVariant::Combined:     build(T_CSLP{});         break;
+      case bench::axes::GCDASLPVariant::Light:
+      default:                                        build(T_Light{});        break;
+    }
+  };
+  if (t_sets == bench::axes::GCDASetsCodec::Plain)
+    by_slp.template operator()<Sets_Plain>();
+  else
+    by_slp.template operator()<Sets_RP>();
   return result;
 }
 

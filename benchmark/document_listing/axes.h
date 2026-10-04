@@ -51,6 +51,15 @@ enum class PDLVariant {
   BC,
 };
 
+// How GCDA stores the document sets of its sampled nodes: Re-Pair compressed
+// (grammar::GCChunks, the family default) or plain -- the sorted lists
+// themselves, bit-packed (grammar::Chunks of int_vector), as PDL's plain codec
+// stores them. Applies to every TSLP of the GCDA and DGCDA families.
+enum class GCDASetsCodec {
+  RP,
+  Plain,
+};
+
 // PDL tree-construction storage policy. Threaded into the constructor as a
 // runtime argument; baked into the cache-key prefix.
 enum class PDLStoragePolicy {

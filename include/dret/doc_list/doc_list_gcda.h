@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include <stdexcept>
+#include <type_traits>
+
 #include <sdsl/construct_sa.hpp>
 
 #include <grammar/re_pair.h>
@@ -165,6 +168,13 @@ void construct(grammar::GCChunks<TSLP, kExpand, grammar::Chunks<sdsl::int_vector
                uint32_t t_block_size,
                float t_storing_factor);
 
+// Plain (bit-packed, not grammar-compressed) document sets: the sorted lists
+// themselves, one chunk per sampled node, as PDL's plain codec stores them.
+inline void construct(grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>& t_sets,
+               Config& t_config,
+               uint32_t t_block_size,
+               float t_storing_factor);
+
 template <typename TSLP, typename TSampledSLP, typename TLeavesContainer>
 void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp,
                Config& t_config,
@@ -311,15 +321,21 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TM
       sdsl::load_from_cache(cslp_docs, key_docs, t_config, true);
 
       auto bit_compress = [](sdsl::int_vector<>& v) { sdsl::util::bit_compress(v); };
-      const auto& objs = cslp_docs.GetObjects();
+      if constexpr (std::is_same_v<TSLPSets, grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>) {
+        // Plain sets: the lists as they are, bit-packed; no grammar over them.
+        TSLPSets sets(cslp_docs, bit_compress, bit_compress);
+        sdsl::store_to_cache(sets, key_docs, t_config, true);
+      } else {
+        const auto& objs = cslp_docs.GetObjects();
 
-      grammar::GCChunks<grammar::SLP<>> gc_slp;
-      grammar::RePairEncoder<false> encoder_nslp;
-      gc_slp.Compute(objs.begin(), objs.end(), cslp_docs, encoder_nslp);
-      sdsl::store_to_cache(gc_slp, key_docs, t_config, true);
+        grammar::GCChunks<grammar::SLP<>> gc_slp;
+        grammar::RePairEncoder<false> encoder_nslp;
+        gc_slp.Compute(objs.begin(), objs.end(), cslp_docs, encoder_nslp);
+        sdsl::store_to_cache(gc_slp, key_docs, t_config, true);
 
-      TSLPSets slp_sets(gc_slp, bit_compress, bit_compress, bit_compress, bit_compress);
-      sdsl::store_to_cache(slp_sets, key_docs, t_config, true);
+        TSLPSets slp_sets(gc_slp, bit_compress, bit_compress, bit_compress, bit_compress);
+        sdsl::store_to_cache(slp_sets, key_docs, t_config, true);
+      }
     } else {
       TSLPSets slp_sets;
       construct(slp_sets, t_config, t_index.block_size(), t_index.storing_factor());
@@ -634,6 +650,29 @@ void construct(grammar::GCChunks<TSLP, kExpand, grammar::Chunks<sdsl::int_vector
   t_slp_sets =
       std::remove_reference_t<decltype(t_slp_sets)>(slp_sets, bit_compress, bit_compress, bit_compress, bit_compress);
   sdsl::store_to_cache(t_slp_sets, key_docs, t_config, true);
+}
+
+//~~~~~~~
+
+
+// The plain lists are cached as a side effect of building the sampled tree
+// (cslp_docs, next to the grammar); bit-pack them as the plain sets. GCDA's
+// construct reaches this only when the bit-packed copy is missing too.
+inline void construct(grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>& t_sets,
+                      Config& t_config,
+                      uint32_t t_block_size,
+                      float t_storing_factor) {
+  using namespace conf;
+  const auto key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
+  const auto key_docs = key_prefix + t_config.keys[kGCDA][kDocs].get<std::string>();
+
+  grammar::Chunks<> sets;
+  if (!sdsl::load_from_cache(sets, key_docs, t_config, true))
+    throw std::runtime_error("GCDA plain sets: no cached document sets under " + key_docs +
+                             "; build the sampled tree for this (block size, storing factor) first");
+  auto bit_compress = [](sdsl::int_vector<>& v) { sdsl::util::bit_compress(v); };
+  t_sets = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>(sets, bit_compress, bit_compress);
+  sdsl::store_to_cache(t_sets, key_docs, t_config, true);
 }
 
 //~~~~~~~

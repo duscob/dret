@@ -65,12 +65,21 @@ using SLP_VV = dret::DifferentialLightSLP<DSLP_Base,
 
 // Storage-parameterised typed-index template alias. Default TSLP matches
 // dret::dgcda::DocListIdxDGCDA<>::TSLP (SLP_Default).
-template <typename TStorage, typename TSLP = SLP_Default>
+
+// Document-set containers (GCDASetsCodec): Re-Pair compressed, the family
+// default, or plain -- the sorted lists, bit-packed.
+using Sets_RP = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>,
+                                  true,
+                                  grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>;
+using Sets_Plain = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>;
+
+template <typename TStorage, typename TSLP = SLP_Default, typename TSets = Sets_RP>
 using Idx = dret::dgcda::DocListIdxDGCDA<
     TStorage,
     dret::Alphabet<>,
     sri::RIndexCount<TStorage, dret::Alphabet<>>,
-    TSLP>;
+    TSLP,
+    TSets>;
 
 // Factory-path entry. Builds + loads a typed-index variant selected by the
 // DGCDASLPVariant axis and returns the type-erased DocListIndex<> handle.
@@ -80,7 +89,8 @@ Make(TStorage t_storage,
      dret::Config& t_config,
      uint32_t t_block_size,
      float t_storing_factor,
-     bench::axes::DGCDASLPVariant t_slp) {
+     bench::axes::DGCDASLPVariant t_slp,
+     bench::axes::GCDASetsCodec t_sets = bench::axes::GCDASetsCodec::RP) {
   std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t> result;
 
   auto build = [&](auto type_tag) {
@@ -91,22 +101,27 @@ Make(TStorage t_storage,
     result = {idx, sdsl::size_in_bytes(*idx)};
   };
 
-  struct T_Default { using type = Idx<TStorage, SLP_Default>; };
-  struct T_OTF     { using type = Idx<TStorage, SLP_OTF>; };
-  struct T_CRL     { using type = Idx<TStorage, SLP_CRL>; };
-  struct T_EV      { using type = Idx<TStorage, SLP_EV>; };
-  struct T_DV      { using type = Idx<TStorage, SLP_DV>; };
-  struct T_VV      { using type = Idx<TStorage, SLP_VV>; };
-
-  switch (t_slp) {
-    case bench::axes::DGCDASLPVariant::OTF: build(T_OTF{}); break;
-    case bench::axes::DGCDASLPVariant::CRL: build(T_CRL{}); break;
-    case bench::axes::DGCDASLPVariant::EV:  build(T_EV{});  break;
-    case bench::axes::DGCDASLPVariant::DV:  build(T_DV{});  break;
-    case bench::axes::DGCDASLPVariant::VV:  build(T_VV{});  break;
-    case bench::axes::DGCDASLPVariant::Default:
-    default:                                build(T_Default{}); break;
-  }
+  auto by_slp = [&]<typename TSets>() {
+    struct T_Default { using type = Idx<TStorage, SLP_Default, TSets>; };
+    struct T_OTF     { using type = Idx<TStorage, SLP_OTF, TSets>; };
+    struct T_CRL     { using type = Idx<TStorage, SLP_CRL, TSets>; };
+    struct T_EV      { using type = Idx<TStorage, SLP_EV, TSets>; };
+    struct T_DV      { using type = Idx<TStorage, SLP_DV, TSets>; };
+    struct T_VV      { using type = Idx<TStorage, SLP_VV, TSets>; };
+    switch (t_slp) {
+      case bench::axes::DGCDASLPVariant::OTF: build(T_OTF{}); break;
+      case bench::axes::DGCDASLPVariant::CRL: build(T_CRL{}); break;
+      case bench::axes::DGCDASLPVariant::EV:  build(T_EV{});  break;
+      case bench::axes::DGCDASLPVariant::DV:  build(T_DV{});  break;
+      case bench::axes::DGCDASLPVariant::VV:  build(T_VV{});  break;
+      case bench::axes::DGCDASLPVariant::Default:
+      default:                                build(T_Default{}); break;
+    }
+  };
+  if (t_sets == bench::axes::GCDASetsCodec::Plain)
+    by_slp.template operator()<Sets_Plain>();
+  else
+    by_slp.template operator()<Sets_RP>();
   return result;
 }
 

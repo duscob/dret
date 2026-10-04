@@ -415,6 +415,20 @@ TYPED_TEST(DocListIndexConstructTypedTests, construct) {
 
 using ExternalGenericStorage = std::reference_wrapper<dret::GenericStorage>;
 
+// GCDA with plain document sets -- the sorted lists bit-packed, no grammar over
+// them (GCDASetsCodec::Plain in the benchmark) -- over the default sampled-cached
+// grammar and over the differential one.
+using PlainSets = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>;
+template <typename S>
+using GCDAPlainSets = dret::gcda::DocListIdxGCDA<
+    S, dret::Alphabet<>, sri::RIndexCount<S, dret::Alphabet<>>,
+    grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>, grammar::SampledSLP<>,
+                      grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
+    PlainSets>;
+template <typename S>
+using DGCDAPlainSets = dret::dgcda::DocListIdxDGCDA<
+    S, dret::Alphabet<>, sri::RIndexCount<S, dret::Alphabet<>>, dret::DifferentialLightSLP<>, PlainSets>;
+
 template <typename TIndex>
 class DocListIndexSearchTypedTests : public BaseConfigTests<8> {
  protected:
@@ -445,6 +459,8 @@ class DocListIndexSearchTypedTests : public BaseConfigTests<8> {
 using DocListIndexSearchTypes = ::testing::Types<
     dret::DocListIdxBrute<ExternalGenericStorage>,
     dret::gcda::DocListIdxGCDA<ExternalGenericStorage>,
+    GCDAPlainSets<ExternalGenericStorage>,
+    DGCDAPlainSets<ExternalGenericStorage>,
     dret::gcda::DocListIdxGCDA<ExternalGenericStorage,
                                dret::Alphabet<>,
                                sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,

@@ -892,6 +892,12 @@ const char* DiffContainerValue(BareSLPVariant v) {
   }
 }
 
+// GCDA document-set codec in keyed form. Re-Pair, the family default, is the
+// empty value, which KeyedName omits: every existing GCDA name is unchanged.
+const char* SetsValue(bench::axes::GCDASetsCodec v) {
+  return v == bench::axes::GCDASetsCodec::Plain ? "plain" : "";
+}
+
 const char* RunValuesValue(bench::axes::RunValuesVariant v) {
   switch (v) {
     case bench::axes::RunValuesVariant::DV: return "dv";
@@ -956,12 +962,14 @@ std::vector<std::int64_t> ArgsRange(const std::vector<std::uint32_t>& bs,
 
 void RegisterQueryGCDA(const bench::spec::GCDASweep& sw, Factory<>& factory,
                        const std::vector<std::string>* patterns, std::size_t seq_size) {
+  for (auto sets : sw.sets) {
   for (auto tslp : sw.tslp) {
     for (auto bs : sw.block_size) {
       for (auto sf : sw.storing_factor) {
         const auto name = KeyedName("GCDA", {
             {"slp", SlpPlainValue(tslp)},
             {"tree", "sampled"},
+            {"sets", SetsValue(sets)},
             {"block-size", IntStr(bs)},
             {"storing-factor", SfStr(sf)},
         });
@@ -970,14 +978,17 @@ void RegisterQueryGCDA(const bench::spec::GCDASweep& sw, Factory<>& factory,
         cfg.block_size = bs;
         cfg.storing_factor = sf;
         cfg.gcda_slp = tslp;
+        cfg.gcda_sets = sets;
         benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
       }
     }
+  }
   }
 }
 
 void RegisterQueryDGCDA(const bench::spec::DGCDASweep& sw, Factory<>& factory,
                         const std::vector<std::string>* patterns, std::size_t seq_size) {
+  for (auto sets : sw.sets) {
   for (auto tslp : sw.tslp) {
     for (auto bs : sw.block_size) {
       for (auto sf : sw.storing_factor) {
@@ -987,6 +998,7 @@ void RegisterQueryDGCDA(const bench::spec::DGCDASweep& sw, Factory<>& factory,
             {"span-length", span},
             {"slp-container", cont},
             {"tree", "sampled"},
+            {"sets", SetsValue(sets)},
             {"block-size", IntStr(bs)},
             {"storing-factor", SfStr(sf)},
         });
@@ -995,9 +1007,11 @@ void RegisterQueryDGCDA(const bench::spec::DGCDASweep& sw, Factory<>& factory,
         cfg.block_size = bs;
         cfg.storing_factor = sf;
         cfg.dgcda_slp = tslp;
+        cfg.gcda_sets = sets;
         benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
       }
     }
+  }
   }
 }
 

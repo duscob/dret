@@ -54,6 +54,7 @@ class Factory {
   using DGCDASLPVariant  = bench::axes::DGCDASLPVariant;
   using RunValuesVariant = bench::axes::RunValuesVariant;
   using PrevDocVariant   = bench::axes::PrevDocVariant;
+  using GCDASetsCodec    = bench::axes::GCDASetsCodec;
 
   // Typed-index aliases for each family now live in benchmark/document_listing/
   // factories/{brute,gcda,dgcda,slp_ns,rmq,pdl}.h. The Factory facade simply
@@ -89,6 +90,9 @@ class Factory {
     // was pinned at; its storing factor stays 32 (it only shapes the document
     // lists, which the backend does not load). Ignored by every other family.
     uint32_t pdl_backend_block_size = 1024;
+    // How GCDA / DGCDA store their sampled nodes' document sets (Re-Pair or
+    // plain). Ignored by every other family.
+    GCDASetsCodec gcda_sets = GCDASetsCodec::RP;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -117,6 +121,8 @@ class Factory {
         return prev_doc < t_c.prev_doc;
       if (pdl_backend_block_size != t_c.pdl_backend_block_size)
         return pdl_backend_block_size < t_c.pdl_backend_block_size;
+      if (gcda_sets != t_c.gcda_sets)
+        return gcda_sets < t_c.gcda_sets;
       return sa_sampling < t_c.sa_sampling;
     }
   };
@@ -265,7 +271,7 @@ class Factory {
       case IndexEnum::GCDA: {
         auto [idx, size] = bench::factories::gcda::Make(
             std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor, t_config.gcda_slp);
+            t_config.block_size, t_config.storing_factor, t_config.gcda_slp, t_config.gcda_sets);
         index = {idx, size};
         break;
       }
@@ -273,7 +279,7 @@ class Factory {
       case IndexEnum::DGCDA: {
         auto [idx, size] = bench::factories::dgcda::Make(
             std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor, t_config.dgcda_slp);
+            t_config.block_size, t_config.storing_factor, t_config.dgcda_slp, t_config.gcda_sets);
         index = {idx, size};
         break;
       }
