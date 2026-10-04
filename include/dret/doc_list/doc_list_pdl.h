@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <type_traits>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -309,6 +310,20 @@ void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
                                       static_cast<int>(t_index.policy()));
   const auto key_core =
       key_prefix + t_config.keys[kPDL][TStoredSetCodec::kVariantKey][kSets].template get<std::string>();
+
+  // A Re-Pair core cached before 2026-10 stored its lists with RPCodecWithLengths
+  // (a per-rule length array the lists never read). The tree and the lists are
+  // the same, so convert such a core instead of rebuilding the tree.
+  if constexpr (std::is_same_v<TStoredSetCodec, RPCodec<>>) {
+    using TLegacyCore = typename WithCodec<TCore, RPCodecWithLengths>::type;
+    if (!sdsl::cache_file_exists<TCore>(key_core, t_config) &&
+        sdsl::cache_file_exists<TLegacyCore>(key_core, t_config)) {
+      auto event = sdsl::memory_monitor::event(key_core + "-from-legacy-rp");
+      TLegacyCore legacy;
+      sdsl::load_from_cache(legacy, key_core, t_config, true);
+      sdsl::store_to_cache(TCore(legacy), key_core, t_config, true);
+    }
+  }
 
   if (!sdsl::cache_file_exists<TCore>(key_core, t_config)) {
     auto event = sdsl::memory_monitor::event(key_core);

@@ -64,11 +64,24 @@ template <typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>,
           typename TStoredSetCodec = NullCodec>
 class PDLTreeCore {
+  template <typename, typename, typename, typename, typename>
+  friend class PDLTreeCore;
+
  public:
   using TDocId = std::size_t;
   using size_type = std::size_t;
 
   PDLTreeCore() = default;
+
+  // A core whose stored sets use another codec type -- in practice one cached
+  // with RPCodecWithLengths: the tree is copied as is and only the codec is
+  // converted, through TStoredSetCodec's converting constructor.
+  template <typename TOtherCodec>
+  explicit PDLTreeCore(const PDLTreeCore<TBitvector, TBvRank, TBvSelect, TIntVector, TOtherCodec>& t_other) {
+    Assemble(t_other.node_starts_, t_other.node_ends_, t_other.first_child_, t_other.next_sibling_,
+             t_other.selected_marker_, TStoredSetCodec(t_other.stored_sets_), t_other.n_doc_,
+             t_other.block_size_, t_other.storing_factor_, t_other.policy_);
+  }
 
   // Single-range cover; matches DLSampledTreeScheme::computeCover. Stub
   // remains for Tasks 23-25 that may need the legacy single-range API
@@ -253,6 +266,14 @@ class PDLTreeCore {
   uint32_t block_size_ = 512;
   float storing_factor_ = 4.0f;
   StoragePolicy policy_ = StoragePolicy::OccurrenceWeighted;
+};
+
+// TCore with its stored-set codec replaced by TCodec.
+template <typename TCore, typename TCodec>
+struct WithCodec;
+template <typename TBitvector, typename TBvRank, typename TBvSelect, typename TIntVector, typename TOld, typename TCodec>
+struct WithCodec<PDLTreeCore<TBitvector, TBvRank, TBvSelect, TIntVector, TOld>, TCodec> {
+  using type = PDLTreeCore<TBitvector, TBvRank, TBvSelect, TIntVector, TCodec>;
 };
 
 template <typename TBitvector, typename TBvRank, typename TBvSelect,

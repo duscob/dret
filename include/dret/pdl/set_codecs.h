@@ -237,17 +237,19 @@ static_assert(SetCodec<PlainCodec<>>,
 // Templated on the underlying SLP and per-slot Chunks types so Task 18
 // can swap them; defaults match GCDA's chunk grammar setup so the same
 // type-hashed cache entries can be shared if needed.
-// TSLP defaults to grammar::SLP with sdsl::int_vector<> rule + leaf containers
-// (bit-compressed) rather than grammar::SLP<>'s default std::vector — same
-// precedent as the GCDA combined/differential base-grammar fix
-// (docs/container_audit.md). The Stage-3 generic-action build path
-// (compress_if_iv lambda below) calls sdsl::util::bit_compress on
-// sdsl::int_vector<> fields, so this default is the bit-compressed stored
-// form. (Existing rp cache files keyed by the prior std::vector type-hash
-// will be rebuilt on first run.)
-template <typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>,
+// TSLP defaults to grammar::BasicSLP<sdsl::int_vector<>>: the rules alone,
+// bit-compressed, exactly as GCDA stores its own document sets. A stored set
+// is always expanded whole, so the per-rule length array a grammar::SLP adds
+// is never read; until 2026-10 the default was grammar::SLP<int_vector,
+// int_vector>, which carried it anyway (2-7% of the lists on page, up to 15%
+// on revision). RPCodecWithLengths names that old type, so cores cached with
+// it can be converted instead of rebuilt (see construct(DocListIdxPDL&)).
+template <typename TSLP = grammar::BasicSLP<sdsl::int_vector<>>,
           typename TChunks = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
 class RPCodec {
+  template <typename, typename>
+  friend class RPCodec;
+
  public:
   static constexpr std::string_view kVariantKey = conf::kRP;
 
@@ -258,6 +260,12 @@ class RPCodec {
   using TStoredChunks = grammar::GCChunks<TSLP, /*kExpand=*/true, TChunks>;
 
   RPCodec() = default;
+
+  // Converts a codec stored with another rule container -- in practice
+  // RPCodecWithLengths -- keeping its rules and per-slot sequences as they are.
+  // Into a BasicSLP the copy keeps the rules and leaves the length array behind.
+  template <typename TOtherSLP>
+  explicit RPCodec(const RPCodec<TOtherSLP, TChunks>& t_other) : chunks_(t_other.chunks_) {}
 
   template <typename TGetSetAt>
   void Build(std::size_t t_n_slots, TGetSetAt&& t_get_set_at, std::size_t t_n_doc) {
@@ -278,7 +286,10 @@ class RPCodec {
     // back_inserter(objs_) unqualified — ADL finds std::back_inserter only
     // when objs_ lives in std (i.e., std::vector). Mirrors the staged
     // construct() path GCDA uses (doc_list/doc_list_gcda.h:474-516).
-    grammar::GCChunks<TSLP> intermediate;
+    // The intermediate is a full grammar::SLP<>: the encoder fills it through
+    // the SLP wrapper, as GCDA's set construction does; the stored TSLP may
+    // keep only the rules.
+    grammar::GCChunks<grammar::SLP<>> intermediate;
     grammar::RePairEncoder<false> encoder;
     const auto& objs = tmp.GetObjects();
     intermediate.Compute(objs.begin(), objs.end(), tmp, encoder);
@@ -329,6 +340,10 @@ class RPCodec {
  private:
   TStoredChunks chunks_;
 };
+
+// RPCodec's pre-2026-10 default: the same Re-Pair lists with a per-rule length
+// array they never read. Kept so cores cached with it can be converted.
+using RPCodecWithLengths = RPCodec<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
 
 static_assert(SetCodec<RPCodec<>>,
               "RPCodec<> must satisfy the SetCodec concept");

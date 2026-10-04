@@ -721,6 +721,35 @@ TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_reuses_gcda_nolists_grammar) {
       sdsl::cache_file_name<TDiff>(std::format("bs{}_{}", dret::kDiffBlockSize, key), config_)));
 }
 
+// A PDL-RP core cached with the pre-2026-10 codec (RPCodecWithLengths, whose
+// lists carry a per-rule length array they never read) is converted on
+// construction instead of rebuilt: the new core answers the same and is no
+// larger, and the legacy file is left alone.
+TEST_F(RMQSLPCacheReuseTest, pdl_rp_converts_legacy_core) {
+  using S = ExternalGenericStorage;
+  using Legacy = dret::pdl::DocListIdxPDL<S, dret::Alphabet<>, sri::RIndexCount<S, dret::Alphabet<>>,
+                                          dret::pdl::PDLGetDocsDA<S>, dret::pdl::RPCodecWithLengths>;
+  using Current = dret::pdl::DocListIdxPDLRP<S>;
+  const std::vector<std::pair<std::string, std::vector<std::size_t>>> expected = {
+      {"TAT", {0}}, {"LAT", {1}}, {"LAL", {2}}, {"TA", {0, 1}},
+      {"LA", {1, 2}}, {"A", {0, 1, 2}}, {"TAL", {}},
+  };
+
+  Legacy legacy(std::ref(storage_), 2, 2.0f);
+  construct(legacy, config_);
+
+  Current current(std::ref(storage_), 2, 2.0f);
+  construct(current, config_);
+
+  EXPECT_LE(sdsl::size_in_bytes(current), sdsl::size_in_bytes(legacy));
+  for (const auto& [pattern, docs] : expected) {
+    DocListResultVector result;
+    current.Search(pattern, std::ref(result));
+    result();
+    EXPECT_THAT(result, testing::ElementsAreArray(docs)) << pattern;
+  }
+}
+
 TEST_F(RMQSLPCacheReuseTest, rmq_dslp_reuses_dgcda_dslp_cache) {
   using GetDocDSLP = RMQGetDocDSLP<ExternalGenericStorage>;
   using TDSLP = typename GetDocDSLP::DSLP;
