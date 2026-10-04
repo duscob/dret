@@ -8,10 +8,13 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <type_traits>
 #include <variant>
+#include <vector>
 
 #include <sdsl/io.hpp>
 
+#include "dret/cache_components.h"
 #include "dret/config.h"
 
 namespace dret {
@@ -77,6 +80,31 @@ class IndexBaseWithExternalStorage {
       // pointers (e.g. rank_support_sd::m_v) that are set during deserialization.
       auto* mutable_item = const_cast<TItem*>(set(storage_, storage_key, TItem{}));
       load(*mutable_item, t_source, t_key, t_add_type_hash);
+      item = mutable_item;
+    }
+    return item;
+  }
+
+  // Like loadItemPtr, for an item cached as components (see cache_components.h).
+  // From a stream the item is read whole, as serialize() wrote it.
+  template <typename TItem>
+  auto loadComponentsPtr(const std::vector<Component>& t_components, TSource& t_source) {
+    std::string storage_key = TypeHash<TItem>();
+    for (const auto& c : t_components) storage_key += "|" + c.key + "_" + c.type;
+    auto item = get<TItem>(storage_, storage_key);
+    if (!item) {
+      // Load in place, as loadItemPtr does, so SDSL support pointers stay valid.
+      auto* mutable_item = const_cast<TItem*>(set(storage_, storage_key, TItem{}));
+      std::visit(
+          [&](auto&& tt_source) {
+            using TS = std::decay_t<decltype(tt_source.get())>;
+            if constexpr (std::is_base_of_v<std::istream, TS>) {
+              sdsl::load(*mutable_item, tt_source.get());
+            } else if (!LoadComponents(*mutable_item, t_components, tt_source.get())) {
+              throw std::invalid_argument("Cache components not found (Key: '" + t_components.front().key + "')");
+            }
+          },
+          t_source);
       item = mutable_item;
     }
     return item;

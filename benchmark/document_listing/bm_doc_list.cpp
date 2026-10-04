@@ -158,25 +158,29 @@ std::function<void()> MakeHook(bool enable,
 
 }  // namespace cache_clean
 
-// Per-family cache-key prefix builders — mirror the strings dret::*::construct()
-// uses inside the library, so the glob picks up exactly the cell's cache files.
-// Shared artefacts (Text / SA / DocEnds / DA / LCP) don't match these prefixes.
-std::string GCDAKeyPrefix(std::uint32_t bs, float sf) {
-  return std::format("{}-{}_gcda_", bs, sf);
+// Per-family cache-key prefixes of a cell: the components whose keys carry the
+// cell's parameters, built from the common keys, so the glob picks up exactly
+// the cell's own files. Components shared beyond the cell (the DA grammars, the
+// PDL tree of a block size, Text / SA / DocEnds / DA / LCP) survive, as a cell
+// built after its first sibling finds them too.
+const dret::JSON& Keys() { return dret::kDefaultKeys.keys; }
+
+std::vector<std::string> GCDAKeyPrefixes(std::uint32_t bs, float sf) {
+  return {dret::PrefixedKey(Keys(), dret::conf::kBlkSf, "da_", bs, sf)};
 }
-std::string DGCDAKeyPrefix(std::uint32_t bs, float sf) {
-  return std::format("{}-{}_dgcda_", bs, sf);
+std::vector<std::string> DGCDAKeyPrefixes(std::uint32_t bs, float sf) {
+  // GCDA-differential samples its differential grammar every bs positions.
+  return {dret::PrefixedKey(Keys(), dret::conf::kBlkSf, "da_", bs, sf),
+          dret::PrefixedKey(Keys(), dret::conf::kSpc, dret::KeyName(Keys(), dret::conf::kDaDiffSamples), bs)};
 }
-std::string SLPNSKeyPrefix() {
-  return "slp_ns_";  // conf::kSLPNS = "slpNS" → stored cache-key string is "slp_ns".
+std::vector<std::string> SLPNSKeyPrefixes(std::uint32_t spacing) {
+  // The plain grammar is the CNF grammar itself; the differential one owns its samples.
+  return {dret::KeyName(Keys(), dret::conf::kDaCnfGrammar) + "_",
+          dret::PrefixedKey(Keys(), dret::conf::kSpc, dret::KeyName(Keys(), dret::conf::kDaDiffSamples), spacing)};
 }
-std::string PDLKeyPrefix(std::uint32_t bs, float sf,
-                          PDLVariant codec, PDLStoragePolicy policy) {
-  std::string codec_key = (codec == PDLVariant::Plain) ? "plain"
-                       : (codec == PDLVariant::RP)    ? "rp"
-                                                       : "bc";
-  const int policy_int = static_cast<int>(bench::axes::toPDLStoragePolicy(policy));
-  return std::format("{}-{}_pdl_{}_{}_", bs, sf, codec_key, policy_int);
+std::string PDLKeyPrefix(std::uint32_t bs, float sf, PDLStoragePolicy policy) {
+  // The selection and the lists of the cell, in every codec; the tree is shared.
+  return dret::pdl::PdlSelectionPrefix(Keys(), bs, sf, bench::axes::toPDLStoragePolicy(policy)) + "pdl_";
 }
 
 // Per-core RMQ cache-file prefixes. The FILENAMES keep their historical
@@ -1324,7 +1328,7 @@ void RegisterOneConstructGCDA(const std::string& family_name,
     for (auto sf : sf_list) {
       const auto cell_name = family_name + BsSfSuffix(bs, sf);
       auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                          {prefix_for_cell(bs, sf)});
+                                          prefix_for_cell(bs, sf));
       benchmark::RegisterBenchmark(cell_name, BM_ConstructGCDAFamily<TIndex>,
                                     config, bs, sf, hook, cc.memory_trace);
     }
@@ -1334,7 +1338,7 @@ void RegisterOneConstructGCDA(const std::string& family_name,
 void RegisterConstructGCDA(const bench::spec::GCDASweep& sw, dret::Config& config,
                             const ConstructCtx& cc) {
   using namespace fac::gcda;
-  auto prefix_fn = [](std::uint32_t bs, float sf) { return GCDAKeyPrefix(bs, sf); };
+  auto prefix_fn = [](std::uint32_t bs, float sf) { return GCDAKeyPrefixes(bs, sf); };
   for (auto tslp : sw.tslp) {
     const auto name = "GCDA" + NameSuffix(tslp);
     switch (tslp) {
@@ -1354,7 +1358,7 @@ void RegisterConstructGCDA(const bench::spec::GCDASweep& sw, dret::Config& confi
 void RegisterConstructDGCDA(const bench::spec::DGCDASweep& sw, dret::Config& config,
                              const ConstructCtx& cc) {
   using namespace fac::dgcda;
-  auto prefix_fn = [](std::uint32_t bs, float sf) { return DGCDAKeyPrefix(bs, sf); };
+  auto prefix_fn = [](std::uint32_t bs, float sf) { return DGCDAKeyPrefixes(bs, sf); };
   for (auto tslp : sw.tslp) {
     const auto name = "DGCDA" + NameSuffix(tslp);
     switch (tslp) {
@@ -1372,7 +1376,7 @@ void RegisterConstructDGCDA(const bench::spec::DGCDASweep& sw, dret::Config& con
 void RegisterConstructSLPNS(const bench::spec::SLPNSSweep& sw, dret::Config& config,
                              const ConstructCtx& cc) {
   using namespace fac::slp_ns;
-  auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, {SLPNSKeyPrefix()});
+  auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SLPNSKeyPrefixes(dret::kDiffBlockSize));
   for (auto tslp : sw.tslp) {
     const auto name = "SLP-NS" + NameSuffix(tslp);
     switch (tslp) {
@@ -1557,7 +1561,7 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
             for (auto sf : sw.storing_factor) {
               const auto cell_name = base_name + BsSfSuffix(bs, sf);
               auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                                  {PDLKeyPrefix(bs, sf, codec, policy)});
+                                                  {PDLKeyPrefix(bs, sf, policy)});
               benchmark::RegisterBenchmark(cell_name, BM_ConstructPDL<TIndex>,
                                             config, lib_policy, bs, sf, hook, cc.memory_trace);
             }
@@ -1575,7 +1579,7 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
                   for (auto sf : sw.storing_factor) {
                     const auto cell_name = base_name + BsSfSuffix(bs, sf);
                     auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                                      {PDLKeyPrefix(bs, sf, codec, policy)});
+                                                      {PDLKeyPrefix(bs, sf, policy)});
                     benchmark::RegisterBenchmark(cell_name,
                         BM_ConstructPDLGCDALight<IdxPlain<GS, TGD>, TGD>,
                         config, lib_policy, bs, sf, hook, cc.memory_trace);
@@ -1623,7 +1627,7 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
                   for (auto sf : sw.storing_factor) {
                     const auto cell_name = base_name + BsSfSuffix(bs, sf);
                     auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                                      {PDLKeyPrefix(bs, sf, codec, policy)});
+                                                      {PDLKeyPrefix(bs, sf, policy)});
                     benchmark::RegisterBenchmark(cell_name,
                         BM_ConstructPDLGCDALight<IdxRP<GS, TGD>, TGD>,
                         config, lib_policy, bs, sf, hook, cc.memory_trace);
@@ -1671,7 +1675,7 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
                   for (auto sf : sw.storing_factor) {
                     const auto cell_name = base_name + BsSfSuffix(bs, sf);
                     auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                                      {PDLKeyPrefix(bs, sf, codec, policy)});
+                                                      {PDLKeyPrefix(bs, sf, policy)});
                     benchmark::RegisterBenchmark(cell_name,
                         BM_ConstructPDLGCDALight<IdxBC<GS, TGD>, TGD>,
                         config, lib_policy, bs, sf, hook, cc.memory_trace);

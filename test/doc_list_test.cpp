@@ -8,6 +8,8 @@
 
 #include <filesystem>
 #include <format>
+#include <random>
+#include <set>
 #include <sdsl/dac_vector.hpp>
 #include <sdsl/enc_vector.hpp>
 #include <sdsl/int_vector.hpp>
@@ -625,6 +627,51 @@ class RMQSLPCacheReuseTest : public BaseConfigTests<8> {
   const std::string data_ = "TATA\1LATA\1LALA\1";
 };
 
+// Modification times of a cached object's component files; every one must exist.
+std::vector<std::filesystem::file_time_type> ComponentTimes(const std::vector<dret::Component>& t_components,
+                                                            const sdsl::cache_config& t_config) {
+  std::vector<std::filesystem::file_time_type> times;
+  for (const auto& c : t_components) {
+    const auto path = dret::ComponentFile(c, t_config);
+    EXPECT_TRUE(std::filesystem::exists(path)) << path;
+    times.push_back(std::filesystem::exists(path) ? std::filesystem::last_write_time(path)
+                                                  : std::filesystem::file_time_type{});
+  }
+  return times;
+}
+
+// Number of cache files whose name starts with t_prefix.
+std::size_t CountCacheFiles(const sdsl::cache_config& t_config, const std::string& t_prefix) {
+  std::size_t n = 0;
+  for (const auto& e : std::filesystem::directory_iterator(t_config.dir))
+    n += e.path().filename().string().starts_with(t_prefix);
+  return n;
+}
+
+// Number of files of the component t_key, one per encoding: "<key>_<type hash>_...".
+std::size_t CountComponentFiles(const sdsl::cache_config& t_config, const std::string& t_key) {
+  std::size_t n = 0;
+  for (const auto& e : std::filesystem::directory_iterator(t_config.dir)) {
+    const auto name = e.path().filename().string();
+    n += name.starts_with(t_key + "_") && name.size() > t_key.size() + 1 && std::isdigit(name[t_key.size() + 1]);
+  }
+  return n;
+}
+
+const std::vector<std::pair<std::string, std::vector<std::size_t>>> kReuseExpected = {
+    {"TAT", {0}}, {"LAT", {1}}, {"LAL", {2}}, {"TA", {0, 1}}, {"LA", {1, 2}}, {"A", {0, 1, 2}}, {"TAL", {}},
+};
+
+template <typename TIndex>
+void ExpectReuseResults(const TIndex& t_index, const std::string& t_label) {
+  for (const auto& [pattern, docs] : kReuseExpected) {
+    DocListResultVector result;
+    t_index.Search(pattern, std::ref(result));
+    result();
+    EXPECT_THAT(result, testing::ElementsAreArray(docs)) << t_label << " " << pattern;
+  }
+}
+
 TEST_F(RMQSLPCacheReuseTest, rmq_slp_reuses_gcda_slp_cache) {
   using GetDocSLP = RMQGetDocSLP<ExternalGenericStorage>;
   using TSLP = typename GetDocSLP::SLP;
@@ -633,25 +680,19 @@ TEST_F(RMQSLPCacheReuseTest, rmq_slp_reuses_gcda_slp_cache) {
   dret::gcda::DocListIdxGCDA<ExternalGenericStorage> gcda(std::ref(storage_), 512, 4);
   construct(gcda, config_);
 
-  const auto key_slp = std::format("512-4_{}", config_.keys[dret::conf::kGCDA][dret::conf::kSLP].get<std::string>());
-  const auto slp_path = sdsl::cache_file_name<TSLP>(key_slp, config_);
-  ASSERT_TRUE(std::filesystem::exists(slp_path));
-  const auto before_time = std::filesystem::last_write_time(slp_path);
-  const auto before_size = std::filesystem::file_size(slp_path);
+  const auto components = dret::CacheComponents(TSLP{}, config_.keys, dret::SampledTreeCell{512, 4});
+  const auto before = ComponentTimes(components, config_);
 
   RMQSadaSLP rmq_sada_slp(std::ref(storage_));
   construct(rmq_sada_slp, config_);
 
-  ASSERT_TRUE(std::filesystem::exists(slp_path));
-  EXPECT_EQ(std::filesystem::file_size(slp_path), before_size);
-  EXPECT_EQ(std::filesystem::last_write_time(slp_path), before_time);
+  EXPECT_EQ(ComponentTimes(components, config_), before);
 }
 
 // The RMQ backend for GCDA's differential grammar without the sampled tree: a
 // bare DifferentialSLP whose block size is the sample spacing. Each block size
-// must answer correctly and get its own cache entry, so the cells of a
-// block-size sweep never load one another's grammar -- except at the GCDA-nolists
-// block size, which keeps that index's plain kDSLPNS key (see the next test).
+// answers correctly and stores its own samples; the grammar, roots and span
+// sums are stored once for all of them.
 TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_sweeps_block_size) {
   using S = ExternalGenericStorage;
   using TDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
@@ -664,46 +705,26 @@ TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_sweeps_block_size) {
   using CilcpL = dret::rmq::CilcpLCore<S, dret::Alphabet<>::int_width, sdsl::sd_vector<>,
                                        sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
 
-  const std::vector<std::pair<std::string, std::vector<std::size_t>>> expected = {
-      {"TAT", {0}}, {"LAT", {1}}, {"LAL", {2}}, {"TA", {0, 1}},
-      {"LA", {1, 2}}, {"A", {0, 1, 2}}, {"TAL", {}},
-  };
-
   auto check = [&]<typename TCore>(std::uint32_t bs, const char* core_name) {
     TCore core(std::ref(storage_), bs, 0.0f);
     dret::rmq::DocListIdxRMQ<S, dret::Alphabet<>, TCount, TCore> index(std::ref(storage_), core);
     construct(index, config_);
     index.load(config_);
-    for (const auto& [pattern, docs] : expected) {
-      DocListResultVector result;
-      index.Search(pattern, std::ref(result));
-      result();
-      EXPECT_THAT(result, testing::ElementsAreArray(docs)) << core_name << " bs=" << bs << " " << pattern;
-    }
+    ExpectReuseResults(index, std::string(core_name) + " bs=" + std::to_string(bs));
   };
 
   for (std::uint32_t bs : {2u, 4u, 512u}) {
     check.template operator()<SadaL>(bs, "SADA-L");
     check.template operator()<IlcpL>(bs, "ILCP-L");
     check.template operator()<CilcpL>(bs, "CILCP-L");
-
-    const auto key = dret::DiffNoTreeCacheKey(config_.keys, bs);
-    EXPECT_EQ(key.starts_with("bs"), bs != dret::kDiffBlockSize) << key;
-    EXPECT_TRUE(std::filesystem::exists(sdsl::cache_file_name<TDiff>(key, config_))) << key;
+    EXPECT_TRUE(dret::ComponentsExist(dret::CacheComponents(TDiff{}, config_.keys, bs), config_)) << bs;
   }
-
-  // The RePair base grammar does not depend on the block size: one cached copy,
-  // under the GCDA-nolists key, serves every block size.
-  std::size_t n_grammars = 0;
-  const auto dir = std::filesystem::path(
-      sdsl::cache_file_name<TDiff>(dret::DiffNoTreeCacheKey(config_.keys, 4u), config_)).parent_path();
-  for (const auto& e : std::filesystem::directory_iterator(dir))
-    n_grammars += e.path().filename().string().find("_grammar_") != std::string::npos;
-  EXPECT_EQ(n_grammars, 1u);
+  EXPECT_EQ(CountComponentFiles(config_, dret::KeyName(config_.keys, dret::conf::kDaDiffGrammar)), 1u);
+  EXPECT_EQ(CountCacheFiles(config_, "spc"), 3u);
 }
 
-// At the GCDA-nolists block size the RMQ backend must load the grammar file that
-// the GCDA-nolists differential index (DocListIdxSLP) built, not rebuild its own.
+// At the GCDA-nolists spacing the RMQ backend loads the components the
+// GCDA-nolists differential index (DocListIdxSLP) built, not rebuild its own.
 TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_reuses_gcda_nolists_grammar) {
   using S = ExternalGenericStorage;
   using TDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
@@ -714,35 +735,26 @@ TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_reuses_gcda_nolists_grammar) {
   dret::DocListIdxSLP<S, dret::Alphabet<>, RMQCountIdx<S>, TDiff> nolists(std::ref(storage_));
   construct(nolists, config_);
 
-  const auto key = config_.keys[dret::conf::kDSLPNS].get<std::string>();
-  const auto path = sdsl::cache_file_name<TDiff>(key, config_);
-  ASSERT_TRUE(std::filesystem::exists(path));
-  const auto before_time = std::filesystem::last_write_time(path);
+  const auto components = dret::CacheComponents(TDiff{}, config_.keys, dret::kDiffBlockSize);
+  const auto before = ComponentTimes(components, config_);
 
   CilcpL core(std::ref(storage_), dret::kDiffBlockSize, 0.0f);
   dret::rmq::DocListIdxRMQ<S, dret::Alphabet<>, RMQCountIdx<S>, CilcpL> rmq(std::ref(storage_), core);
   construct(rmq, config_);
 
-  EXPECT_EQ(std::filesystem::last_write_time(path), before_time);
-  EXPECT_EQ(dret::DiffNoTreeCacheKey(config_.keys, dret::kDiffBlockSize), key);
-  // ...and no second copy under a block-size key.
-  EXPECT_FALSE(std::filesystem::exists(
-      sdsl::cache_file_name<TDiff>(std::format("bs{}_{}", dret::kDiffBlockSize, key), config_)));
+  EXPECT_EQ(ComponentTimes(components, config_), before);
+  EXPECT_EQ(CountCacheFiles(config_, "spc"), 1u);
 }
 
 // A PDL-RP core cached with the pre-2026-10 codec (RPCodecWithLengths, whose
-// lists carry a per-rule length array they never read) is converted on
-// construction instead of rebuilt: the new core answers the same and is no
-// larger, and the legacy file is left alone.
-TEST_F(RMQSLPCacheReuseTest, pdl_rp_converts_legacy_core) {
+// lists carry a per-rule length array they never read) and the current one
+// share the tree and the selection; the current lists answer the same and are
+// no larger.
+TEST_F(RMQSLPCacheReuseTest, pdl_rp_lists_without_lengths) {
   using S = ExternalGenericStorage;
   using Legacy = dret::pdl::DocListIdxPDL<S, dret::Alphabet<>, sri::RIndexCount<S, dret::Alphabet<>>,
                                           dret::pdl::PDLGetDocsDA<S>, dret::pdl::RPCodecWithLengths>;
   using Current = dret::pdl::DocListIdxPDLRP<S>;
-  const std::vector<std::pair<std::string, std::vector<std::size_t>>> expected = {
-      {"TAT", {0}}, {"LAT", {1}}, {"LAL", {2}}, {"TA", {0, 1}},
-      {"LA", {1, 2}}, {"A", {0, 1, 2}}, {"TAL", {}},
-  };
 
   Legacy legacy(std::ref(storage_), 2, 2.0f);
   construct(legacy, config_);
@@ -751,60 +763,153 @@ TEST_F(RMQSLPCacheReuseTest, pdl_rp_converts_legacy_core) {
   construct(current, config_);
 
   EXPECT_LE(sdsl::size_in_bytes(current), sdsl::size_in_bytes(legacy));
-  for (const auto& [pattern, docs] : expected) {
-    DocListResultVector result;
-    current.Search(pattern, std::ref(result));
-    result();
-    EXPECT_THAT(result, testing::ElementsAreArray(docs)) << pattern;
-  }
+  ExpectReuseResults(current, "PDL-RP");
+  EXPECT_EQ(CountCacheFiles(config_, "blk2_" + dret::KeyName(config_.keys, dret::conf::kPdlTree)), 1u);
+  EXPECT_EQ(CountCacheFiles(config_, "blk2-sf2-occw_" + dret::KeyName(config_.keys, dret::conf::kPdlSelection)), 1u);
 }
 
 // GCDA-nolists' differential index sweeps the same sample spacing as the RMQ
-// backend: each spacing answers correctly, keeps its own file (512 the one
-// GCDA-nolists always used), and all of them share one base grammar.
+// backend: each spacing answers correctly and stores its own samples, and all
+// of them share one grammar, one roots and one span-sums component.
 TEST_F(RMQSLPCacheReuseTest, gcda_nolists_diff_sweeps_spacing) {
   using S = ExternalGenericStorage;
   using TDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
   using Index = dret::DocListIdxSLP<S, dret::Alphabet<>, RMQCountIdx<S>, TDiff>;
-  const std::vector<std::pair<std::string, std::vector<std::size_t>>> expected = {
-      {"TAT", {0}}, {"LAT", {1}}, {"LAL", {2}}, {"TA", {0, 1}},
-      {"LA", {1, 2}}, {"A", {0, 1, 2}}, {"TAL", {}},
-  };
   std::vector<std::size_t> sizes;
   for (std::uint32_t spacing : {2u, 4u, 512u}) {
     Index index(std::ref(storage_), spacing);
     construct(index, config_);
     sizes.push_back(sdsl::size_in_bytes(index));
-    for (const auto& [pattern, docs] : expected) {
-      DocListResultVector result;
-      index.Search(pattern, std::ref(result));
-      result();
-      EXPECT_THAT(result, testing::ElementsAreArray(docs)) << "spacing " << spacing << " " << pattern;
-    }
-    const auto key = dret::DiffNoTreeCacheKey(config_.keys, spacing);
-    EXPECT_EQ(key == config_.keys[dret::conf::kDSLPNS].get<std::string>(), spacing == dret::kDiffBlockSize);
-    EXPECT_TRUE(std::filesystem::exists(sdsl::cache_file_name<TDiff>(key, config_))) << key;
+    ExpectReuseResults(index, "spacing " + std::to_string(spacing));
+    EXPECT_TRUE(dret::ComponentsExist(dret::CacheComponents(TDiff{}, config_.keys, spacing), config_)) << spacing;
   }
-  const auto dir = std::filesystem::path(
-      sdsl::cache_file_name<TDiff>(dret::DiffNoTreeCacheKey(config_.keys, 2u), config_)).parent_path();
-  std::size_t n_grammars = 0;
-  for (const auto& e : std::filesystem::directory_iterator(dir))
-    n_grammars += e.path().filename().string().find(dret::DiffNoTreeGrammarKey(config_.keys)) != std::string::npos;
-  EXPECT_EQ(n_grammars, 1u);
+  for (auto name : {dret::conf::kDaDiffGrammar, dret::conf::kDaDiffRoots, dret::conf::kDaDiffSpanSums})
+    EXPECT_EQ(CountComponentFiles(config_, dret::KeyName(config_.keys, name)), 1u) << name;
+  EXPECT_EQ(CountCacheFiles(config_, "spc"), 3u);
   // The spacing is real: a denser sampling stores more samples.
   EXPECT_GT(sizes[0], sizes[2]);
 }
 
-// PrefixedKey reproduces the parameterised file names dret used to format by
-// hand, so moving a call site to it renames nothing.
-TEST(PrefixedKeyTest, matches_the_formats_in_use) {
+// The differential container variants share the grammar; each container keeps
+// its own encoding of the roots, span sums and samples, and the int_vector
+// roots (the sequence a new spacing restarts from) are stored once.
+TEST_F(RMQSLPCacheReuseTest, gcda_nolists_diff_containers_share_the_grammar) {
+  using S = ExternalGenericStorage;
+  using TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>;
+  using TDiffIV = dret::DifferentialSLP<TSLP>;
+  using TDiffDV = dret::DifferentialSLP<TSLP, sdsl::dac_vector<>, sdsl::dac_vector<>, sdsl::dac_vector<>>;
+  dret::DocListIdxSLP<S, dret::Alphabet<>, RMQCountIdx<S>, TDiffDV> dv(std::ref(storage_), 4);
+  construct(dv, config_);
+  dret::DocListIdxSLP<S, dret::Alphabet<>, RMQCountIdx<S>, TDiffIV> iv(std::ref(storage_), 4);
+  construct(iv, config_);
+  ExpectReuseResults(dv, "diff-dv");
+  ExpectReuseResults(iv, "diff-iv");
+  EXPECT_EQ(CountComponentFiles(config_, dret::KeyName(config_.keys, dret::conf::kDaDiffGrammar)), 1u);
+  EXPECT_EQ(CountComponentFiles(config_, dret::KeyName(config_.keys, dret::conf::kDaDiffRoots)), 2u);
+}
+
+// Every GCDA representation of a cell, and GCDA-differential, read one sampled
+// tree; the on-demand representation and GCDA-nolists (plain) one CNF grammar.
+TEST_F(RMQSLPCacheReuseTest, gcda_representations_share_components) {
+  using S = ExternalGenericStorage;
+  using SLPCNF = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>;
+  using Combined = grammar::CombinedSLPWithUnitCover<grammar::CombinedSLP<SLPCNF, grammar::SampledSLP<>, sdsl::int_vector<>>>;
+  using Sets = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>, true,
+                                 grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>;
+  using SetsPlain = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>;
+  using RC = sri::RIndexCount<S, dret::Alphabet<>>;
+  const dret::SampledTreeCell cell{2, 2};
+
+  dret::gcda::DocListIdxGCDA<S> light(std::ref(storage_), cell.block_size, cell.storing_factor);
+  EXPECT_NO_THROW(construct(light, config_)) << "light";
+  dret::gcda::DocListIdxGCDA<S, dret::Alphabet<>, RC, Combined, Sets> combined(std::ref(storage_), 2, 2);
+  EXPECT_NO_THROW(construct(combined, config_)) << "combined";
+  dret::gcda::DocListIdxGCDA<S, dret::Alphabet<>, RC, grammar::CompactBPSLP<>, SetsPlain> bp(std::ref(storage_), 2, 2);
+  EXPECT_NO_THROW(construct(bp, config_)) << "bp";
+  dret::gcda::DocListIdxGCDA<S, dret::Alphabet<>, RC, grammar::CompactLOUDSSLP<>, Sets> louds(std::ref(storage_), 2, 2);
+  EXPECT_NO_THROW(construct(louds, config_)) << "louds";
+  dret::dgcda::DocListIdxDGCDA<S> dgcda(std::ref(storage_), 2, 2);
+  EXPECT_NO_THROW(construct(dgcda, config_)) << "dgcda";
+  dret::DocListIdxSLP<S, dret::Alphabet<>, RMQCountIdx<S>, SLPCNF> nolists(std::ref(storage_));
+  EXPECT_NO_THROW(construct(nolists, config_)) << "nolists";
+
+  ExpectReuseResults(light, "cached");
+  ExpectReuseResults(combined, "ondemand");
+  ExpectReuseResults(bp, "bp");
+  ExpectReuseResults(louds, "louds");
+  ExpectReuseResults(dgcda, "differential");
+  ExpectReuseResults(nolists, "nolists");
+
+  const auto tree = dret::CellKey(config_.keys, dret::conf::kDaSampledTree, cell);
+  EXPECT_EQ(CountComponentFiles(config_, tree), 1u);
+  // The CNF grammar: its raw encoding (built from irepair's output) and the
+  // bit-compressed one, which on-demand GCDA and GCDA-nolists share.
+  EXPECT_EQ(CountComponentFiles(config_, dret::KeyName(config_.keys, dret::conf::kDaCnfGrammar)), 2u);
+  // The BP and LOUDS encodings of it, one each for the whole collection.
+  EXPECT_EQ(CountComponentFiles(config_, dret::KeyName(config_.keys, dret::conf::kDaCnfGrammarBP)), 1u);
+  EXPECT_EQ(CountComponentFiles(config_, dret::KeyName(config_.keys, dret::conf::kDaCnfGrammarLOUDS)), 1u);
+  EXPECT_TRUE(std::filesystem::exists(dret::ComponentFile(dret::CacheComponents(SLPCNF{}, config_.keys).front(), config_)));
+  // One list per codec and encoding: raw and bit-packed plain lists, and the
+  // raw and final Re-Pair lists. GCDA and GCDA-differential share all of them.
+  EXPECT_EQ(CountComponentFiles(config_, dret::CellKey(config_.keys, dret::conf::kDaNodeDocListsPlain, cell)), 2u);
+  EXPECT_EQ(CountComponentFiles(config_, dret::CellKey(config_.keys, dret::conf::kDaNodeDocListsRP, cell)), 2u);
+}
+
+// A leaves-only PDL core does not read the storing factor: the cores of every
+// storing factor are one set of files. An occurrence-weighted core gets its
+// own selection and lists per storing factor, and all of them share the tree.
+TEST_F(RMQSLPCacheReuseTest, pdl_components_follow_the_parameters_read) {
+  using S = ExternalGenericStorage;
+  using PDL = dret::pdl::DocListIdxPDLPlain<S>;
+  for (float sf : {2.0f, 4.0f}) {
+    for (auto policy : {dret::pdl::StoragePolicy::LeavesOnly, dret::pdl::StoragePolicy::OccurrenceWeighted}) {
+      PDL pdl(std::ref(storage_), 2, sf, policy);
+      construct(pdl, config_);
+      ExpectReuseResults(pdl, "sf " + std::to_string(sf));
+    }
+  }
+  EXPECT_EQ(CountCacheFiles(config_, "blk2_" + dret::KeyName(config_.keys, dret::conf::kPdlTree)), 1u);
+  EXPECT_EQ(CountCacheFiles(config_, "blk2-leaves_"), 2u);  // selection, lists
+  EXPECT_EQ(CountCacheFiles(config_, "blk2-sf2-occw_"), 2u);
+  EXPECT_EQ(CountCacheFiles(config_, "blk2-sf4-occw_"), 2u);
+}
+
+TEST(PolicyReadsStoringFactorTest, only_occurrence_weighted) {
+  EXPECT_TRUE(dret::pdl::PolicyReadsStoringFactor(dret::pdl::StoragePolicy::OccurrenceWeighted));
+  EXPECT_FALSE(dret::pdl::PolicyReadsStoringFactor(dret::pdl::StoragePolicy::LeavesOnly));
+  EXPECT_FALSE(dret::pdl::PolicyReadsStoringFactor(dret::pdl::StoragePolicy::StoreAllInternal));
+}
+
+// The file names: each prefix carries the parameters it names.
+TEST(PrefixedKeyTest, names_carry_their_parameters) {
   const auto keys = dret::Keys<8>().keys;
-  EXPECT_EQ(dret::PrefixedKey(keys, dret::conf::kBsSf, "gcda_slp", 512u, 4.0f), std::format("{}-{}_gcda_slp", 512u, 4.0f));
-  EXPECT_EQ(dret::PrefixedKey(keys, dret::conf::kBsSf, "gcda_docs", 1024u, 32.0f), "1024-32_gcda_docs");
-  EXPECT_EQ(dret::PrefixedKey(keys, dret::conf::kSpacing, "dslp_ns", 128u), "bs128_dslp_ns");
-  EXPECT_EQ(dret::DiffNoTreeCacheKey(keys, 128u), "bs128_dslp_ns");
-  EXPECT_EQ(dret::DiffNoTreeCacheKey(keys, 512u), "dslp_ns");
-  EXPECT_EQ(dret::DiffNoTreeGrammarKey(keys), "dslp_ns_grammar");
+  EXPECT_EQ(dret::CellKey(keys, dret::conf::kDaSampledTree, {512, 4}), "blk512-sf4_da_sampled_tree");
+  EXPECT_EQ(dret::CellKey(keys, dret::conf::kDaNodeDocListsRP, {1024, 32}), "blk1024-sf32_da_node_doclists_rp");
+  EXPECT_EQ(dret::PrefixedKey(keys, dret::conf::kSpc, "da_diff_samples", 128u), "spc128_da_diff_samples");
+  EXPECT_EQ(dret::PrefixedKey(keys, dret::conf::kBlk, "pdl_tree", 256u), "blk256_pdl_tree");
+  using dret::pdl::StoragePolicy;
+  EXPECT_EQ(dret::pdl::PdlSelectionKey(keys, dret::conf::kPdlSelection, 256, 8, StoragePolicy::OccurrenceWeighted),
+            "blk256-sf8-occw_pdl_selection");
+  EXPECT_EQ(dret::pdl::PdlSelectionKey(keys, dret::conf::kPdlDocListsRP, 256, 8, StoragePolicy::LeavesOnly),
+            "blk256-leaves_pdl_doclists_rp");
+}
+
+// A component that exists with another length means its key misses a parameter
+// of its construction: storing over it throws instead of overwriting. One of the
+// same length is kept as it is (see StoreComponents).
+TEST_F(RMQSLPCacheReuseTest, store_components_rejects_a_different_component) {
+  sdsl::int_vector<> v{1, 2, 3};
+  const std::vector<dret::Component> one{{"probe", dret::TypeHash<sdsl::int_vector<>>(), dret::SerializedSize(v)}};
+  dret::StoreComponents(v, one, config_);
+  EXPECT_NO_THROW(dret::StoreComponents(v, one, config_));
+  sdsl::int_vector<> w{1, 2, 3, 4};
+  EXPECT_THROW(dret::StoreComponents(w, {{"probe", one[0].type, dret::SerializedSize(w)}}, config_),
+               std::logic_error);
+  sdsl::int_vector<> loaded;
+  ASSERT_TRUE(dret::LoadComponents(loaded, one, config_));
+  EXPECT_EQ(loaded, v);
+  // A layout that does not cover the whole serialization is rejected too.
+  EXPECT_THROW(dret::StoreComponents(v, {{"probe2", one[0].type, one[0].bytes - 1}}, config_), std::logic_error);
 }
 
 TEST_F(RMQSLPCacheReuseTest, rmq_dslp_reuses_dgcda_dslp_cache) {
@@ -815,18 +920,13 @@ TEST_F(RMQSLPCacheReuseTest, rmq_dslp_reuses_dgcda_dslp_cache) {
   dret::dgcda::DocListIdxDGCDA<ExternalGenericStorage> dgcda(std::ref(storage_), 512, 4);
   construct(dgcda, config_);
 
-  const auto key_dslp = std::format("512-4_{}", config_.keys[dret::conf::kDGCDA][dret::conf::kSLP].get<std::string>());
-  const auto dslp_path = sdsl::cache_file_name<TDSLP>(key_dslp, config_);
-  ASSERT_TRUE(std::filesystem::exists(dslp_path));
-  const auto before_time = std::filesystem::last_write_time(dslp_path);
-  const auto before_size = std::filesystem::file_size(dslp_path);
+  const auto components = dret::CacheComponents(TDSLP{}, config_.keys, dret::SampledTreeCell{512, 4});
+  const auto before = ComponentTimes(components, config_);
 
   RMQSadaDSLP rmq_sada_dslp(std::ref(storage_));
   construct(rmq_sada_dslp, config_);
 
-  ASSERT_TRUE(std::filesystem::exists(dslp_path));
-  EXPECT_EQ(std::filesystem::file_size(dslp_path), before_size);
-  EXPECT_EQ(std::filesystem::last_write_time(dslp_path), before_time);
+  EXPECT_EQ(ComponentTimes(components, config_), before);
 }
 
 TEST_F(RMQSLPCacheReuseTest, pdl_rlcsa_sidecar_not_rebuilt) {
@@ -895,3 +995,168 @@ TYPED_TEST(DifferentialSLPExpandTypedTests, expand_roundtrips_da) {
 // ListDocsRMQScheme / MarkedReported unit tests live in
 // doc_list_rmq_scheme_test.cpp — they don't depend on Config / Factory and
 // are split out to keep this integration suite focused.
+
+
+// Every family built over a grid of its parameters in ONE cache directory, on
+// a repetitive collection large enough for the cells' structures to differ.
+// Shared components are keyed by the parameters their construction reads. Each
+// cell is also built alone, in a private cache directory: the two must be the
+// same index (same size, same answers). A key missing a parameter makes a cell
+// read another cell's component, and that changes the size even where it cannot
+// change an answer (a PDL selection, say).
+class ComponentSweepTest : public BaseConfigTests<8> {
+ protected:
+  void SetUp() override {
+    std::mt19937 rng(20261004);
+    std::uniform_int_distribution<int> base(0, 3), pos(0, 239), coin(0, 9);
+    std::string ref;
+    for (int i = 0; i < 240; ++i) ref += "ACGT"[base(rng)];
+    for (int d = 0; d < 24; ++d) {
+      auto doc = ref;
+      for (int k = 0; k < 6; ++k) doc[pos(rng)] = "ACGT"[base(rng)];
+      if (coin(rng) < 3) doc = doc.substr(0, 120 + pos(rng) / 2);
+      docs_.push_back(doc);
+    }
+    std::string data;
+    for (const auto& d : docs_) { data += d; data += '\1'; }
+    Init(data);
+    pristine_ = config_;
+
+    std::set<std::string> pats;
+    for (const auto& doc : docs_)
+      for (std::size_t i = 0; i + 8 <= doc.size(); i += 7)
+        for (std::size_t m : {1u, 3u, 6u, 8u}) pats.insert(doc.substr(i, m));
+    patterns_.assign(pats.begin(), pats.end());
+  }
+
+  template <typename TIndex>
+  void CheckAnswers(const TIndex& t_index, const std::string& t_label) {
+    std::size_t wrong = 0;
+    for (const auto& p : patterns_) {
+      std::vector<std::size_t> expected;
+      for (std::size_t d = 0; d < docs_.size(); ++d)
+        if (docs_[d].find(p) != std::string::npos) expected.push_back(d);
+      DocListResultVector result;
+      t_index.Search(p, std::ref(result));
+      result();
+      wrong += !std::equal(result.begin(), result.end(), expected.begin(), expected.end());
+    }
+    EXPECT_EQ(wrong, 0u) << t_label;
+  }
+
+  // t_build(config, storage) constructs one index and returns it. Built in the
+  // shared directory and in a private one; both must answer right and match.
+  template <typename TBuild>
+  void Cell(const std::string& t_label, TBuild&& t_build) {
+    sri::GenericStorage shared_storage;
+    std::size_t shared_size = 0;
+    EXPECT_NO_THROW({
+      auto shared = t_build(config_, shared_storage);
+      CheckAnswers(shared, t_label);
+      shared_size = sdsl::size_in_bytes(shared);
+    }) << t_label;
+
+    auto fresh_config = pristine_;
+    fresh_config.dir = (tmp_dir_ / ("fresh" + std::to_string(n_fresh_++))).string();
+    std::filesystem::create_directories(fresh_config.dir);
+    sri::GenericStorage fresh_storage;
+    auto fresh = t_build(fresh_config, fresh_storage);
+    EXPECT_EQ(shared_size, sdsl::size_in_bytes(fresh)) << t_label << ": the shared cache gave another index";
+  }
+
+  dret::Config pristine_;
+  std::size_t n_fresh_ = 0;
+  std::vector<std::string> docs_;
+  std::vector<std::string> patterns_;
+};
+
+TEST_F(ComponentSweepTest, gcda_family_grid) {
+  using S = ExternalGenericStorage;
+  using RC = sri::RIndexCount<S, dret::Alphabet<>>;
+  using SLPCNF = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>;
+  using Light = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>, grammar::SampledSLP<>,
+                                  grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>;
+  using Combined = grammar::CombinedSLPWithUnitCover<grammar::CombinedSLP<SLPCNF, grammar::SampledSLP<>, sdsl::int_vector<>>>;
+  using SetsRP = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>, true,
+                                   grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>;
+  using SetsPlain = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>;
+  for (std::uint32_t b : {4u, 16u, 64u}) {
+    for (float sf : {1.0f, 4.0f}) {
+      const auto label = " b=" + std::to_string(b) + " sf=" + std::to_string(sf);
+      auto run = [&]<typename TIndex>(const std::string& name) {
+        Cell(name + label, [&](dret::Config& cfg, sri::GenericStorage& st) {
+          TIndex index(std::ref(st), b, sf);
+          construct(index, cfg);
+          return index;
+        });
+      };
+      run.template operator()<dret::gcda::DocListIdxGCDA<S>>("cached");
+      run.template operator()<dret::gcda::DocListIdxGCDA<S, dret::Alphabet<>, RC, Light, SetsPlain>>("cached-plain");
+      run.template operator()<dret::gcda::DocListIdxGCDA<S, dret::Alphabet<>, RC, Combined, SetsRP>>("ondemand");
+      run.template operator()<dret::gcda::DocListIdxGCDA<S, dret::Alphabet<>, RC, grammar::CompactBPSLP<>, SetsRP>>("bp");
+      run.template operator()<dret::gcda::DocListIdxGCDA<S, dret::Alphabet<>, RC, grammar::CompactLOUDSSLP<>, SetsPlain>>("louds");
+      run.template operator()<dret::dgcda::DocListIdxDGCDA<S>>("differential");
+    }
+  }
+}
+
+TEST_F(ComponentSweepTest, nolists_and_rmq_backends_grid) {
+  using S = ExternalGenericStorage;
+  using TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>;
+  using TDiff = dret::DifferentialSLP<TSLP>;
+  using TDiffDV = dret::DifferentialSLP<TSLP, sdsl::dac_vector<>, sdsl::dac_vector<>, sdsl::dac_vector<>>;
+  auto nolists = [&]<typename T>(const std::string& name, std::uint32_t spacing) {
+    Cell(name + " spc=" + std::to_string(spacing), [&](dret::Config& cfg, sri::GenericStorage& st) {
+      dret::DocListIdxSLP<S, dret::Alphabet<>, RMQCountIdx<S>, T> index(std::ref(st), spacing);
+      construct(index, cfg);
+      return index;
+    });
+  };
+  for (std::uint32_t spacing : {2u, 8u, 64u}) {
+    nolists.template operator()<TDiff>("nolists-diff", spacing);
+    nolists.template operator()<TDiffDV>("nolists-diff-dv", spacing);
+  }
+  nolists.template operator()<TSLP>("nolists-plain", dret::kDiffBlockSize);
+
+  using TGetDocDiff = dret::rmq::GetDocSLP_NS<S, dret::Alphabet<>::int_width, TDiff>;
+  using CilcpLDiff = dret::rmq::CilcpLCore<S, dret::Alphabet<>::int_width, sdsl::sd_vector<>,
+                                           sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDocDiff>;
+  using IlcpLSLP = dret::rmq::IlcpLCore<S, dret::Alphabet<>::int_width, sdsl::sd_vector<>,
+                                        sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, RMQGetDocSLP<S>>;
+  auto rmq = [&]<typename TCore>(const std::string& name, std::uint32_t b, float sf) {
+    Cell(name + " b=" + std::to_string(b) + " sf=" + std::to_string(sf),
+         [&](dret::Config& cfg, sri::GenericStorage& st) {
+           TCore core(std::ref(st), b, sf);
+           dret::rmq::DocListIdxRMQ<S, dret::Alphabet<>, RMQCountIdx<S>, TCore> index(std::ref(st), core);
+           construct(index, cfg);
+           index.load(cfg);
+           return index;
+         });
+  };
+  for (std::uint32_t b : {4u, 32u}) {
+    rmq.template operator()<CilcpLDiff>("CILCP-L diff", b, 0.0f);
+    for (float sf : {2.0f, 32.0f}) rmq.template operator()<IlcpLSLP>("ILCP-L cached", b, sf);
+  }
+}
+
+TEST_F(ComponentSweepTest, pdl_grid) {
+  using S = ExternalGenericStorage;
+  using dret::pdl::StoragePolicy;
+  for (std::uint32_t b : {4u, 32u}) {
+    for (float sf : {1.0f, 8.0f}) {
+      for (auto policy : {StoragePolicy::OccurrenceWeighted, StoragePolicy::LeavesOnly}) {
+        const auto label = " b=" + std::to_string(b) + " sf=" + std::to_string(sf) + " policy=" +
+                           std::to_string(static_cast<int>(policy));
+        auto run = [&]<typename TIndex>(const std::string& name) {
+          Cell(name + label, [&](dret::Config& cfg, sri::GenericStorage& st) {
+            TIndex index(std::ref(st), b, sf, policy);
+            construct(index, cfg);
+            return index;
+          });
+        };
+        run.template operator()<dret::pdl::DocListIdxPDLPlain<S>>("PDL-plain");
+        run.template operator()<dret::pdl::DocListIdxPDLRP<S>>("PDL-rp");
+      }
+    }
+  }
+}

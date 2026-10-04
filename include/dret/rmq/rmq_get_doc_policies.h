@@ -214,11 +214,10 @@ class GetDocSLP : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using typename Base::TSource;
 
   void loadInner(TSource& t_source, const JSON& t_keys) override {
-    key_slp_ = std::format("{}-{}_", block_size_, storing_factor_) + t_keys[conf::kGCDA][conf::kSLP].get<std::string>();
-    slp_ = this->template loadItemPtr<TSLP>(key_slp_, t_source, true);
+    slp_ = this->template loadComponentsPtr<TSLP>(
+        CacheComponents(TSLP{}, t_keys, SampledTreeCell{block_size_, storing_factor_}), t_source);
   }
 
-  std::string key_slp_;
   const TSLP* slp_ = nullptr;
   uint32_t block_size_ = 512;
   float storing_factor_ = 4;
@@ -228,41 +227,22 @@ template <typename TStorage, uint8_t t_width, typename TSLP>
 void construct(GetDocSLP<TStorage, t_width, TSLP>& t_get_doc, Config& t_config) {
   using namespace conf;
 
-  const auto key_prefix = std::format("{}-{}_", t_get_doc.block_size(), t_get_doc.storing_factor());
-  const auto key_slp = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
-  if (sdsl::cache_file_exists<TSLP>(key_slp, t_config))
+  const auto components =
+      CacheComponents(TSLP{}, t_config.keys, SampledTreeCell{t_get_doc.block_size(), t_get_doc.storing_factor()});
+  if (ComponentsExist(components, t_config))
     return;
 
-  auto event = sdsl::memory_monitor::event(key_slp);
+  auto event = sdsl::memory_monitor::event(components.back().key);
   auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
   TSLP slp;
   gcda::construct(slp, t_config, filepath_da, t_get_doc.block_size(), t_get_doc.storing_factor());
 }
 
-// Document-array lookup over a bare `grammar::SLP<>` (Phase C cache, kSLPNS).
-// Distinct from `GetDocSLP`: the bare SLP has no sampled tree, no precomputed
-// covers, and no block_size / storing_factor knobs — its cache file is keyed
-// directly on `kSLPNS` with no `{bs}-{sf}_` prefix. Default TSLP intentionally
-// matches `dret::DocListIdxSLP<>`'s default so the typed cache file is shared;
-// any drift between the two defaults silently desyncs the on-disk cache and
-// produces two parallel SLP files for the same logical "Default" variant.
-//
-// The one knob is the block size of a differential TSLP: the spacing of the
-// samples a lookup jumps to before skipping by span lengths. It is the RMQ
-// backend that stands for GCDA's differential grammar without the sampled tree
-// (GetDocDSLP's DifferentialLightSLP carries that tree, and lookups never touch
-// it). A differential TSLP is therefore keyed by DiffNoTreeCacheKey: at the
-// GCDA-nolists block size it shares that index's grammar file, otherwise it gets
-// a "bs{b}_" entry of its own. A plain TSLP has no sampling, ignores the block
-// size and keeps kSLPNS.
-template <typename TSLP>
-std::string SlpNsCacheKey(const JSON& t_keys, uint32_t t_block_size) {
-  if constexpr (is_differential_slp_v<TSLP>)
-    return DiffNoTreeCacheKey(t_keys, t_block_size);
-  else
-    return t_keys[conf::kSLPNS].template get<std::string>();
-}
-
+// Document-array lookup over the grammar of GCDA-nolists: the CNF grammar alone
+// (a plain grammar::SLP), or the differential grammar without the sampled tree.
+// It reads the same components as DocListIdxSLP with the same TSLP. The one
+// knob is the sample spacing of a differential TSLP: a lookup jumps to a sample
+// before skipping by span lengths. A plain TSLP has no sampling and ignores it.
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>
@@ -319,44 +299,19 @@ class GetDocSLP_NS : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using typename Base::TSource;
 
   void loadInner(TSource& t_source, const JSON& t_keys) override {
-    key_slp_ = SlpNsCacheKey<TSLP>(t_keys, block_size_);
-    slp_ = this->template loadItemPtr<TSLP>(key_slp_, t_source, true);
+    slp_ = this->template loadComponentsPtr<TSLP>(SlpNsTraits<TSLP>::components(t_keys, block_size_), t_source);
   }
 
-  std::string key_slp_;
   const TSLP* slp_ = nullptr;
   uint32_t block_size_ = 512;
 };
 
-// Build the bare-SLP cache (kSLPNS) by delegating to dret::construct(grammar::SLP&,
-// Config&, datafile). Idempotent: short-circuits if the typed cache file already
-// exists. DA is guaranteed by the surrounding RMQ core's construct(), which calls
-// EnsureBasicStructures before invoking this through construct(get_doc_policy()).
+// Build the grammar's components, as DocListIdxSLP does. DA is guaranteed by
+// the surrounding RMQ core's construct(), which calls EnsureBasicStructures
+// before invoking this through construct(get_doc_policy()).
 template <typename TStorage, uint8_t t_width, typename TSLP>
 void construct(GetDocSLP_NS<TStorage, t_width, TSLP>& t_get_doc, Config& t_config) {
-  using namespace conf;
-
-  const auto key_slp = SlpNsCacheKey<TSLP>(t_config.keys, t_get_doc.block_size());
-  if (sdsl::cache_file_exists<TSLP>(key_slp, t_config))
-    return;
-
-  auto event = sdsl::memory_monitor::event(key_slp);
-  TSLP slp;
-  if constexpr (is_differential_slp_v<TSLP>) {
-    // Bare-diff variant: TSLP is dret::DifferentialSLP<...>. Its construct
-    // overload (differential_slp.h:405) needs (config, block_size, cache_key)
-    // rather than (config, da_filepath). The base RePair grammar is bs-invariant
-    // (LoadOrBuildDiffGrammar caches it once), so the block_size only sets the
-    // sample spacing, and the cache key carries it. The base grammar does not
-    // depend on the block size, so it is cached once under the GCDA-nolists
-    // key -- the file DocListIdxSLP builds -- and every block size reuses it.
-    dret::construct(slp, t_config, t_get_doc.block_size(), key_slp, DiffNoTreeGrammarKey(t_config.keys));
-  } else {
-    // Plain bare-SLP variant: TSLP is grammar::SLP<...>. Construct from the DA
-    // file via dret::construct(grammar::SLP&, Config&, datafile).
-    auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
-    dret::construct(slp, t_config, filepath_da);
-  }
+  SlpNsTraits<TSLP>::build(t_config, t_get_doc.block_size());
 }
 
 // Document-array lookup over a differential grammar-compressed SLP. The default
@@ -420,12 +375,10 @@ class GetDocDSLP : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using typename Base::TSource;
 
   void loadInner(TSource& t_source, const JSON& t_keys) override {
-    key_dslp_ =
-        std::format("{}-{}_", block_size_, storing_factor_) + t_keys[conf::kDGCDA][conf::kSLP].get<std::string>();
-    dslp_ = this->template loadItemPtr<TDSLP>(key_dslp_, t_source, true);
+    dslp_ = this->template loadComponentsPtr<TDSLP>(
+        CacheComponents(TDSLP{}, t_keys, SampledTreeCell{block_size_, storing_factor_}), t_source);
   }
 
-  std::string key_dslp_;
   const TDSLP* dslp_ = nullptr;
   uint32_t block_size_ = 512;
   float storing_factor_ = 4;
@@ -435,12 +388,12 @@ template <typename TStorage, uint8_t t_width, typename TDSLP>
 void construct(GetDocDSLP<TStorage, t_width, TDSLP>& t_get_doc, Config& t_config) {
   using namespace conf;
 
-  const auto key_prefix = std::format("{}-{}_", t_get_doc.block_size(), t_get_doc.storing_factor());
-  const auto key_dslp = key_prefix + t_config.keys[kDGCDA][kSLP].get<std::string>();
-  if (sdsl::cache_file_exists<TDSLP>(key_dslp, t_config))
+  const auto components =
+      CacheComponents(TDSLP{}, t_config.keys, SampledTreeCell{t_get_doc.block_size(), t_get_doc.storing_factor()});
+  if (ComponentsExist(components, t_config))
     return;
 
-  auto event = sdsl::memory_monitor::event(key_dslp);
+  auto event = sdsl::memory_monitor::event(components.back().key);
   TDSLP dslp;
   dret::construct(dslp, t_config, t_get_doc.block_size(), t_get_doc.storing_factor());
 }

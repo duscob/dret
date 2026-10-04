@@ -15,6 +15,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <istream>
+#include <stdexcept>
+#include <string_view>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -25,6 +27,8 @@
 #include <sdsl/sd_vector.hpp>
 #include <sdsl/util.hpp>
 
+#include "dret/cache_components.h"
+#include "dret/config.h"
 #include "dret/size_report.h"
 #include "dret/pdl/storage_policy.h"
 
@@ -178,33 +182,57 @@ class PDLTreeCore {
     n_doc_ = t_n_doc;
     n_nodes_ = node_starts_.size();
     block_size_ = t_block_size;
-    storing_factor_ = t_storing_factor;
+    // A policy that does not read the storing factor builds the same core for
+    // every value of it; record none, so the cores are the same bytes too.
+    storing_factor_ = PolicyReadsStoringFactor(t_policy) ? t_storing_factor : 0.0f;
     policy_ = t_policy;
     rebindRankSelect();
   }
 
+  // Serialized in component order (see CacheComponents below): the tree, which
+  // depends on the block size only; the nodes the policy selects; their lists.
   std::size_t serialize(std::ostream& out,
                         sdsl::structure_tree_node* v = nullptr,
                         const std::string& name = "") const {
     auto* child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     std::size_t bytes = 0;
-    bytes += selected_marker_.serialize(out, child, "selected_marker");
     bytes += node_starts_.serialize(out, child, "node_starts");
     bytes += node_ends_.serialize(out, child, "node_ends");
     bytes += first_child_.serialize(out, child, "first_child");
     bytes += next_sibling_.serialize(out, child, "next_sibling");
-    bytes += stored_sets_.serialize(out, child, "stored_sets");
-    bytes += sdsl::write_member(n_doc_, out, child, "n_doc");
     bytes += sdsl::write_member(n_nodes_, out, child, "n_nodes");
     bytes += sdsl::write_member(block_size_, out, child, "block_size");
-    bytes += sdsl::write_member(storing_factor_, out, child, "storing_factor");
+    bytes += sdsl::write_member(n_doc_, out, child, "n_doc");
+    bytes += selected_marker_.serialize(out, child, "selected_marker");
     auto policy_id = static_cast<uint8_t>(policy_);
     bytes += sdsl::write_member(policy_id, out, child, "policy");
+    bytes += sdsl::write_member(storing_factor_, out, child, "storing_factor");
+    bytes += stored_sets_.serialize(out, child, "stored_sets");
     sdsl::structure_tree::add_size(child, bytes);
     return bytes;
   }
 
   void load(std::istream& in) {
+    node_starts_.load(in);
+    node_ends_.load(in);
+    first_child_.load(in);
+    next_sibling_.load(in);
+    sdsl::read_member(n_nodes_, in);
+    sdsl::read_member(block_size_, in);
+    sdsl::read_member(n_doc_, in);
+    selected_marker_.load(in);
+    uint8_t policy_id = 0;
+    sdsl::read_member(policy_id, in);
+    policy_ = static_cast<StoragePolicy>(policy_id);
+    sdsl::read_member(storing_factor_, in);
+    stored_sets_.load(in);
+    rebindRankSelect();
+  }
+
+  // The format cached before 2026-10 (marker first, scalars last, the storing
+  // factor recorded under every policy). Read only by the cache migration tool,
+  // which then normalizes the storing factor as Assemble does.
+  void loadPre202610(std::istream& in) {
     selected_marker_.load(in);
     node_starts_.load(in);
     node_ends_.load(in);
@@ -218,7 +246,17 @@ class PDLTreeCore {
     uint8_t policy_id = 0;
     sdsl::read_member(policy_id, in);
     policy_ = static_cast<StoragePolicy>(policy_id);
+    if (!PolicyReadsStoringFactor(policy_)) storing_factor_ = 0.0f;
     rebindRankSelect();
+  }
+
+  // Bytes of the tree and selection components (the lists are the rest).
+  std::size_t TreeComponentSize() const {
+    return sdsl::size_in_bytes(node_starts_) + sdsl::size_in_bytes(node_ends_) + sdsl::size_in_bytes(first_child_) +
+           sdsl::size_in_bytes(next_sibling_) + sizeof(n_nodes_) + sizeof(block_size_) + sizeof(n_doc_);
+  }
+  std::size_t SelectionComponentSize() const {
+    return sdsl::size_in_bytes(selected_marker_) + sizeof(uint8_t) + sizeof(storing_factor_);
   }
 
   SizeReport GetSizeReport() const {
@@ -275,6 +313,55 @@ template <typename TBitvector, typename TBvRank, typename TBvSelect, typename TI
 struct WithCodec<PDLTreeCore<TBitvector, TBvRank, TBvSelect, TIntVector, TOld>, TCodec> {
   using type = PDLTreeCore<TBitvector, TBvRank, TBvSelect, TIntVector, TCodec>;
 };
+
+// Prefix of the PDL components that depend on the selection: the block size,
+// the policy and, for a policy that reads it, the storing factor.
+inline std::string PdlSelectionPrefix(const JSON& t_keys,
+                                      uint32_t t_block_size,
+                                      float t_storing_factor,
+                                      StoragePolicy t_policy) {
+  const auto& terms = t_keys[conf::kPolicy];
+  switch (t_policy) {
+    case StoragePolicy::OccurrenceWeighted:
+      return PrefixedKey(t_keys, conf::kBlkSfPol, "", t_block_size, t_storing_factor,
+                         terms[conf::kOccW].get<std::string>());
+    case StoragePolicy::LeavesOnly:
+      return PrefixedKey(t_keys, conf::kBlkPol, "", t_block_size, terms[conf::kLeaves].get<std::string>());
+    case StoragePolicy::StoreAllInternal:
+      return PrefixedKey(t_keys, conf::kBlkPol, "", t_block_size, terms[conf::kAllNodes].get<std::string>());
+  }
+  throw std::invalid_argument("unknown PDL storage policy");
+}
+
+inline std::string PdlSelectionKey(const JSON& t_keys,
+                                   std::string_view t_name,
+                                   uint32_t t_block_size,
+                                   float t_storing_factor,
+                                   StoragePolicy t_policy) {
+  return PdlSelectionPrefix(t_keys, t_block_size, t_storing_factor, t_policy) + t_keys[t_name].get<std::string>();
+}
+
+// Cache components of a PDL core, in the order it serializes them: the tree
+// (block size only, shared by every policy, storing factor and codec), the
+// selected nodes (shared by the codecs) and the lists in the core's codec.
+template <typename TBitvector, typename TBvRank, typename TBvSelect, typename TIntVector, typename TStoredSetCodec>
+std::vector<Component> CacheComponents(
+    const PDLTreeCore<TBitvector, TBvRank, TBvSelect, TIntVector, TStoredSetCodec>& t_core,
+    const JSON& t_keys,
+    uint32_t t_block_size,
+    float t_storing_factor,
+    StoragePolicy t_policy) {
+  const auto tree = t_core.TreeComponentSize();
+  const auto selection = t_core.SelectionComponentSize();
+  return {
+      {PrefixedKey(t_keys, conf::kBlk, t_keys[conf::kPdlTree].get<std::string>(), t_block_size),
+       TypeHash<TIntVector>(), tree},
+      {PdlSelectionKey(t_keys, conf::kPdlSelection, t_block_size, t_storing_factor, t_policy),
+       TypeHash<TBitvector>(), selection},
+      {PdlSelectionKey(t_keys, TStoredSetCodec::kListsKey, t_block_size, t_storing_factor, t_policy),
+       TypeHash<TStoredSetCodec>(), SerializedSize(t_core) - tree - selection},
+  };
+}
 
 template <typename TBitvector, typename TBvRank, typename TBvSelect,
           typename TIntVector, typename TStoredSetCodec>

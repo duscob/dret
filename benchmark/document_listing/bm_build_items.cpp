@@ -433,10 +433,10 @@ int main(int argc, char** argv) {
   }
 
   // Phase C: non-sampled SLP index, plus the three RMQ listing cores backed by
-  // the bare grammar::SLP<> cache (kSLPNS). All four are parameter-free (no bs/sf
-  // axis). Each gets fanned out across the bare-SLP container axis (Default =
-  // sdsl::int_vector<>, DV = sdsl::dac_vector<>, VV = sdsl::vlc_vector<>); type-
-  // hashes on grammar::SLP<TVars,TLens> distinguish the on-disk cache files.
+  // the CNF grammar alone (the da_cnf_grammar component). All four are
+  // parameter-free (no bs/sf axis). Each gets fanned out across the bare-SLP
+  // container axis (Default = sdsl::int_vector<>, DV = sdsl::dac_vector<>, VV =
+  // sdsl::vlc_vector<>); type hashes distinguish the encodings' files.
   auto register_slp_ns_for_tslp = [&]<typename TSLP>(const char* suffix) {
     using IdxSLP    = bench::factories::slp_ns::Idx<GS, TSLP>;
     using GetDoc    = rmq_fac::GetDocSLP_NS<GS, TSLP>;

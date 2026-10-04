@@ -25,4 +25,11 @@ enum class StoragePolicy : uint8_t {
   LeavesOnly = 2,
 };
 
+// Whether a policy's selection reads the storing factor. Only the
+// occurrence-weighted rule does; a core built under another policy is the same
+// index for every storing factor, and is cached and reported once.
+constexpr bool PolicyReadsStoringFactor(StoragePolicy t_policy) {
+  return t_policy == StoragePolicy::OccurrenceWeighted;
+}
+
 }  // namespace dret::pdl

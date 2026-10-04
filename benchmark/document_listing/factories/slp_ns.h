@@ -35,8 +35,8 @@ using BareSLP_IV = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>;
 using BareSLP_Raw     = grammar::SLP<>;
 using BareSLP_DV      = grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>;
 using BareSLP_VV      = grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>;
-// bare-diff: base differential SLP, non-sampled (no GCChunks). Fixed internal
-// sample block_size; cached under conf::kDSLPNS. The container axis (roots/
+// bare-diff: base differential SLP, non-sampled (no GCChunks), sampled every
+// spacing positions; its grammar is shared by every spacing. The container axis (roots/
 // span_sums/samples) mirrors the DGCDA sampled-diff EV/DV/VV variants.
 // Base SLP rules/lengths are bit-compressed (int_vector, = BareSLP_IV); the
 // container suffix varies the per-field roots/span_sums/samples encoding.

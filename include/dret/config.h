@@ -30,37 +30,51 @@ namespace conf {
 using namespace sri::conf;
 constexpr std::string_view kDocEnds = "docEnd";
 constexpr std::string_view kDA = "da";
-constexpr std::string_view kGCDA = "gcda";
-constexpr std::string_view kSLP = "slp";
-constexpr std::string_view kDocs = "docs";
-// The SLP over the document array plus its compact sequence, as parsed from
-// irepair's .R/.C output. Both depend only on the DA, so unlike kSLP/kDocs
-// these are cached WITHOUT the "<bs>-<sf>_" prefix and are shared by every cell
-// of a (block size, storing factor) sweep. Before they existed GCDA re-parsed
-// the grammar in all 20 cells of the grid; DGCDA already did the equivalent via
-// its own dgcda_slp_grammar.
-constexpr std::string_view kSLPGrammar = "slpGrammar";
-constexpr std::string_view kSLPCompactSeq = "slpCompactSeq";
-constexpr std::string_view kDGCDA = "dgcda";
-// Phase C: non-sampled grammar::SLP<> cache (dret::DocListIdxSLP).
-// Distinct from kGCDA::kSLP so the bare SLP and the GCDA-sampled SLPs
-// don't share a logical key (their type-hashes are already distinct,
-// but a separate prefix makes the on-disk files easier to inspect).
-constexpr std::string_view kSLPNS = "slpNS";
-// Non-sampled *differential* SLP cache (bare-diff): base dret::DifferentialSLP,
-// no sampled tree / GCChunks. Distinct key from the (bs/sf-keyed) DGCDA
-// DifferentialLightSLP cache — bare-diff has a single fixed internal sample
-// block_size and no storing_factor.
-constexpr std::string_view kDSLPNS = "dslpNS";
-// The RePair base grammar of a bare differential SLP: it does not depend on the
-// sample spacing, so every spacing (and the GCDA-nolists index) shares it.
-constexpr std::string_view kDSLPNSGrammar = "dslpNSGrammar";
-// Prefix patterns for cache keys that carry parameters. Every parameterised key
-// is built from one of these through PrefixedKey, so the file names an index can
-// produce are all declared here, next to the component names.
+// Cache components of the document-array grammars, shared by every index that
+// contains them (see dret/cache_components.h). Collection-level ones carry no
+// prefix; the others carry the parameters their construction reads, through one
+// of the prefix patterns below. Each name says what the file holds; its type
+// hash says how it is encoded.
+constexpr std::string_view kDaGrammar = "daGrammar";              // RePair grammar of the DA
+constexpr std::string_view kDaGrammarSeq = "daGrammarSeq";        // its top-level sequence
+constexpr std::string_view kDaCnfGrammar = "daCnfGrammar";        // the DA grammar in CNF
+constexpr std::string_view kDaCnfGrammarBP = "daCnfGrammarBP";    // CNF grammar as a BP tree
+constexpr std::string_view kDaCnfGrammarLOUDS = "daCnfGrammarLOUDS";
+constexpr std::string_view kDaSampledTree = "daSampledTree";      // the sampled tree of the CNF grammar
+constexpr std::string_view kDaSampledLeaves = "daSampledLeaves";  // its leaves as CNF variables
+constexpr std::string_view kDaSampledLeavesBP = "daSampledLeavesBP";
+constexpr std::string_view kDaSampledLeavesLOUDS = "daSampledLeavesLOUDS";
+constexpr std::string_view kDaLeafCovers = "daLeafCovers";        // its leaves as covers in the DA grammar
+constexpr std::string_view kDaNodeDocListsPlain = "daNodeDocListsPlain";  // document list per sampled node
+constexpr std::string_view kDaNodeDocListsRP = "daNodeDocListsRP";
+constexpr std::string_view kDaDiffGrammar = "daDiffGrammar";      // RePair grammar of the differential DA
+constexpr std::string_view kDaDiffRoots = "daDiffRoots";          // its top-level sequence
+constexpr std::string_view kDaDiffSpanSums = "daDiffSpanSums";    // differential sum of each rule
+constexpr std::string_view kDaDiffSamples = "daDiffSamples";      // absolute samples every spacing positions
+
+// PDL components: the collapsed suffix tree, the nodes the policy selects, and
+// the document lists of those nodes in each codec.
+constexpr std::string_view kPdlTree = "pdlTree";
+constexpr std::string_view kPdlSelection = "pdlSelection";
+constexpr std::string_view kPdlDocListsPlain = "pdlDocListsPlain";
+constexpr std::string_view kPdlDocListsRP = "pdlDocListsRP";
+constexpr std::string_view kPdlDocListsBC = "pdlDocListsBC";
+
+// Prefix patterns for cache keys that carry parameters, each named after the
+// parameters it carries. Every parameterised key is built from one of these
+// through PrefixedKey, so the file names an index can produce are all declared
+// here, next to the component names.
 constexpr std::string_view kPrefix = "prefix";
-constexpr std::string_view kBsSf = "bsSf";        // block size, storing factor
-constexpr std::string_view kSpacing = "spacing";  // sample spacing of a differential SLP
+constexpr std::string_view kBlkSf = "blkSf";          // block size, storing factor
+constexpr std::string_view kSpc = "spc";              // sample spacing
+constexpr std::string_view kBlk = "blk";              // block size
+constexpr std::string_view kBlkPol = "blkPol";        // block size, selection policy
+constexpr std::string_view kBlkSfPol = "blkSfPol";    // block size, storing factor, selection policy
+// The term each PDL selection policy contributes to a key.
+constexpr std::string_view kPolicy = "policy";
+constexpr std::string_view kOccW = "occw";
+constexpr std::string_view kLeaves = "leaves";
+constexpr std::string_view kAllNodes = "all";
 
 constexpr std::string_view kSADA = "sada";
 constexpr std::string_view kILCP = "ilcp";
@@ -75,22 +89,10 @@ constexpr std::string_view kRmqNDoc = "rmq_n_doc";
 // is cached once instead of recomputed per core.
 constexpr std::string_view kIlcpArray = "ilcp_array";
 
-// PDL (precomputed document listing) — sparse suffix-tree indexes with
-// per-variant stored-set codecs. kPDL is the umbrella; kTree is the
-// shared tree-topology cache; each variant (kPlain/kRP/kBC) owns its
-// own kSets payload, and kBC additionally owns kDict.
-// RLCSA sidecar cache (Track C of pdl_rlcsa_baseline_plan.md).
-// RLCSA writes its own on-disk files via writeTo(base); the key maps to the
-// file basename, not an SDSL typed-cache entry.
+// RLCSA sidecar cache. RLCSA writes its own on-disk files via writeTo(base); the
+// key maps to the file basename, not an SDSL typed-cache entry.
 constexpr std::string_view kRLCSA = "rlcsa";
 
-constexpr std::string_view kPDL = "pdl";
-constexpr std::string_view kPlain = "plain";
-constexpr std::string_view kRP = "rp";
-constexpr std::string_view kBC = "bc";
-constexpr std::string_view kTree = "tree";
-constexpr std::string_view kSets = "sets";
-constexpr std::string_view kDict = "dict";
 }  // namespace conf
 
 template <uint8_t t_width = DRET_DEFAULT_ALPHABET_WIDTH>
@@ -101,30 +103,43 @@ struct Keys {
     keys.update({
         {conf::kDocEnds, "doc_end"},
         {conf::kDA, "da"},
-        {conf::kSLPNS, "slp_ns"},
-        {conf::kDSLPNS, "dslp_ns"},
-        {conf::kDSLPNSGrammar, "dslp_ns_grammar"},
+        {conf::kDaGrammar, "da_grammar"},
+        {conf::kDaGrammarSeq, "da_grammar_seq"},
+        {conf::kDaCnfGrammar, "da_cnf_grammar"},
+        {conf::kDaCnfGrammarBP, "da_cnf_grammar_bp"},
+        {conf::kDaCnfGrammarLOUDS, "da_cnf_grammar_louds"},
+        {conf::kDaSampledTree, "da_sampled_tree"},
+        {conf::kDaSampledLeaves, "da_sampled_leaves"},
+        {conf::kDaSampledLeavesBP, "da_sampled_leaves_bp"},
+        {conf::kDaSampledLeavesLOUDS, "da_sampled_leaves_louds"},
+        {conf::kDaLeafCovers, "da_leaf_covers"},
+        {conf::kDaNodeDocListsPlain, "da_node_doclists_plain"},
+        {conf::kDaNodeDocListsRP, "da_node_doclists_rp"},
+        {conf::kDaDiffGrammar, "da_diff_grammar"},
+        {conf::kDaDiffRoots, "da_diff_roots"},
+        {conf::kDaDiffSpanSums, "da_diff_span_sums"},
+        {conf::kDaDiffSamples, "da_diff_samples"},
+        {conf::kPdlTree, "pdl_tree"},
+        {conf::kPdlSelection, "pdl_selection"},
+        {conf::kPdlDocListsPlain, "pdl_doclists_plain"},
+        {conf::kPdlDocListsRP, "pdl_doclists_rp"},
+        {conf::kPdlDocListsBC, "pdl_doclists_bc"},
         {
             conf::kPrefix,
             {
-                {conf::kBsSf, "{}-{}_"},
-                {conf::kSpacing, "bs{}_"},
+                {conf::kBlkSf, "blk{}-sf{}_"},
+                {conf::kSpc, "spc{}_"},
+                {conf::kBlk, "blk{}_"},
+                {conf::kBlkPol, "blk{}-{}_"},
+                {conf::kBlkSfPol, "blk{}-sf{}-{}_"},
             },
         },
         {
-            conf::kGCDA,
+            conf::kPolicy,
             {
-                {conf::kSLP, "gcda_slp"},
-                {conf::kDocs, "gcda_docs"},
-                {conf::kSLPGrammar, "gcda_slp_grammar"},
-                {conf::kSLPCompactSeq, "gcda_slp_compact_seq"},
-            },
-        },
-        {
-            conf::kDGCDA,
-            {
-                {conf::kSLP, "dgcda_slp"},
-                {conf::kDocs, "dgcda_docs"},
+                {conf::kOccW, "occw"},
+                {conf::kLeaves, "leaves"},
+                {conf::kAllNodes, "all"},
             },
         },
         // One namespace per RMQ family, holding every artefact that family can
@@ -159,31 +174,6 @@ struct Keys {
         {conf::kRLCSA, "rlcsa"},
         {conf::kRmqNDoc, "rmq_n_doc"},
         {conf::kIlcpArray, "ilcp_array"},
-        {
-            conf::kPDL,
-            {
-                {conf::kTree, "pdl_tree"},
-                {
-                    conf::kPlain,
-                    {
-                        {conf::kSets, "pdl_plain_sets"},
-                    },
-                },
-                {
-                    conf::kRP,
-                    {
-                        {conf::kSets, "pdl_rp_sets"},
-                    },
-                },
-                {
-                    conf::kBC,
-                    {
-                        {conf::kSets, "pdl_bc_sets"},
-                        {conf::kDict, "pdl_bc_dict"},
-                    },
-                },
-            },
-        },
     });
   }
 

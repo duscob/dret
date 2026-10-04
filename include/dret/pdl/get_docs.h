@@ -102,8 +102,8 @@ template <typename TStorage = GenericStorage,
 using PDLGetDocsDSLP = PDLRawRangePolicy<rmq::GetDocDSLP<TStorage, t_width, TDSLP>>;
 
 // Bare grammar::SLP-backed (get-doc=gcda-bare). Mirrors the RMQ SLP-NS path;
-// the default TSLP matches rmq::GetDocSLP_NS<>'s default so the kSLPNS typed
-// cache file is shared with the RMQ-NS / SLP-NS document-listing indexes.
+// the default TSLP matches rmq::GetDocSLP_NS<>'s default, the CNF grammar that
+// GCDA-nolists (plain) and on-demand GCDA store.
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>

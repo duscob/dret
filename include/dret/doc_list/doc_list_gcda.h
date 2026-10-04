@@ -23,6 +23,7 @@
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_sampled_tree_base.h"
 #include "dret/index_base.h"
+#include "dret/slp/slp_components.h"
 #include "dret/slp/slp_tools.h"
 
 namespace dret {
@@ -38,6 +39,16 @@ class MergeSetsBinaryTreeFunctor;
 // lookup at template-definition time.
 template <typename TSLP>
 struct GCDAVariantTraits;
+
+// Key of the document lists of a cell's sampled nodes in a codec: bit-packed
+// (plain) or grammar-compressed (Re-Pair). The raw lists every codec is built
+// from are cached under the plain key in grammar::Chunks<>'s encoding.
+template <typename TSets>
+std::string NodeDocListsKey(const JSON& t_keys, const SampledTreeCell& t_cell) {
+  constexpr bool kPlain = std::is_same_v<TSets, grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>> ||
+                          std::is_same_v<TSets, grammar::Chunks<>>;
+  return CellKey(t_keys, kPlain ? conf::kDaNodeDocListsPlain : conf::kDaNodeDocListsRP, t_cell);
+}
 
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
@@ -137,12 +148,9 @@ class DocListIdxGCDA : public DLSampledTreeScheme<TMergeSets, typename TAlphabet
         },
         t_source);
 
-    auto key_prefix = std::format("{}-{}_", block_size_, storing_factor_);
-    constexpr auto kVariantKey = GCDAVariantTraits<TSLP>::kKey;
-    slp_ = this->template loadItemPtr<TSLP>(
-        key_prefix + t_keys[kVariantKey][kSLP].template get<std::string>(), t_source, true);
-    slp_sets_ = this->template loadItemPtr<TSLPSets>(
-        key_prefix + t_keys[kVariantKey][kDocs].template get<std::string>(), t_source, true);
+    const SampledTreeCell cell{block_size_, storing_factor_};
+    slp_ = this->template loadComponentsPtr<TSLP>(CacheComponents(TSLP{}, t_keys, cell), t_source);
+    slp_sets_ = this->template loadItemPtr<TSLPSets>(NodeDocListsKey<TSLPSets>(t_keys, cell), t_source, true);
   }
 
   TCountIdx count_idx_;
@@ -229,14 +237,11 @@ void construct(grammar::CombinedSLPWithUnitCover<Ts...>& t_wrapped,
 // forward declarations so its constructSLP body sees them via ordinary lookup
 // at template-definition time. The primary template covers every
 // GCDA-family SLP (grammar::LightSLP, CompactBPSLP, CompactLOUDSSLP,
-// CombinedSLPWithUnitCover, ...): cache keys under conf::kGCDA and the
-// 5-arg SLP-build path with a datafile parameter. The DifferentialLightSLP
-// specialisation routes to the DGCDA cache namespace and the 4-arg
-// DifferentialLightSLP::construct().
+// CombinedSLPWithUnitCover, ...): the 5-arg SLP-build path with a datafile
+// parameter. The DifferentialLightSLP specialisation routes to the 4-arg
+// DifferentialLightSLP::construct(). Both cache through CacheComponents.
 template <typename TSLP>
 struct GCDAVariantTraits {
-  static constexpr std::string_view kKey = conf::kGCDA;
-
   static void constructSLP(TSLP& slp,
                            Config& t_config,
                            const std::string& t_datafile,
@@ -248,8 +253,6 @@ struct GCDAVariantTraits {
 
 template <typename... Ts>
 struct GCDAVariantTraits<DifferentialLightSLP<Ts...>> {
-  static constexpr std::string_view kKey = conf::kDGCDA;
-
   static void constructSLP(DifferentialLightSLP<Ts...>& slp,
                            Config& t_config,
                            const std::string& /*t_datafile_ignored*/,
@@ -296,11 +299,10 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TM
     ConstructDocArray(t_config);
   }
 
-  const auto key_prefix = std::format("{}-{}_", t_index.block_size(), t_index.storing_factor());
+  const SampledTreeCell cell{t_index.block_size(), t_index.storing_factor()};
 
-  if (const auto key = key_prefix + t_config.keys[Traits::kKey][kSLP].template get<std::string>();
-      !sdsl::cache_file_exists<TSLP>(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
+  if (const auto components = CacheComponents(TSLP{}, t_config.keys, cell); !ComponentsExist(components, t_config)) {
+    auto event = sdsl::memory_monitor::event(components.back().key);
     auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
     TSLP slp;
     Traits::constructSLP(slp, t_config, filepath_da, t_index.block_size(), t_index.storing_factor());
@@ -309,37 +311,13 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TM
   auto count_idx = t_index.count_idx();
   construct(count_idx, t_config.data_path, t_config);
 
-  if (const auto key_docs = key_prefix + t_config.keys[Traits::kKey][kDocs].template get<std::string>();
+  // The lists are the same for every representation of the cell (built while
+  // sampling the tree, which every representation shares).
+  if (const auto key_docs = NodeDocListsKey<TSLPSets>(t_config.keys, cell);
       !sdsl::cache_file_exists<TSLPSets>(key_docs, t_config)) {
     auto event = sdsl::memory_monitor::event(key_docs);
-    if constexpr (Traits::kKey == conf::kDGCDA) {
-      // DifferentialLightSLP::construct stored a plain grammar::Chunks<> at
-      // key_docs as a side effect; build the GCChunks-of-Chunks from it
-      // directly. The GCDA dispatched path (else branch) hardcodes kGCDA in
-      // its cache lookups and so cannot serve the DGCDA key prefix.
-      grammar::Chunks<> cslp_docs;
-      sdsl::load_from_cache(cslp_docs, key_docs, t_config, true);
-
-      auto bit_compress = [](sdsl::int_vector<>& v) { sdsl::util::bit_compress(v); };
-      if constexpr (std::is_same_v<TSLPSets, grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>) {
-        // Plain sets: the lists as they are, bit-packed; no grammar over them.
-        TSLPSets sets(cslp_docs, bit_compress, bit_compress);
-        sdsl::store_to_cache(sets, key_docs, t_config, true);
-      } else {
-        const auto& objs = cslp_docs.GetObjects();
-
-        grammar::GCChunks<grammar::SLP<>> gc_slp;
-        grammar::RePairEncoder<false> encoder_nslp;
-        gc_slp.Compute(objs.begin(), objs.end(), cslp_docs, encoder_nslp);
-        sdsl::store_to_cache(gc_slp, key_docs, t_config, true);
-
-        TSLPSets slp_sets(gc_slp, bit_compress, bit_compress, bit_compress, bit_compress);
-        sdsl::store_to_cache(slp_sets, key_docs, t_config, true);
-      }
-    } else {
-      TSLPSets slp_sets;
-      construct(slp_sets, t_config, t_index.block_size(), t_index.storing_factor());
-    }
+    TSLPSets slp_sets;
+    construct(slp_sets, t_config, t_index.block_size(), t_index.storing_factor());
   }
 
   t_index.load(t_config);
@@ -348,6 +326,11 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TM
 //~~~~~~~
 
 
+// The sampled tree of a (block size, storing factor) cell over the CNF grammar
+// of the DA, with the document lists of its sampled nodes. Every representation
+// derives from it; it is cached as components (the CNF grammar, the tree, its
+// leaves), and the raw lists under the plain lists key, in grammar::Chunks<>'s
+// encoding and bit-packed.
 template <typename TSLP, typename TSampledSLP, typename TLeavesContainer>
 void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp,
                Config& t_config,
@@ -355,31 +338,11 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
                uint32_t t_block_size,
                float t_storing_factor) {
   using namespace conf;
+  const SampledTreeCell cell{t_block_size, t_storing_factor};
+  const auto components = CacheComponents(t_cslp, t_config.keys, cell);
+  auto event = sdsl::memory_monitor::event(ComponentFile(components.back(), t_config));
 
-  // Grammar compress data file using RePair
-  if (!std::filesystem::exists(t_datafile + ".R") && repair::kAvailable) {
-    const auto filename = std::filesystem::path(t_datafile).filename().string();
-    auto event = sdsl::memory_monitor::event("RePair-" + filename);
-    RunRePair(t_datafile, t_config.repair);
-    t_config.file_map[filename + ".R"] = t_datafile + ".R";
-    t_config.file_map[filename + ".C"] = t_datafile + ".C";
-  }
-  CheckRePairGrammar(t_datafile);
-
-  const auto key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
-
-  auto key_slp = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
-  auto event = sdsl::memory_monitor::event(
-      sdsl::cache_file_name<grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>>(key_slp, t_config));
-
-  grammar::SLP<> slp;
-  {
-    grammar::RePairReader<true> re_pair_reader;
-    auto slp_wrapper = grammar::BuildSLPWrapper(slp);
-    re_pair_reader.Read(t_datafile, slp_wrapper);
-  }
-
-  t_cslp = grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>(slp);
+  t_cslp = grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>(LoadOrBuildDaCnfGrammar(t_config, t_datafile));
   grammar::Chunks<> cslp_docs;
 
   grammar::AddSet add_set(cslp_docs);
@@ -388,9 +351,9 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
                  add_set,
                  grammar::MustBeSampled<decltype(cslp_docs)>(grammar::AreChildrenTooBig(cslp_docs, t_storing_factor)));
 
-  sdsl::store_to_cache(t_cslp, key_slp, t_config, true);
+  StoreComponents(t_cslp, CacheComponents(t_cslp, t_config.keys, cell), t_config);
 
-  auto key_docs = key_prefix + t_config.keys[kGCDA][kDocs].get<std::string>();
+  const auto key_docs = CellKey(t_config.keys, kDaNodeDocListsPlain, cell);
   sdsl::store_to_cache(cslp_docs, key_docs, t_config, true);
 
   auto bit_compress = [](sdsl::int_vector<>& _v) {
@@ -398,6 +361,18 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
   };
   grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> cslp_docs_c(cslp_docs, bit_compress, bit_compress);
   sdsl::store_to_cache(cslp_docs_c, key_docs, t_config, true);
+}
+
+// The raw sampled tree of a cell (see above): loaded from its components, or built.
+inline grammar::CombinedSLP<> LoadOrBuildSampledTree(Config& t_config,
+                                                     const std::string& t_datafile,
+                                                     uint32_t t_block_size,
+                                                     float t_storing_factor) {
+  grammar::CombinedSLP<> cslp;
+  const SampledTreeCell cell{t_block_size, t_storing_factor};
+  if (!LoadComponents(cslp, CacheComponents(cslp, t_config.keys, cell), t_config))
+    construct(cslp, t_config, t_datafile, t_block_size, t_storing_factor);
+  return cslp;
 }
 
 //~~~~~~~
@@ -409,10 +384,9 @@ void construct(grammar::CombinedSLP<TSLP, TSampledSLP, TLeavesContainer>& t_cslp
 // irepair itself already ran once per collection -- every call site guards it
 // on std::filesystem::exists(t_datafile + ".R"), a path with no (bs,sf) in it.
 // What used to repeat was this *parse* of its output: it lived inside the
-// "<bs>-<sf>_gcda_slp" guard in construct() below, so all 20 cells of a grid
-// sweep redid it. Measured across the 2026-08 campaign that cost ~71 h, ~8.4%
-// of stage A, and it is why revision-mid spent 12.85 h re-deriving one grammar
-// 17 times. DGCDA never had the problem -- see dgcda_slp_grammar.
+// per-cell guard in construct() below, so all 20 cells of a grid sweep redid
+// it. Measured across the 2026-08 campaign that cost ~71 h, ~8.4% of stage A,
+// and it is why revision-mid spent 12.85 h re-deriving one grammar 17 times.
 //
 // compact_seq round-trips through a bit-compressed int_vector; the values are
 // grammar variable ids, so they are non-negative and bounded by the rule count.
@@ -421,8 +395,8 @@ inline void LoadOrBuildDaSlp(Config& t_config,
                              grammar::SLP<>& t_slp,
                              std::vector<std::size_t>& t_compact_seq) {
   using namespace conf;
-  const auto key_slp = t_config.keys[kGCDA][kSLPGrammar].get<std::string>();
-  const auto key_seq = t_config.keys[kGCDA][kSLPCompactSeq].get<std::string>();
+  const auto key_slp = KeyName(t_config.keys, kDaGrammar);
+  const auto key_seq = KeyName(t_config.keys, kDaGrammarSeq);
 
   if (sdsl::cache_file_exists<grammar::SLP<>>(key_slp, t_config)
       && sdsl::cache_file_exists<sdsl::int_vector<>>(key_seq, t_config)) {
@@ -453,93 +427,53 @@ inline void LoadOrBuildDaSlp(Config& t_config,
 //~~~~~~~
 
 
+// Sampled-cached: the DA grammar (not in CNF) with, for each leaf of the cell's
+// sampled tree, its cover in that grammar.
 template <typename TSLP, typename TSampledSLP, typename TChunks>
 void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
                Config& t_config,
                const std::string& t_datafile,
                uint32_t t_block_size,
                float t_storing_factor) {
-  using namespace conf;
+  const SampledTreeCell cell{t_block_size, t_storing_factor};
+  const auto cslp = LoadOrBuildSampledTree(t_config, t_datafile, t_block_size, t_storing_factor);
 
-  std::string key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
+  // Collection-level, not cell-level: parsed once and reused by every
+  // (bs,sf) cell. See LoadOrBuildDaSlp above.
+  grammar::SLP<> slp;
+  std::vector<std::size_t> compact_seq;
+  LoadOrBuildDaSlp(t_config, t_datafile, slp, compact_seq);
 
-  auto key_lslp = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
+  auto event = sdsl::memory_monitor::event(ComponentFile(CacheComponents(t_lslp, t_config.keys, cell).back(), t_config));
   grammar::LightSLP<> lslp;
+  lslp.Compute(slp, compact_seq, cslp);
 
-  if (!sdsl::cache_file_exists<decltype(lslp)>(key_lslp, t_config)) {
-    // Construct Light SLP on datafile
-    auto event = sdsl::memory_monitor::event(sdsl::cache_file_name<grammar::LightSLP<>>(key_lslp, t_config));
-
-    grammar::CombinedSLP<> cslp;
-    if (const auto key = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
-        !sdsl::cache_file_exists<decltype(cslp)>(key, t_config)) {
-      auto event_cslp = sdsl::memory_monitor::event(sdsl::cache_file_name<decltype(cslp)>(key, t_config));
-      construct(cslp, t_config, t_datafile, t_block_size, t_storing_factor);
-    } else {
-      sdsl::load_from_cache(cslp, key, t_config, true);
-    }
-
-    // Collection-level, not cell-level: parsed once and reused by every
-    // (bs,sf) cell. See LoadOrBuildDaSlp above.
-    grammar::SLP<> slp;
-    std::vector<std::size_t> compact_seq;
-    LoadOrBuildDaSlp(t_config, t_datafile, slp, compact_seq);
-
-    lslp.Compute(slp, compact_seq, cslp);
-    sdsl::store_to_cache(lslp, key_lslp, t_config, true);
-  } else {
-    sdsl::load_from_cache(lslp, key_lslp, t_config, true);
-  }
-
-  auto event = sdsl::memory_monitor::event(
-      sdsl::cache_file_name<grammar::LightSLP<TSLP, TSampledSLP, TChunks>>(key_lslp, t_config));
-
-  // Construct Light SLP Basic on DA
   auto bit_compress = [](auto& _v) {
     sdsl::util::bit_compress(_v);
   };
   t_lslp = grammar::LightSLP<TSLP, TSampledSLP, TChunks>(lslp, bit_compress, bit_compress, bit_compress, bit_compress);
-  sdsl::store_to_cache(t_lslp, key_lslp, t_config, true);
+  StoreComponents(t_lslp, CacheComponents(t_lslp, t_config.keys, cell), t_config);
 }
 
 //~~~~~~~
 
 
 // Shared helper for the compact-grammar construct overloads. Both BP and
-// LOUDS variants follow the same pattern: ensure a default
-// grammar::CombinedSLP<> is present in the cache (building it via the
-// existing construct(CombinedSLP&,...) overload if needed — that path
-// also writes the gcda_docs cache, which the subsequent
-// construct(GCChunks<>,...) consumes), then derive the compact class from
-// the CSLP via Compute(), and store it under the same logical SLP key
-// (the type-hash in store_to_cache disambiguates the on-disk file name
-// across variants).
+// LOUDS variants derive the compact class from the cell's raw sampled tree via
+// Compute(): a compact encoding of the CNF grammar (one per collection), the
+// sampled leaves numbered in it, and the shared sampled tree.
 template <typename TCompactSLP>
 void constructCompactCommon(TCompactSLP& t_compact,
                             Config& t_config,
                             const std::string& t_datafile,
                             uint32_t t_block_size,
                             float t_storing_factor) {
-  using namespace conf;
+  const SampledTreeCell cell{t_block_size, t_storing_factor};
+  const auto cslp = LoadOrBuildSampledTree(t_config, t_datafile, t_block_size, t_storing_factor);
 
-  std::string key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
-  auto key_slp = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
-
-  grammar::CombinedSLP<> cslp;
-  if (!sdsl::cache_file_exists<grammar::CombinedSLP<>>(key_slp, t_config)) {
-    // Lexical scope is dret::gcda; this resolves to the existing
-    // construct(grammar::CombinedSLP&,...) overload above, which also
-    // writes the gcda_docs cache.
-    construct(cslp, t_config, t_datafile, t_block_size, t_storing_factor);
-  } else {
-    sdsl::load_from_cache(cslp, key_slp, t_config, true);
-  }
-
-  auto event = sdsl::memory_monitor::event(
-      sdsl::cache_file_name<TCompactSLP>(key_slp, t_config));
-
+  auto event = sdsl::memory_monitor::event(ComponentFile(CacheComponents(t_compact, t_config.keys, cell)[1], t_config));
   t_compact.Compute(cslp);
-  sdsl::store_to_cache(t_compact, key_slp, t_config, true);
+  StoreComponents(t_compact, CacheComponents(t_compact, t_config.keys, cell), t_config);
 }
 
 template <typename... Ts>
@@ -560,37 +494,21 @@ void construct(grammar::CompactLOUDSSLP<Ts...>& t_compact,
   constructCompactCommon(t_compact, t_config, t_datafile, t_block_size, t_storing_factor);
 }
 
-// Phase B: CombinedSLP-with-unit-cover construct. Builds/loads a default
-// std::vector-backed `grammar::CombinedSLP<>` via the existing CSLP construct
-// overload (which writes the `gcda_docs` cache), converts it into the wrapper's
-// (possibly bit-compressed) CombinedSLP base — applying `bit_compress` to the
-// SLP rules, lengths, and leaves — slices that into the wrapper, then stores the
-// wrapper under the same logical SLP key. Type-hashing keeps the wrapper's
-// on-disk file distinct from the raw CSLP's.
+// Sampled-ondemand: the cell's raw sampled tree converted into the wrapper's
+// (possibly bit-compressed) CombinedSLP base -- applying `bit_compress` to the
+// SLP rules, lengths, and leaves.
 template <typename... Ts>
 void construct(grammar::CombinedSLPWithUnitCover<Ts...>& t_wrapped,
                Config& t_config,
                const std::string& t_datafile,
                uint32_t t_block_size,
                float t_storing_factor) {
-  using namespace conf;
   using BaseCSLP = typename grammar::CombinedSLPWithUnitCover<Ts...>::Base;
-  using RawCSLP = grammar::CombinedSLP<>;  // std::vector intermediate built by construct(CombinedSLP&,...)
+  const SampledTreeCell cell{t_block_size, t_storing_factor};
+  const auto raw = LoadOrBuildSampledTree(t_config, t_datafile, t_block_size, t_storing_factor);
 
-  std::string key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
-  auto key_slp = key_prefix + t_config.keys[kGCDA][kSLP].get<std::string>();
+  auto event = sdsl::memory_monitor::event(ComponentFile(CacheComponents(t_wrapped, t_config.keys, cell).back(), t_config));
 
-  RawCSLP raw;
-  if (!sdsl::cache_file_exists<RawCSLP>(key_slp, t_config)) {
-    construct(raw, t_config, t_datafile, t_block_size, t_storing_factor);
-  } else {
-    sdsl::load_from_cache(raw, key_slp, t_config, true);
-  }
-
-  auto event = sdsl::memory_monitor::event(
-      sdsl::cache_file_name<grammar::CombinedSLPWithUnitCover<Ts...>>(key_slp, t_config));
-
-  // Convert raw (std::vector) -> BaseCSLP, bit-compressing rules, lengths, leaves.
   // The production SLP_Combined uses sdsl::int_vector<> containers; the action is a
   // no-op for any non-int_vector container (e.g. the default std::vector base).
   auto bit_compress = [](auto& v) {
@@ -600,28 +518,34 @@ void construct(grammar::CombinedSLPWithUnitCover<Ts...>& t_wrapped,
   BaseCSLP cslp(raw, bit_compress, bit_compress, bit_compress);
 
   static_cast<BaseCSLP&>(t_wrapped) = cslp;
-  sdsl::store_to_cache(t_wrapped, key_slp, t_config, true);
+  StoreComponents(t_wrapped, CacheComponents(t_wrapped, t_config.keys, cell), t_config);
 }
 
 //~~~~~~~
 
+
+// The raw lists of a cell, cached while its sampled tree was built.
+inline grammar::Chunks<> LoadRawNodeDocLists(Config& t_config, uint32_t t_block_size, float t_storing_factor) {
+  const auto key_docs = NodeDocListsKey<grammar::Chunks<>>(t_config.keys, {t_block_size, t_storing_factor});
+  grammar::Chunks<> sets;
+  if (!sdsl::load_from_cache(sets, key_docs, t_config, true))
+    throw std::runtime_error("GCDA document lists: no cached lists under " + key_docs +
+                             "; build the sampled tree for this (block size, storing factor) first");
+  return sets;
+}
 
 template <bool kExpand, typename TChunks>
 void construct(grammar::GCChunks<grammar::SLP<>, kExpand, TChunks>& t_slp_sets,
                Config& t_config,
                uint32_t t_block_size,
                float t_storing_factor) {
-  using namespace conf;
-  const auto key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
-  auto key_docs = key_prefix + t_config.keys[kGCDA][kDocs].get<std::string>();
-
-  grammar::Chunks<> slp_sets;
-  sdsl::load_from_cache(slp_sets, key_docs, t_config, true);
-
+  const auto slp_sets = LoadRawNodeDocLists(t_config, t_block_size, t_storing_factor);
   const auto& objs = slp_sets.GetObjects();
   grammar::RePairEncoder<false> encoder_nslp;
   t_slp_sets.Compute(objs.begin(), objs.end(), slp_sets, encoder_nslp);
-  sdsl::store_to_cache(t_slp_sets, key_docs, t_config, true);
+  sdsl::store_to_cache(t_slp_sets, NodeDocListsKey<std::decay_t<decltype(t_slp_sets)>>(t_config.keys,
+                                                                                        {t_block_size, t_storing_factor}),
+                       t_config, true);
 }
 
 //~~~~~~~
@@ -632,9 +556,8 @@ void construct(grammar::GCChunks<TSLP, kExpand, grammar::Chunks<sdsl::int_vector
                Config& t_config,
                uint32_t t_block_size,
                float t_storing_factor) {
-  using namespace conf;
-  const auto key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
-  auto key_docs = key_prefix + t_config.keys[kGCDA][kDocs].get<std::string>();
+  const auto key_docs = NodeDocListsKey<std::decay_t<decltype(t_slp_sets)>>(t_config.keys,
+                                                                            {t_block_size, t_storing_factor});
 
   grammar::GCChunks<grammar::SLP<>> slp_sets;
   if (!sdsl::cache_file_exists<decltype(slp_sets)>(key_docs, t_config)) {
@@ -655,24 +578,20 @@ void construct(grammar::GCChunks<TSLP, kExpand, grammar::Chunks<sdsl::int_vector
 //~~~~~~~
 
 
-// The plain lists are cached as a side effect of building the sampled tree
-// (cslp_docs, next to the grammar); bit-pack them as the plain sets. GCDA's
-// construct reaches this only when the bit-packed copy is missing too.
+// Plain (bit-packed, not grammar-compressed) document lists: the sorted lists
+// themselves, one chunk per sampled node, as PDL's plain codec stores them.
+// Cached as a side effect of building the sampled tree; GCDA's construct
+// reaches this only when the bit-packed copy is missing.
 inline void construct(grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>& t_sets,
                       Config& t_config,
                       uint32_t t_block_size,
                       float t_storing_factor) {
-  using namespace conf;
-  const auto key_prefix = std::format("{}-{}_", t_block_size, t_storing_factor);
-  const auto key_docs = key_prefix + t_config.keys[kGCDA][kDocs].get<std::string>();
-
-  grammar::Chunks<> sets;
-  if (!sdsl::load_from_cache(sets, key_docs, t_config, true))
-    throw std::runtime_error("GCDA plain sets: no cached document sets under " + key_docs +
-                             "; build the sampled tree for this (block size, storing factor) first");
+  const auto sets = LoadRawNodeDocLists(t_config, t_block_size, t_storing_factor);
   auto bit_compress = [](sdsl::int_vector<>& v) { sdsl::util::bit_compress(v); };
   t_sets = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>(sets, bit_compress, bit_compress);
-  sdsl::store_to_cache(t_sets, key_docs, t_config, true);
+  sdsl::store_to_cache(t_sets, NodeDocListsKey<grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>(
+                                   t_config.keys, {t_block_size, t_storing_factor}),
+                       t_config, true);
 }
 
 //~~~~~~~

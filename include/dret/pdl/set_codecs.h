@@ -145,7 +145,7 @@ template <typename TObjContainer = sdsl::int_vector<>,
           typename TPosContainer = sdsl::int_vector<>>
 class PlainCodec {
  public:
-  static constexpr std::string_view kVariantKey = conf::kPlain;
+  static constexpr std::string_view kListsKey = conf::kPdlDocListsPlain;
 
   // Expand emits doc ids in ascending order, so PDLTreeCore::getDocSet can
   // hand the result straight to std::set_union in the merge functor.
@@ -251,7 +251,7 @@ class RPCodec {
   friend class RPCodec;
 
  public:
-  static constexpr std::string_view kVariantKey = conf::kRP;
+  static constexpr std::string_view kListsKey = conf::kPdlDocListsRP;
 
   // Expand emits doc ids in ascending order, so PDLTreeCore::getDocSet can
   // hand the result straight to std::set_union in the merge functor.
@@ -377,7 +377,7 @@ template <typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>>
 class BCCodec {
  public:
-  static constexpr std::string_view kVariantKey = conf::kBC;
+  static constexpr std::string_view kListsKey = conf::kPdlDocListsBC;
 
   static constexpr bool kExpandsSorted = false;
 

@@ -46,6 +46,7 @@
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/index_base.h"
 #include "dret/slp/differential_slp.h"
+#include "dret/slp/slp_components.h"
 
 namespace dret {
 
@@ -54,26 +55,10 @@ template <typename TVarsContainer, typename TLengthsContainer>
 void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
                Config& t_config, const std::string& t_datafile);
 
-// Fixed differential-reconstruction sample granularity for the non-sampled
-// differential SLP (bare-diff). Differential decode needs *some* anchors, so
-// this is an internal constant — not an exposed bs/sf axis.
+// Default sample spacing of the non-sampled differential SLP (bare-diff), the
+// one GCDA-nolists has always used. Differential decode needs *some* anchors;
+// the spacing is the only knob of that index.
 inline constexpr std::uint32_t kDiffBlockSize = 512;
-
-// Cache key of a bare differential grammar sampled every t_block_size positions.
-// At kDiffBlockSize it is the plain kDSLPNS key, so that spacing keeps the file
-// GCDA-nolists has always used, and a get-doc backend at that spacing
-// (rmq::GetDocSLP_NS) reuses it; any other spacing gets the prefix
-// conf::kSpacing of the common keys.
-inline std::string DiffNoTreeCacheKey(const JSON& t_keys, uint32_t t_block_size) {
-  const auto key = t_keys[conf::kDSLPNS].get<std::string>();
-  return t_block_size == kDiffBlockSize ? key : PrefixedKey(t_keys, conf::kSpacing, key, t_block_size);
-}
-
-// Cache key of the RePair base grammar of a bare differential SLP. It does not
-// depend on the spacing, so one file serves every spacing.
-inline std::string DiffNoTreeGrammarKey(const JSON& t_keys) {
-  return t_keys[conf::kDSLPNSGrammar].get<std::string>();
-}
 
 //~~~~~~~  SLP-NS range expansion, dispatched by SLP type  ~~~~~~~
 
@@ -102,40 +87,37 @@ void SlpNsExpandRange(const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, T
 template <typename TSLP>
 struct SlpNsTraits;  // primary left undefined — only the two SLP kinds below
 
-// Plain bare grammar::SLP — RePair build under kSLPNS (unchanged behaviour). It
-// has no sampling, so it ignores the spacing.
+// Plain bare grammar::SLP: the CNF grammar of the DA alone, the component the
+// on-demand GCDA representation also stores. It has no sampling, so it ignores
+// the spacing.
 template <typename TVarsContainer, typename TLengthsContainer>
 struct SlpNsTraits<grammar::SLP<TVarsContainer, TLengthsContainer>> {
   using TSLP = grammar::SLP<TVarsContainer, TLengthsContainer>;
-  static std::string key(const JSON& t_keys, uint32_t /*t_spacing*/) {
-    return t_keys[conf::kSLPNS].get<std::string>();
+  static std::vector<Component> components(const JSON& t_keys, uint32_t /*t_spacing*/) {
+    return CacheComponents(TSLP{}, t_keys);
   }
-  static void build(Config& t_config, uint32_t /*t_spacing*/) {
-    const auto key = t_config.keys[conf::kSLPNS].get<std::string>();
-    if (sdsl::cache_file_exists<TSLP>(key, t_config)) return;
-    auto event = sdsl::memory_monitor::event(key);
-    auto da = sdsl::cache_file_name<std::vector<int>>(
-        t_config.keys[conf::kDA].get<std::string>(), t_config);
+  static void build(Config& t_config, uint32_t t_spacing) {
+    if (ComponentsExist(components(t_config.keys, t_spacing), t_config)) return;
+    auto da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[conf::kDA].get<std::string>(), t_config);
     TSLP slp;
     construct(slp, t_config, da);
   }
 };
 
-// Bare-diff — base DifferentialSLP sampled every t_spacing positions, under
-// DiffNoTreeCacheKey; every spacing shares one RePair base grammar.
+// Bare-diff — base DifferentialSLP sampled every t_spacing positions; every
+// spacing shares the grammar, roots and span sums, and stores its own samples.
 template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples,
           typename TSampleRootsPos, typename TBV>
 struct SlpNsTraits<DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>> {
   using TDiff = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
-  static std::string key(const JSON& t_keys, uint32_t t_spacing) {
-    return DiffNoTreeCacheKey(t_keys, t_spacing);
+  static std::vector<Component> components(const JSON& t_keys, uint32_t t_spacing) {
+    return CacheComponents(TDiff{}, t_keys, t_spacing);
   }
   static void build(Config& t_config, uint32_t t_spacing) {
-    const auto key = DiffNoTreeCacheKey(t_config.keys, t_spacing);
-    if (sdsl::cache_file_exists<TDiff>(key, t_config)) return;
-    auto event = sdsl::memory_monitor::event(key);
+    if (ComponentsExist(components(t_config.keys, t_spacing), t_config)) return;
+    auto event = sdsl::memory_monitor::event(components(t_config.keys, t_spacing).back().key);
     TDiff dslp;
-    construct(dslp, t_config, t_spacing, key, DiffNoTreeGrammarKey(t_config.keys));
+    construct(dslp, t_config, t_spacing);
   }
 };
 
@@ -199,7 +181,7 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
     std::visit([this](auto&& tt_source) { count_idx_.load(tt_source.get()); }, t_source);
 
-    slp_ = this->template loadItemPtr<TSLP>(SlpNsTraits<TSLP>::key(t_keys, spacing_), t_source, true);
+    slp_ = this->template loadComponentsPtr<TSLP>(SlpNsTraits<TSLP>::components(t_keys, spacing_), t_source);
   }
 
   TCountIdx count_idx_;
@@ -210,10 +192,8 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
 //~~~~~~~
 
 
-// Build a bare grammar SLP from a DA file via RePair. Mirrors the RePair
-// step in `construct(grammar::CombinedSLP&, ...)` but without the sampled-
-// tree wrapper. Stores under `t_keys[kSLPNS]` (type-hashed, so distinct
-// from any GCDA-side SLP cache file).
+// The CNF grammar of the DA in the containers of TSLP, converted from the
+// collection's da_cnf_grammar (built from irepair's output if missing).
 template <typename TVarsContainer, typename TLengthsContainer>
 void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
                Config& t_config,
@@ -222,8 +202,7 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
 
 // Top-level construct for the non-sampled SLP index. Same boilerplate as
 // `construct(DocListIdxGCDA&, Config&)` for kText/kSA/kDocEnds/kDA, but
-// builds a bare SLP under kSLPNS instead of the GCDA-sampled SLP under
-// kGCDA::kSLP.
+// builds the grammar alone instead of the sampled tree.
 template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TSLP>
 void construct(DocListIdxSLP<TStorage, TAlphabet, TCountIdx, TSLP>& t_index, Config& t_config) {
   using namespace conf;
@@ -251,8 +230,8 @@ void construct(DocListIdxSLP<TStorage, TAlphabet, TCountIdx, TSLP>& t_index, Con
     ConstructDocArray(t_config);
   }
 
-  // Build the SLP cache — plain bare grammar::SLP under kSLPNS, or the base
-  // differential SLP (bare-diff) under kDSLPNS — dispatched by TSLP.
+  // Build the grammar's components — the plain CNF grammar, or the base
+  // differential SLP (bare-diff) — dispatched by TSLP.
   SlpNsTraits<TSLP>::build(t_config, t_index.spacing());
 
   auto count_idx = t_index.count_idx();
@@ -270,22 +249,6 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
                const std::string& t_datafile) {
   using namespace conf;
 
-  // Run RePair on the DA file (only if the .R/.C outputs aren't already
-  // present from an earlier sibling build — the file pair is shared
-  // across all SLP-using variants and is independent of TSLP container types).
-  if (!std::filesystem::exists(t_datafile + ".R") && repair::kAvailable) {
-    const auto filename = std::filesystem::path(t_datafile).filename().string();
-    auto event = sdsl::memory_monitor::event("RePair-" + filename);
-    RunRePair(t_datafile, t_config.repair);
-    t_config.file_map[filename + ".R"] = t_datafile + ".R";
-    t_config.file_map[filename + ".C"] = t_datafile + ".C";
-  }
-  CheckRePairGrammar(t_datafile);
-
-  auto key_slp = t_config.keys[kSLPNS].get<std::string>();
-  auto event = sdsl::memory_monitor::event(
-      sdsl::cache_file_name<grammar::SLP<TVarsContainer, TLengthsContainer>>(key_slp, t_config));
-
   // Build into a default-typed SLP first (push_back-friendly std::vector<uint32_t>
   // containers), then convert via the SLP template copy constructor — sdsl::dac_vector
   // and sdsl::vlc_vector have no push_back, so RePairReader cannot fill them
@@ -295,12 +258,7 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
   // resize-and-std::copy branch (which leaves the default 64-bit width). Pass a
   // bit-compress action so int_vector targets get tight per-element width; the
   // action no-ops on dac_vector / vlc_vector via `if constexpr` detection.
-  grammar::SLP<> tmp_slp;
-  {
-    grammar::RePairReader<true> re_pair_reader;
-    auto slp_wrapper = grammar::BuildSLPWrapper(tmp_slp);
-    re_pair_reader.Read(t_datafile, slp_wrapper);
-  }
+  const auto tmp_slp = LoadOrBuildDaCnfGrammar(t_config, t_datafile);
   auto bc = []<typename TVec>(TVec& v) {
     // Probe for bit_resize/width members directly — `requires { bit_compress(vv); }`
     // would unhelpfully pass for any T (since bit_compress is an unconstrained
@@ -315,7 +273,7 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
   };
   t_slp = grammar::SLP<TVarsContainer, TLengthsContainer>(tmp_slp, bc, bc);
 
-  sdsl::store_to_cache(t_slp, key_slp, t_config, true);
+  StoreComponents(t_slp, CacheComponents(t_slp, t_config.keys), t_config);
 }
 
 }  // namespace dret

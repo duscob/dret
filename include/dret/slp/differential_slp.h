@@ -4,6 +4,11 @@
 
 #pragma once
 
+#include <filesystem>
+#include <fstream>
+#include <tuple>
+#include <vector>
+
 #include <sdsl/bit_vectors.hpp>
 #include <sdsl/enc_vector.hpp>
 #include <sdsl/int_vector.hpp>
@@ -17,6 +22,7 @@
 #include <grammar/utility.h>
 
 #include "dret/slp/basic_slp_span_length.h"
+#include "dret/cache_components.h"
 #include "dret/config.h"
 #include "dret/size_report.h"
 
@@ -31,6 +37,7 @@ template <typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>,
 class DifferentialSLP : public TSLP {
  public:
   using size_type = std::size_t;
+  using BaseSLP = TSLP;
 
   DifferentialSLP() = default;
 
@@ -127,9 +134,26 @@ class DifferentialSLP : public TSLP {
   void RestoreBaseGrammar(const TSLP& base, std::size_t seq_size, uint64_t diff_base_seq);
   void FinishCompute(uint32_t block_size, const std::vector<std::size_t>& compact_seq);
 
+  // Serialized in component order (see DiffSLPComponents in slp_components.h):
+  // the grammar with its scalars, the roots, the span sums, and last the samples,
+  // the only part that depends on the spacing.
   std::size_t serialize(std::ostream& out, sdsl::structure_tree_node* v = nullptr, const std::string& name = "") const;
 
   void load(std::istream& in);
+
+  // The format cached before 2026-10, with the scalars after the samples. Read
+  // only by the cache migration tool.
+  void loadPre202610(std::istream& in);
+
+  // Read only the grammar component: the base grammar and its scalars. A build
+  // for a new spacing restarts from it instead of re-running RePair.
+  void loadGrammarComponent(std::istream& in);
+
+  // Bytes of the grammar component (the base grammar and its scalars).
+  std::size_t GrammarComponentSize() const {
+    return sdsl::size_in_bytes(static_cast<const TSLP&>(*this)) + sizeof(seq_size_) + sizeof(diff_base_seq_) +
+           sizeof(diff_base_sums_);
+  }
 
  private:
   TRoots roots_;
@@ -275,15 +299,15 @@ std::size_t DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, 
     const std::string& name) const {
   std::size_t written = 0;
   written += TSLP::serialize(out);
+  written += sdsl::serialize(seq_size_, out);
+  written += sdsl::serialize(diff_base_seq_, out);
+  written += sdsl::serialize(diff_base_sums_, out);
   written += sdsl::serialize(roots_, out);
   written += sdsl::serialize(span_sums_, out);
   written += sdsl::serialize(samples_, out);
   written += sdsl::serialize(sample_roots_pos_, out);
   written += samples_pos_.serialize(out);
   // samples_pos_rank_ and samples_pos_select_ not serialized — rebuilt in load()
-  written += sdsl::serialize(seq_size_, out);
-  written += sdsl::serialize(diff_base_seq_, out);
-  written += sdsl::serialize(diff_base_sums_, out);
   return written;
 }
 
@@ -292,6 +316,26 @@ std::size_t DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, 
 
 template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
 void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::load(std::istream& in) {
+  loadGrammarComponent(in);
+  sdsl::load(roots_, in);
+  sdsl::load(span_sums_, in);
+  sdsl::load(samples_, in);
+  sdsl::load(sample_roots_pos_, in);
+  samples_pos_.load(in);
+  samples_pos_rank_ = typename TBV::rank_1_type(&samples_pos_);
+  samples_pos_select_ = typename TBV::select_1_type(&samples_pos_);
+}
+
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
+void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::loadGrammarComponent(std::istream& in) {
+  TSLP::load(in);
+  sdsl::load(seq_size_, in);
+  sdsl::load(diff_base_seq_, in);
+  sdsl::load(diff_base_sums_, in);
+}
+
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
+void DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>::loadPre202610(std::istream& in) {
   TSLP::load(in);
   sdsl::load(roots_, in);
   sdsl::load(span_sums_, in);
@@ -444,90 +488,89 @@ void ExpandSLPUntil(const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSa
 //~~~~~~~
 
 
-// On-disk cache of the bs-independent diff base grammar (TSLP base + the top-level
-// compact sequence + the two diff scalars). Keyed by DiffGrammarCache<TSLP>'s type
-// hash, so all (bs,sf) cells of a variant — and all container variants sharing the
-// same TSLP — reuse one RePair pass.
-template <typename TSLP>
-struct DiffGrammarCache {
-  using size_type = std::size_t;  // required by sdsl serialize/store_to_cache
+// Cache components of a differential SLP sampled every t_spacing positions, in
+// the order it serializes them. Only the samples depend on the spacing; the
+// grammar (with its scalars), the roots and the span sums are shared by every
+// spacing, by GCDA-differential and by the RMQ/PDL differential backends.
+template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
+std::vector<Component> CacheComponents(
+    const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& t_dslp,
+    const JSON& t_keys,
+    uint32_t t_spacing) {
+  using namespace conf;
+  const auto grammar = t_dslp.GrammarComponentSize();
+  const auto roots = SerializedSize(t_dslp.GetRoots());
+  const auto sums = SerializedSize(t_dslp.GetSpanSums());
+  return {
+      {t_keys[kDaDiffGrammar].get<std::string>(), TypeHash<TSLP>(), grammar},
+      {t_keys[kDaDiffRoots].get<std::string>(), TypeHash<TRoots>(), roots},
+      {t_keys[kDaDiffSpanSums].get<std::string>(), TypeHash<TSpanSums>(), sums},
+      {PrefixedKey(t_keys, kSpc, t_keys[kDaDiffSamples].get<std::string>(), t_spacing),
+       TypeHash<std::tuple<TSamples, TSampleRootsPos, TBV>>(), SerializedSize(t_dslp) - grammar - roots - sums},
+  };
+}
 
-  TSLP base;
-  sdsl::int_vector<> compact_seq;
-  uint64_t seq_size = 0;
-  uint64_t diff_base_seq = 0;
+// The roots as a bit-compressed int_vector: the top-level sequence a build for a
+// new spacing restarts from. It is the roots component of the int_vector
+// variants, and the other container variants store it too.
+inline Component DiffRootsSeqComponent(const JSON& t_keys) {
+  return {t_keys[conf::kDaDiffRoots].get<std::string>(), TypeHash<sdsl::int_vector<>>()};
+}
 
-  std::size_t serialize(std::ostream& out, sdsl::structure_tree_node* v = nullptr,
-                        const std::string& name = "") const {
-    auto* child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    std::size_t b = 0;
-    b += base.serialize(out, child, "base");
-    b += compact_seq.serialize(out, child, "compact_seq");
-    b += sdsl::write_member(seq_size, out, child, "seq_size");
-    b += sdsl::write_member(diff_base_seq, out, child, "diff_base_seq");
-    sdsl::structure_tree::add_size(child, b);
-    return b;
+// Install the spacing-independent part of a differential SLP into `work`: from
+// the cached grammar component and roots sequence if present, else by RePair.
+// Returns the top-level sequence FinishCompute needs.
+template <typename TDiff>
+std::vector<std::size_t> LoadOrBuildDiffGrammar(TDiff& work, const sdsl::int_vector<>& da, Config& t_config) {
+  using TSLP = typename TDiff::BaseSLP;
+  const Component grammar{t_config.keys[conf::kDaDiffGrammar].get<std::string>(), TypeHash<TSLP>()};
+  const auto roots = DiffRootsSeqComponent(t_config.keys);
+  if (ComponentsExist({grammar, roots}, t_config)) {
+    std::ifstream in(ComponentFile(grammar, t_config), std::ios::binary);
+    work.loadGrammarComponent(in);
+    sdsl::int_vector<> seq;
+    sdsl::load_from_file(seq, ComponentFile(roots, t_config));
+    return {seq.begin(), seq.end()};
   }
-  void load(std::istream& in) {
-    base.load(in);
-    compact_seq.load(in);
-    sdsl::read_member(seq_size, in);
-    sdsl::read_member(diff_base_seq, in);
-  }
-};
+  return work.BuildBaseGrammar(da);
+}
 
-// Install the diff base grammar into `work` (a DifferentialSLP/DifferentialLightSLP),
-// loading the cached RePair grammar if present (bs-independent), else building +
-// caching it. Returns the top-level compact sequence needed by FinishCompute.
-template <typename TSLP, typename TDiff>
-std::vector<std::size_t> LoadOrBuildDiffGrammar(TDiff& work, const sdsl::int_vector<>& da,
-                                                Config& t_config, const std::string& grammar_key) {
-  DiffGrammarCache<TSLP> gc;
-  if (sdsl::cache_file_exists<DiffGrammarCache<TSLP>>(grammar_key, t_config)) {
-    sdsl::load_from_cache(gc, grammar_key, t_config, true);
-    work.RestoreBaseGrammar(gc.base, gc.seq_size, gc.diff_base_seq);
-    return std::vector<std::size_t>(gc.compact_seq.begin(), gc.compact_seq.end());
-  }
-  auto compact_seq = work.BuildBaseGrammar(da);
-  gc.base = static_cast<const TSLP&>(work);
-  gc.compact_seq = sdsl::int_vector<>(compact_seq.size(), 0, 64);
-  for (std::size_t i = 0; i < compact_seq.size(); ++i)
-    gc.compact_seq[i] = compact_seq[i];
-  sdsl::util::bit_compress(gc.compact_seq);
-  gc.seq_size = work.SeqSize();
-  gc.diff_base_seq = work.DiffBaseSeq();
-  sdsl::store_to_cache(gc, grammar_key, t_config, true);
-  return compact_seq;
+// Store the roots sequence (see DiffRootsSeqComponent) unless present. Built
+// the way FinishCompute fills an int_vector container, so it is byte-identical
+// to the roots component of the int_vector variants.
+inline void StoreDiffRootsSeq(const std::vector<std::size_t>& t_seq, const Config& t_config) {
+  const auto roots = DiffRootsSeqComponent(t_config.keys);
+  if (std::filesystem::exists(ComponentFile(roots, t_config))) return;
+  sdsl::int_vector<> seq(t_seq.size(), 0, 64);
+  for (std::size_t i = 0; i < t_seq.size(); ++i) seq[i] = t_seq[i];
+  sdsl::util::bit_compress(seq);
+  StoreComponents(seq, {{roots.key, roots.type, SerializedSize(seq)}}, t_config);
 }
 
 template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples, typename TSampleRootsPos, typename TBV>
 void construct(DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& t_dslp,
                Config& t_config,
-               uint32_t block_size,
-               const std::string& cache_key,
-               const std::string& grammar_key) {
+               uint32_t t_spacing) {
   using namespace conf;
   using DSLP = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
 
   sdsl::int_vector<> da;
   sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-  // Load-or-build the bs-independent RePair grammar (shared across container
-  // variants), then finish the bs-dependent sampling. Convert into t_dslp to
+  // Restart from the cached grammar when there is one (RePair takes hours on
+  // some document arrays), then sample at this spacing. Convert into t_dslp to
   // bit-compress the base (per-field containers are already compressed).
-  // grammar_key names the cached base grammar (a key of the common JSON). It
-  // must not carry the spacing, or every spacing would re-run RePair -- hours
-  // on some document arrays.
   DSLP tmp;
-  auto compact_seq = LoadOrBuildDiffGrammar<TSLP>(tmp, da, t_config, grammar_key);
-  tmp.FinishCompute(block_size, compact_seq);
+  auto compact_seq = LoadOrBuildDiffGrammar(tmp, da, t_config);
+  tmp.FinishCompute(t_spacing, compact_seq);
   auto bit_compress = [](auto& v) {
     if constexpr (std::is_same_v<std::decay_t<decltype(v)>, sdsl::int_vector<>>)
       sdsl::util::bit_compress(v);
   };
   t_dslp = DSLP(tmp, bit_compress, bit_compress);
 
-  sdsl::store_to_cache(t_dslp, cache_key, t_config, true);
+  StoreComponents(t_dslp, CacheComponents(t_dslp, t_config.keys, t_spacing), t_config);
+  StoreDiffRootsSeq(compact_seq, t_config);
 }
 
 }  // namespace dret

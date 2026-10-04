@@ -21,6 +21,7 @@
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/slp/differential_slp.h"
+#include "dret/slp/slp_components.h"
 
 namespace dret {
 
@@ -104,6 +105,12 @@ class DifferentialLightSLP : public DifferentialSLP<TSLP, TRoots, TSpanSums, TSa
     TSampledSLP::load(in);
   }
 
+  // The format cached before 2026-10; see DifferentialSLP::loadPre202610.
+  void loadPre202610(std::istream& in) {
+    DiffBase::loadPre202610(in);
+    TSampledSLP::load(in);
+  }
+
  private:
   void buildSampledSLP(const sdsl::int_vector<>& da,
                        uint32_t block_size,
@@ -128,31 +135,6 @@ inline grammar::SLP<> BuildDiffCnfSlp(const sdsl::int_vector<>& da) {
   grammar::RePairEncoder<true> encoder;
   auto wrapper = grammar::BuildSLPWrapper(slp_cnf);
   encoder.Encode(da_vec.begin(), da_vec.end(), wrapper);
-  return slp_cnf;
-}
-
-// Same result, built from the external irepair grammar that doc_list_gcda.h
-// already produces for this very DA, instead of re-running RePair in-process.
-//
-// The in-process grammar::RePairBasicEncoder degrades pathologically on some
-// document arrays -- on concat_1000_001 it ran >45 h without finishing, with
-// 80% of samples in grammar::searchHash (hash saturation). The external
-// irepair compressed the same DA in 479 s. RePairReader<true> and
-// RePairEncoder<true> share the BalanceTreeByWeight completion handler
-// verbatim, so the CNF shape is unchanged. See docs/bug_dgcda_repair_hang.md.
-//
-// t_da_file must be the same path doc_list_gcda.h passes to irepair, i.e.
-// sdsl::cache_file_name<std::vector<int>>(config.keys[kDA], config).
-inline grammar::SLP<> BuildDiffCnfSlpFromRePairFiles(const std::string& t_da_file,
-                                                    const repair::Options& t_repair = {}) {
-  if (!std::filesystem::exists(t_da_file + ".R") && repair::kAvailable) {
-    RunRePair(t_da_file, t_repair);
-  }
-  CheckRePairGrammar(t_da_file);
-  grammar::SLP<> slp_cnf;
-  grammar::RePairReader<true> re_pair_reader;
-  auto wrapper = grammar::BuildSLPWrapper(slp_cnf);
-  re_pair_reader.Read(t_da_file, wrapper);
   return slp_cnf;
 }
 
@@ -256,6 +238,30 @@ void ExpandSLPUntil(
 //~~~~~~~
 
 
+// Cache components of GCDA-differential: the differential SLP sampled every
+// block-size positions, then the sampled tree of the (block size, storing
+// factor) cell, the same file every GCDA representation of the cell reads.
+template <typename TSLP,
+          typename TSampledSLP,
+          typename TRoots,
+          typename TSpanSums,
+          typename TSamples,
+          typename TSampleRootsPos,
+          typename TBV>
+std::vector<Component> CacheComponents(
+    const DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>& t_dslp,
+    const JSON& t_keys,
+    const SampledTreeCell& t_cell) {
+  using DiffBase = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
+  auto components = CacheComponents(static_cast<const DiffBase&>(t_dslp), t_keys, t_cell.block_size);
+  components.push_back({CellKey(t_keys, conf::kDaSampledTree, t_cell), TypeHash<TSampledSLP>(),
+                        SerializedSize(static_cast<const TSampledSLP&>(t_dslp))});
+  return components;
+}
+
+//~~~~~~~
+
+
 template <typename TSLP,
           typename TSampledSLP,
           typename TRoots,
@@ -273,28 +279,18 @@ void construct(DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSampl
   sdsl::int_vector<> da;
   sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-  // Both RePair passes are bs/sf-independent, so cache them once per collection and
-  // reuse across all DGCDA cells:
-  //  (1) the diff base grammar (shared by container variants with the same TSLP), and
-  //  (2) the sampled-tree CNF SLP (a plain grammar::SLP<>, shared by all variants).
-  const std::string slp_name = t_config.keys[kDGCDA][kSLP].get<std::string>();
-  const std::string key_cnf = slp_name + "_cnf";
-  grammar::SLP<> cnf;
-  if (sdsl::cache_file_exists<grammar::SLP<>>(key_cnf, t_config)) {
-    sdsl::load_from_cache(cnf, key_cnf, t_config, true);
-  } else {
-    const auto filepath_da =
-        sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
-    cnf = BuildDiffCnfSlpFromRePairFiles(filepath_da, t_config.repair);
-    sdsl::store_to_cache(cnf, key_cnf, t_config, true);
-  }
+  // The sampled tree is built over the CNF grammar of the raw DA, shared with
+  // every GCDA representation; the differential grammar restarts from its
+  // cached components. Both RePair passes are bs/sf-independent.
+  const auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
+  const auto cnf = LoadOrBuildDaCnfGrammar(t_config, filepath_da);
 
   grammar::Chunks<> cslp_docs;
   // Load-or-build the diff base grammar (skips RePair on cache hit), finish the
   // bs-dependent sampling, build the sampled tree from the cached CNF, then convert
   // into t_dslp to bit-compress the base.
   DLSLP tmp;
-  auto compact_seq = LoadOrBuildDiffGrammar<TSLP>(tmp, da, t_config, slp_name + "_grammar");
+  auto compact_seq = LoadOrBuildDiffGrammar(tmp, da, t_config);
   tmp.FinishCompute(block_size, compact_seq);
   tmp.BuildSampled(da, block_size, storing_factor, cslp_docs, &cnf);
   auto bit_compress = [](auto& v) {
@@ -303,15 +299,17 @@ void construct(DifferentialLightSLP<TSLP, TSampledSLP, TRoots, TSpanSums, TSampl
   };
   t_dslp = DLSLP(tmp, bit_compress, bit_compress);
 
-  const std::string key_prefix = std::format("{}-{}_", block_size, storing_factor);
-  const std::string key_docs = key_prefix + t_config.keys[kDGCDA][kDocs].get<std::string>();
-
+  // The document lists of the sampled nodes, the ones every GCDA representation
+  // of this cell stores: the raw lists, from which the codecs are built, and the
+  // bit-packed plain codec.
+  const SampledTreeCell cell{block_size, storing_factor};
+  const auto key_docs = CellKey(t_config.keys, kDaNodeDocListsPlain, cell);
   sdsl::store_to_cache(cslp_docs, key_docs, t_config, true);
   grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> cslp_docs_c(cslp_docs, bit_compress, bit_compress);
   sdsl::store_to_cache(cslp_docs_c, key_docs, t_config, true);
 
-  const std::string key_slp = key_prefix + t_config.keys[kDGCDA][kSLP].get<std::string>();
-  sdsl::store_to_cache(t_dslp, key_slp, t_config, true);
+  StoreComponents(t_dslp, CacheComponents(t_dslp, t_config.keys, cell), t_config);
+  StoreDiffRootsSeq(compact_seq, t_config);
 }
 
 }  // namespace dret

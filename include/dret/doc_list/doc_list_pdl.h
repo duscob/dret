@@ -9,11 +9,8 @@
 // The three PlainCodec / RPCodec / BCCodec variants are exposed as alias
 // templates DocListIdxPDLPlain / DocListIdxPDLRP / DocListIdxPDLBC that lock
 // in the codec while leaving the remaining seven template parameters defaulted.
-// Each codec exposes a static constexpr std::string_view kVariantKey used by
-// both cache-key sites in loadInner() / construct() to interpolate the
-// per-variant string fragment ("plain" / "rp" / "bc"). Values match the
-// existing conf::kPlain / kRP / kBC string constants so on-disk cache
-// compatibility is preserved.
+// Each codec names its lists component through a static constexpr kListsKey;
+// the core is cached as components (see CacheComponents in pdl/tree_core.h).
 //
 // Search() is inherited from DLSampledTreeScheme — the index just overrides
 // the four virtual hooks: count, computeCover[Full], getDocs, getDocSet.
@@ -204,12 +201,8 @@ class DocListIdxPDL
         },
         t_source);
 
-    auto key_prefix = std::format("{}-{}_pdl_{}_{}_", block_size_, storing_factor_,
-                                  TStoredSetCodec::kVariantKey,
-                                  static_cast<int>(policy_));
-    auto key_core =
-        key_prefix + t_keys[kPDL][TStoredSetCodec::kVariantKey][kSets].template get<std::string>();
-    core_ = this->template loadItemPtr<TCore>(key_core, t_source, true);
+    core_ = this->template loadComponentsPtr<TCore>(
+        CacheComponents(TCore{}, t_keys, block_size_, storing_factor_, policy_), t_source);
   }
 
   TCountIdx count_idx_;
@@ -300,33 +293,14 @@ void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
     sdsl::construct_lcp_kasai<t_width>(t_config);
   }
 
-  // PDLTreeCore (tree + selected-node codec) under a key that bakes in
-  // block_size, storing_factor, codec variant, and policy; loadItemPtr's
-  // type-hash adds a further axis for the bitvector / codec template params.
-  const auto key_prefix = std::format("{}-{}_pdl_{}_{}_",
-                                      t_index.block_size(),
-                                      t_index.storing_factor(),
-                                      TStoredSetCodec::kVariantKey,
-                                      static_cast<int>(t_index.policy()));
-  const auto key_core =
-      key_prefix + t_config.keys[kPDL][TStoredSetCodec::kVariantKey][kSets].template get<std::string>();
+  // PDLTreeCore as components: the tree under the block size, the selected
+  // nodes and their lists under the block size, the policy and, for a policy
+  // that reads it, the storing factor.
+  const auto components =
+      CacheComponents(TCore{}, t_config.keys, t_index.block_size(), t_index.storing_factor(), t_index.policy());
 
-  // A Re-Pair core cached before 2026-10 stored its lists with RPCodecWithLengths
-  // (a per-rule length array the lists never read). The tree and the lists are
-  // the same, so convert such a core instead of rebuilding the tree.
-  if constexpr (std::is_same_v<TStoredSetCodec, RPCodec<>>) {
-    using TLegacyCore = typename WithCodec<TCore, RPCodecWithLengths>::type;
-    if (!sdsl::cache_file_exists<TCore>(key_core, t_config) &&
-        sdsl::cache_file_exists<TLegacyCore>(key_core, t_config)) {
-      auto event = sdsl::memory_monitor::event(key_core + "-from-legacy-rp");
-      TLegacyCore legacy;
-      sdsl::load_from_cache(legacy, key_core, t_config, true);
-      sdsl::store_to_cache(TCore(legacy), key_core, t_config, true);
-    }
-  }
-
-  if (!sdsl::cache_file_exists<TCore>(key_core, t_config)) {
-    auto event = sdsl::memory_monitor::event(key_core);
+  if (!ComponentsExist(components, t_config)) {
+    auto event = sdsl::memory_monitor::event(components.back().key);
     sdsl::int_vector<> da;
     sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
     sdsl::int_vector<> lcp;
@@ -359,7 +333,9 @@ void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
     BuildPDLTreeCoreFromBuilder(core, root, n_nodes, n_doc,
                                 t_index.block_size(), t_index.storing_factor(),
                                 t_index.policy());
-    sdsl::store_to_cache(core, key_core, t_config, true);
+    StoreComponents(core, CacheComponents(core, t_config.keys, t_index.block_size(), t_index.storing_factor(),
+                                          t_index.policy()),
+                    t_config);
   }
 
   // Raw get-doc backing cache. DA-backed is a no-op (DA was built above);
