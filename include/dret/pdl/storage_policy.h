@@ -23,13 +23,19 @@ enum class StoragePolicy : uint8_t {
   // stored; internal nodes kept in the tree for navigation but not
   // contributing a stored set.
   LeavesOnly = 2,
+  // The rule of Gagie et al.'s PDL (drl/src/pdltree.cpp, with storeThisSet):
+  // a node is stored if childless, has the all-doc sentinel, or the lists a
+  // query would read instead -- those of its nearest stored descendants --
+  // total more than storing_factor * |its distinct docs|. OccurrenceWeighted
+  // counts occurrences instead of those lists, so it stores more nodes.
+  ListWeighted = 3,
 };
 
 // Whether a policy's selection reads the storing factor. Only the
 // occurrence-weighted rule does; a core built under another policy is the same
 // index for every storing factor, and is cached and reported once.
 constexpr bool PolicyReadsStoringFactor(StoragePolicy t_policy) {
-  return t_policy == StoragePolicy::OccurrenceWeighted;
+  return t_policy == StoragePolicy::OccurrenceWeighted || t_policy == StoragePolicy::ListWeighted;
 }
 
 }  // namespace dret::pdl

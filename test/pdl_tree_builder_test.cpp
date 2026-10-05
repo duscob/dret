@@ -514,6 +514,42 @@ TEST(PDLTreeBuilder, ApplyStoragePolicyOccurrenceWeightedExcludesUnderweightInte
   EXPECT_FALSE(e->selected);
 }
 
+// The original rule weighs a node by the lists a query would read instead of
+// it, never more than its occurrences: at every storing factor it selects a
+// subset of what the occurrence rule selects, and always every childless node.
+TEST(PDLTreeBuilder, ApplyStoragePolicyListWeightedIsWithinOccurrenceWeighted) {
+  for (float sf : {0.5f, 1.0f, 1.5f, 2.0f, 4.0f, 1e9f}) {
+    BuilderPool pool_o, pool_l;
+    auto* occ = BuildPolicyFixture(pool_o);
+    auto* lst = BuildPolicyFixture(pool_l);
+    ApplyStoragePolicy(occ, StoragePolicy::OccurrenceWeighted, sf, 5);
+    ApplyStoragePolicy(lst, StoragePolicy::ListWeighted, sf, 5);
+    std::vector<const BuilderNode*> so{occ}, sl{lst};
+    std::size_t n = 0;
+    while (!so.empty()) {
+      const auto* a = so.back(); so.pop_back();
+      const auto* b = sl.back(); sl.pop_back();
+      ASSERT_EQ(a->sp, b->sp); ASSERT_EQ(a->ep, b->ep);
+      EXPECT_TRUE(!b->selected || a->selected) << "sf " << sf << " node [" << b->sp << "," << b->ep << ")";
+      if (!b->first_child) EXPECT_TRUE(b->selected);
+      n += b->selected;
+      for (const auto* x = a->first_child; x; x = x->next_sibling) so.push_back(x);
+      for (const auto* x = b->first_child; x; x = x->next_sibling) sl.push_back(x);
+    }
+    EXPECT_GE(n, CountSelected(lst).childless);
+  }
+}
+
+// On the fixture the list rule never stores more nodes than the occurrence rule.
+TEST(PDLTreeBuilder, ApplyStoragePolicyListWeightedWeighsStoredLists) {
+  BuilderPool pool_o, pool_l;
+  auto* occ = BuildPolicyFixture(pool_o);
+  auto* lst = BuildPolicyFixture(pool_l);
+  ApplyStoragePolicy(occ, StoragePolicy::OccurrenceWeighted, 2.0f, 5);
+  ApplyStoragePolicy(lst, StoragePolicy::ListWeighted, 2.0f, 5);
+  EXPECT_LE(CountSelected(lst).selected, CountSelected(occ).selected);
+}
+
 TEST(PDLTreeBuilder, ApplyStoragePolicyOccurrenceWeightedContainsAllOverridesWeight) {
   // n_doc = 4 makes root and A reach the all-doc sentinel; sf=10 is high
   // enough that the weighted rule alone would NOT select C or E (their

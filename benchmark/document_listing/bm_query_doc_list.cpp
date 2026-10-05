@@ -70,7 +70,7 @@ DEFINE_string(pdl_get_doc_variants,
 DEFINE_string(pdl_storage_policy,
               "occurrence_weighted",
               "PDL storage policy: comma-separated "
-              "occurrence_weighted,all_internal,leaves_only.");
+              "occurrence_weighted,all_internal,leaves_only,list_weighted.");
 
 DEFINE_bool(report_stats, false, "Report statistics for benchmark (mean, median, ...).");
 DEFINE_int32(reps, 10, "Repetitions for the locate query benchmark.");

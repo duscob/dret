@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -295,8 +296,32 @@ void ComputeDocSetsBottomUp(BuilderNode* t_root, std::size_t t_n_doc, TGetDocAt&
 // contains_all on every node.
 inline void ApplyStoragePolicy(BuilderNode* t_root,
                                StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted,
-                               float t_storing_factor = 4.0f) {
+                               float t_storing_factor = 4.0f,
+                               std::size_t t_n_doc = 0) {
   if (!t_root) return;
+  if (t_policy == StoragePolicy::ListWeighted) {
+    // Bottom-up: a node weighs the length of its own list if stored, else the
+    // total of its children's weights -- the lists a query reads in its place.
+    std::vector<BuilderNode*> order{t_root}, stack{t_root};
+    order.clear();
+    while (!stack.empty()) {
+      auto* n = stack.back();
+      stack.pop_back();
+      order.push_back(n);
+      for (auto* c = n->first_child; c; c = c->next_sibling) stack.push_back(c);
+    }
+    std::unordered_map<const BuilderNode*, std::size_t> weight;
+    for (auto it = order.rbegin(); it != order.rend(); ++it) {
+      auto* n = *it;
+      const std::size_t own = n->contains_all ? std::max(t_n_doc, n->docs.size()) : n->docs.size();
+      std::size_t below = 0;
+      for (auto* c = n->first_child; c; c = c->next_sibling) below += weight[c];
+      n->selected = (n->first_child == nullptr) || n->contains_all ||
+                    (static_cast<float>(below) > t_storing_factor * static_cast<float>(own));
+      weight[n] = n->selected ? own : below;
+    }
+    return;
+  }
   std::vector<BuilderNode*> stack{t_root};
   while (!stack.empty()) {
     auto* n = stack.back();

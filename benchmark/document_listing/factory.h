@@ -233,6 +233,8 @@ class Factory {
         return dret::pdl::StoragePolicy::StoreAllInternal;
       case PDLStoragePolicy::LeavesOnly:
         return dret::pdl::StoragePolicy::LeavesOnly;
+      case PDLStoragePolicy::ListWeighted:
+        return dret::pdl::StoragePolicy::ListWeighted;
       case PDLStoragePolicy::OccurrenceWeighted:
       default:
         return dret::pdl::StoragePolicy::OccurrenceWeighted;

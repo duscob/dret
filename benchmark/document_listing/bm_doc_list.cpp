@@ -932,6 +932,7 @@ const char* CodecValue(PDLVariant v) {
 const char* PolicyValue(PDLStoragePolicy v) {
   switch (v) {
     case PDLStoragePolicy::LeavesOnly:       return "leaves-only";
+    case PDLStoragePolicy::ListWeighted:     return "list-weighted";
     case PDLStoragePolicy::StoreAllInternal: return "store-all";
     case PDLStoragePolicy::OccurrenceWeighted:
     default:                                 return "occ-weighted";

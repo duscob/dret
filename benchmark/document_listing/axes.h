@@ -66,6 +66,7 @@ enum class PDLStoragePolicy {
   OccurrenceWeighted,
   StoreAllInternal,
   LeavesOnly,
+  ListWeighted,
 };
 
 // RMQ raw-range get-doc policy. The values DA / SLP / DSLP apply to both

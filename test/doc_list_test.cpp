@@ -1144,7 +1144,7 @@ TEST_F(ComponentSweepTest, pdl_grid) {
   using dret::pdl::StoragePolicy;
   for (std::uint32_t b : {4u, 32u}) {
     for (float sf : {1.0f, 8.0f}) {
-      for (auto policy : {StoragePolicy::OccurrenceWeighted, StoragePolicy::LeavesOnly}) {
+      for (auto policy : {StoragePolicy::OccurrenceWeighted, StoragePolicy::LeavesOnly, StoragePolicy::ListWeighted}) {
         const auto label = " b=" + std::to_string(b) + " sf=" + std::to_string(sf) + " policy=" +
                            std::to_string(static_cast<int>(policy));
         auto run = [&]<typename TIndex>(const std::string& name) {

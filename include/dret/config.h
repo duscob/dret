@@ -73,6 +73,7 @@ constexpr std::string_view kBlkSfPol = "blkSfPol";    // block size, storing fac
 // The term each PDL selection policy contributes to a key.
 constexpr std::string_view kPolicy = "policy";
 constexpr std::string_view kOccW = "occw";
+constexpr std::string_view kListW = "listw";
 constexpr std::string_view kLeaves = "leaves";
 constexpr std::string_view kAllNodes = "all";
 
@@ -138,6 +139,7 @@ struct Keys {
             conf::kPolicy,
             {
                 {conf::kOccW, "occw"},
+                {conf::kListW, "listw"},
                 {conf::kLeaves, "leaves"},
                 {conf::kAllNodes, "all"},
             },

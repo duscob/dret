@@ -275,6 +275,7 @@ struct EnumTraits<PDLStoragePolicy> {
     if (s == "occurrence_weighted") return PDLStoragePolicy::OccurrenceWeighted;
     if (s == "all_internal")        return PDLStoragePolicy::StoreAllInternal;
     if (s == "leaves_only")         return PDLStoragePolicy::LeavesOnly;
+    if (s == "list_weighted")       return PDLStoragePolicy::ListWeighted;
     return std::nullopt;
   }
 
@@ -283,6 +284,7 @@ struct EnumTraits<PDLStoragePolicy> {
       case PDLStoragePolicy::OccurrenceWeighted: return "OccurrenceWeighted";
       case PDLStoragePolicy::StoreAllInternal:   return "StoreAllInternal";
       case PDLStoragePolicy::LeavesOnly:         return "LeavesOnly";
+      case PDLStoragePolicy::ListWeighted:       return "ListWeighted";
     }
     return "UNKNOWN";
   }
@@ -295,6 +297,7 @@ inline dret::pdl::StoragePolicy toPDLStoragePolicy(PDLStoragePolicy p) {
   switch (p) {
     case PDLStoragePolicy::StoreAllInternal:   return dret::pdl::StoragePolicy::StoreAllInternal;
     case PDLStoragePolicy::LeavesOnly:         return dret::pdl::StoragePolicy::LeavesOnly;
+    case PDLStoragePolicy::ListWeighted:       return dret::pdl::StoragePolicy::ListWeighted;
     case PDLStoragePolicy::OccurrenceWeighted:
     default:                                   return dret::pdl::StoragePolicy::OccurrenceWeighted;
   }

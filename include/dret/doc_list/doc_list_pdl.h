@@ -326,7 +326,7 @@ void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
     InsertExplicitLeaves(pool, root);
     ComputeDocSetsBottomUp(
         root, n_doc, [&da](std::size_t i) { return static_cast<std::size_t>(da[i]); });
-    ApplyStoragePolicy(root, t_index.policy(), t_index.storing_factor());
+    ApplyStoragePolicy(root, t_index.policy(), t_index.storing_factor(), n_doc);
     const std::size_t n_nodes = AssignNodeIds(root);
 
     TCore core;

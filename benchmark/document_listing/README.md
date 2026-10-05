@@ -104,7 +104,7 @@ These older binaries take gflags directly (one comma-separated list per axis). T
 | `--dgcda_slp_variants`   | `default`, `otf`, `crl`, `ev`, `dv`, `vv` | DGCDA's TSLP choice (DifferentialLightSLP span-length and inner-container variants). |
 | `--pdl_variants`         | `plain`, `rp`, `bc` (or empty) | PDL stored-set codec. Empty disables PDL. |
 | `--pdl_get_doc_variants` | `da`, `slp`, `dslp` | PDL raw-range get-doc backing. (`slp_ns` is rejected.) |
-| `--pdl_storage_policy`   | `occurrence_weighted`, `all_internal`, `leaves_only` | PDL tree-construction storage policy. |
+| `--pdl_storage_policy`   | `occurrence_weighted`, `all_internal`, `leaves_only`, `list_weighted` | PDL tree-construction storage policy. |
 | `--min_block_size` / `--max_block_size` | powers of 2 | Block-size sweep for the GCDA / DGCDA / PDL families. |
 | `--min_storing_factor` / `--max_storing_factor` | powers of 2 | Storing-factor sweep, same families. |
 
