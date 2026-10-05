@@ -14,14 +14,17 @@
 //     caches, the raw LightSLP<>) are obsolete.
 //
 // Old files are left in place unless --delete_old, which removes the old names
-// of everything converted and the obsolete files. Files of other kinds (text,
-// SA, DA, the r-index, the RMQ cores) keep their names and are not touched.
+// of everything converted and the obsolete files. Variants the paper does not
+// measure are left alone unless --migrate_unreported. Files of other kinds
+// (text, SA, DA, the r-index, the RMQ cores, RLCSA) keep their names and are
+// not touched.
 //
 //   migrate_cache_components --dir=<cache dir> --id=<collection id> [--dry_run] [--delete_old]
 //
 
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <optional>
@@ -43,6 +46,13 @@ DEFINE_string(dir, "", "Cache directory of one collection (MANDATORY).");
 DEFINE_string(id, "", "Collection id: the suffix of its cache files, <key>_<type>_<id>.sdsl (MANDATORY).");
 DEFINE_bool(dry_run, false, "Report what would be done; write nothing.");
 DEFINE_bool(delete_old, false, "Remove the old names of converted files, and the obsolete files.");
+DEFINE_string(delete_list, "",
+              "Write the old files --delete_old would remove to this file, one path per line, so they can be "
+              "removed later (after a correctness check of the migrated cache).");
+DEFINE_bool(migrate_unreported, false,
+            "Also convert the variants the paper does not measure (GCDA-differential otf/crl/ev/dv/vv, "
+            "GCDA-nolists raw/vv and differential ev/vv, PDL-bc). By default they are left alone: neither "
+            "converted nor deleted.");
 
 namespace {
 
@@ -57,7 +67,7 @@ struct OldFile {
 };
 
 struct Stats {
-  std::size_t linked = 0, split = 0, obsolete = 0, unknown = 0, skipped = 0, failed = 0;
+  std::size_t linked = 0, split = 0, obsolete = 0, unknown = 0, unreported = 0, skipped = 0, failed = 0;
   std::vector<fs::path> to_delete;
 };
 
@@ -145,6 +155,11 @@ auto LoadPre202610() {
   return [](T& t, std::istream& in) { t.loadPre202610(in); };
 }
 
+void Unreported(const OldFile& t_old, Stats& t_stats) {
+  std::cout << "unreported, left alone: " << t_old.path.filename().string() << "\n";
+  ++t_stats.unreported;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -182,10 +197,14 @@ int main(int argc, char** argv) {
         Link(f, dret::KeyName(Keys(), kDaGrammar), stats);
       } else if (f.key == "gcda_slp_compact_seq") {
         Link(f, dret::KeyName(Keys(), kDaGrammarSeq), stats);
-      } else if (f.key == "dgcda_slp_cnf" || f.key == "slp_ns") {
+      } else if (f.key == "dgcda_slp_cnf" ||
+                 (f.key == "slp_ns" && (FLAGS_migrate_unreported ||
+                                        ForType<slp_ns::BareSLP_IV, slp_ns::BareSLP_DV>(f, [&]<typename T>() {})))) {
         // The CNF grammar: DGCDA's raw copy, and GCDA-nolists' plain grammar in
         // its containers. Neither format changed.
         Link(f, dret::KeyName(Keys(), kDaCnfGrammar), stats);
+      } else if (f.key == "slp_ns") {
+        Unreported(f, stats);
       } else if (std::regex_match(f.key, m, obsolete_re)) {
         std::cout << "obsolete " << f.path.filename().string() << "\n";
         stats.to_delete.push_back(f.path);
@@ -216,11 +235,16 @@ int main(int argc, char** argv) {
             known = true;
           }
         } else {  // dgcda_slp
-          known = ForType<dgcda::SLP_Default, dgcda::SLP_OTF, dgcda::SLP_CRL, dgcda::SLP_EV, dgcda::SLP_DV,
-                          dgcda::SLP_VV>(f, [&]<typename T>() {
+          auto split = [&]<typename T>() {
             Split<T>(f, LoadPre202610<T>(),
                      [&](const T& t) { return dret::CacheComponents(t, Keys(), cell); }, stats);
-          });
+          };
+          known = ForType<dgcda::SLP_Default>(f, split);
+          if (!known)
+            known = FLAGS_migrate_unreported
+                        ? ForType<dgcda::SLP_OTF, dgcda::SLP_CRL, dgcda::SLP_EV, dgcda::SLP_DV, dgcda::SLP_VV>(f, split)
+                        : ForType<dgcda::SLP_OTF, dgcda::SLP_CRL, dgcda::SLP_EV, dgcda::SLP_DV, dgcda::SLP_VV>(
+                              f, [&]<typename T>() { Unreported(f, stats); });
         }
         if (!known) {
           std::cout << "unknown type, left alone: " << f.path.filename().string() << "\n";
@@ -228,11 +252,16 @@ int main(int argc, char** argv) {
         }
       } else if (std::regex_match(f.key, m, dslp_re)) {
         const uint32_t spacing = m[1].matched ? static_cast<uint32_t>(std::stoul(m[1])) : dret::kDiffBlockSize;
-        const bool known = ForType<slp_ns::BareSLP_Diff, slp_ns::BareSLP_DiffEV, slp_ns::BareSLP_DiffDV,
-                                   slp_ns::BareSLP_DiffVV>(f, [&]<typename T>() {
+        auto split = [&]<typename T>() {
           Split<T>(f, LoadPre202610<T>(),
                    [&](const T& t) { return dret::CacheComponents(t, Keys(), spacing); }, stats);
-        });
+        };
+        bool known = ForType<slp_ns::BareSLP_Diff, slp_ns::BareSLP_DiffDV>(f, split);
+        if (!known)
+          known = FLAGS_migrate_unreported
+                      ? ForType<slp_ns::BareSLP_DiffEV, slp_ns::BareSLP_DiffVV>(f, split)
+                      : ForType<slp_ns::BareSLP_DiffEV, slp_ns::BareSLP_DiffVV>(
+                            f, [&]<typename T>() { Unreported(f, stats); });
         if (!known) {
           std::cout << "unknown type, left alone: " << f.path.filename().string() << "\n";
           ++stats.unknown;
@@ -242,9 +271,11 @@ int main(int argc, char** argv) {
         const float sf = std::stof(m[2]);
         const auto policy = static_cast<dret::pdl::StoragePolicy>(std::stoi(m[4]));
         auto components = [&](const auto& core) { return dret::pdl::CacheComponents(core, Keys(), b, sf, policy); };
-        bool known = ForType<CorePlain, CoreRP, CoreBC>(f, [&]<typename T>() {
-          Split<T>(f, LoadPre202610<T>(), components, stats);
-        });
+        auto split = [&]<typename T>() { Split<T>(f, LoadPre202610<T>(), components, stats); };
+        bool known = ForType<CorePlain, CoreRP>(f, split);
+        if (!known)
+          known = FLAGS_migrate_unreported ? ForType<CoreBC>(f, split)
+                                           : ForType<CoreBC>(f, [&]<typename T>() { Unreported(f, stats); });
         if (!known && f.type == TypeHash<CoreRPLengths>()) {
           // Re-Pair lists cached with the per-rule length array they never read:
           // convert, as construct() used to.
@@ -267,8 +298,13 @@ int main(int argc, char** argv) {
   }
 
   std::cout << "linked " << stats.linked << ", split " << stats.split << ", obsolete " << stats.obsolete
-            << ", already there " << stats.skipped << ", unknown " << stats.unknown << ", failed " << stats.failed
+            << ", already there " << stats.skipped << ", unreported " << stats.unreported << ", unknown "
+            << stats.unknown << ", failed " << stats.failed
             << "\n";
+  if (!FLAGS_delete_list.empty() && !FLAGS_dry_run && !stats.failed) {
+    std::ofstream out(FLAGS_delete_list);
+    for (const auto& p : stats.to_delete) out << p.string() << "\n";
+  }
   if (FLAGS_delete_old && !FLAGS_dry_run) {
     if (stats.failed) {
       std::cerr << "not deleting old files: " << stats.failed << " failures\n";
