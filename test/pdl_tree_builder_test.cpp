@@ -13,8 +13,10 @@
 #include <cstddef>
 #include <tuple>
 #include <utility>
+#include <limits>
 #include <vector>
 
+#include "dret/config.h"
 #include "dret/pdl/tree_builder.h"
 
 namespace {
@@ -548,6 +550,26 @@ TEST(PDLTreeBuilder, ApplyStoragePolicyListWeightedWeighsStoredLists) {
   ApplyStoragePolicy(occ, StoragePolicy::OccurrenceWeighted, 2.0f, 5);
   ApplyStoragePolicy(lst, StoragePolicy::ListWeighted, 2.0f, 5);
   EXPECT_LE(CountSelected(lst).selected, CountSelected(occ).selected);
+}
+
+// At storing factor infinity the occurrence rule stores exactly the childless
+// nodes and those listing every document: no occurrence count exceeds infinity.
+TEST(PDLTreeBuilder, ApplyStoragePolicyOccurrenceWeightedAtInfinity) {
+  for (std::size_t n_doc : {4u, 5u}) {
+    BuilderPool pool;
+    std::vector<std::size_t> da = {3, 0, 1, 1, 2, 0, 3};
+    auto* root = BuildCollapseFixture(pool);
+    InsertExplicitLeaves(pool, root);
+    ComputeDocSetsBottomUp(root, n_doc, DocsFromVector(da));
+    ApplyStoragePolicy(root, StoragePolicy::OccurrenceWeighted, dret::kInfiniteStoringFactor, n_doc);
+    std::vector<const BuilderNode*> stack{root};
+    while (!stack.empty()) {
+      const auto* n = stack.back();
+      stack.pop_back();
+      EXPECT_EQ(n->selected, n->first_child == nullptr || n->contains_all) << "n_doc " << n_doc << " [" << n->sp << "," << n->ep << ")";
+      for (const auto* x = n->first_child; x; x = x->next_sibling) stack.push_back(x);
+    }
+  }
 }
 
 TEST(PDLTreeBuilder, ApplyStoragePolicyOccurrenceWeightedContainsAllOverridesWeight) {

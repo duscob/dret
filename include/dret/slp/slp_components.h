@@ -46,7 +46,8 @@ inline std::string KeyName(const JSON& t_keys, std::string_view t_name) {
 
 // Key of a component that depends on the sampled-tree cell.
 inline std::string CellKey(const JSON& t_keys, std::string_view t_name, const SampledTreeCell& t_cell) {
-  return PrefixedKey(t_keys, conf::kBlkSf, KeyName(t_keys, t_name), t_cell.block_size, t_cell.storing_factor);
+  return PrefixedKey(t_keys, conf::kBlkSf, KeyName(t_keys, t_name), t_cell.block_size,
+                     StoringFactorTerm(t_cell.storing_factor));
 }
 
 //~~~~~~~  The CNF grammar alone (GCDA-nolists, plain)  ~~~~~~~

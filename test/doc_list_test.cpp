@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <random>
 #include <set>
 #include <sdsl/dac_vector.hpp>
@@ -887,6 +888,12 @@ TEST(PrefixedKeyTest, names_carry_their_parameters) {
   EXPECT_EQ(dret::CellKey(keys, dret::conf::kDaSampledTree, {512, 4}), "blk512-sf4_da_sampled_tree");
   EXPECT_EQ(dret::CellKey(keys, dret::conf::kDaNodeDocListsRP, {1024, 32}), "blk1024-sf32_da_node_doclists_rp");
   EXPECT_EQ(dret::PrefixedKey(keys, dret::conf::kSpc, "da_diff_samples", 128u), "spc128_da_diff_samples");
+  // beta = infinity names itself, for GCDA's cells and PDL's selections.
+  EXPECT_EQ(dret::CellKey(keys, dret::conf::kDaSampledTree, {512, dret::kInfiniteStoringFactor}),
+            "blk512-sfinf_da_sampled_tree");
+  EXPECT_EQ(dret::pdl::PdlSelectionKey(keys, dret::conf::kPdlSelection, 256, dret::kInfiniteStoringFactor,
+                                       dret::pdl::StoragePolicy::OccurrenceWeighted),
+            "blk256-sfinf-occw_pdl_selection");
   EXPECT_EQ(dret::PrefixedKey(keys, dret::conf::kBlk, "pdl_tree", 256u), "blk256_pdl_tree");
   using dret::pdl::StoragePolicy;
   EXPECT_EQ(dret::pdl::PdlSelectionKey(keys, dret::conf::kPdlSelection, 256, 8, StoragePolicy::OccurrenceWeighted),
@@ -1082,7 +1089,7 @@ TEST_F(ComponentSweepTest, gcda_family_grid) {
                                    grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>;
   using SetsPlain = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>;
   for (std::uint32_t b : {4u, 16u, 64u}) {
-    for (float sf : {1.0f, 4.0f}) {
+    for (float sf : {1.0f, 4.0f, dret::kInfiniteStoringFactor}) {
       const auto label = " b=" + std::to_string(b) + " sf=" + std::to_string(sf);
       auto run = [&]<typename TIndex>(const std::string& name) {
         Cell(name + label, [&](dret::Config& cfg, sri::GenericStorage& st) {
@@ -1144,7 +1151,7 @@ TEST_F(ComponentSweepTest, pdl_grid) {
   using S = ExternalGenericStorage;
   using dret::pdl::StoragePolicy;
   for (std::uint32_t b : {4u, 32u}) {
-    for (float sf : {1.0f, 8.0f}) {
+    for (float sf : {1.0f, 8.0f, dret::kInfiniteStoringFactor}) {
       for (auto policy : {StoragePolicy::OccurrenceWeighted, StoragePolicy::LeavesOnly, StoragePolicy::ListWeighted}) {
         const auto label = " b=" + std::to_string(b) + " sf=" + std::to_string(sf) + " policy=" +
                            std::to_string(static_cast<int>(policy));
@@ -1174,7 +1181,7 @@ TEST_F(ComponentSweepTest, gcda_backend_grid) {
   using DA = dret::pdl::PDLGetDocsDA<S, dret::Alphabet<>::int_width>;
   using SAPhi = dret::pdl::PDLGetDocsSAPhi_R<S, dret::Alphabet<>::int_width>;
   for (std::uint32_t b : {4u, 64u}) {
-    for (float sf : {1.0f, 4.0f}) {
+    for (float sf : {1.0f, 4.0f, dret::kInfiniteStoringFactor}) {
       const auto label = " b=" + std::to_string(b) + " sf=" + std::to_string(sf);
       auto run = [&]<typename TIndex>(const std::string& name) {
         Cell(name + label, [&](dret::Config& cfg, sri::GenericStorage& st) {

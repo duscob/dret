@@ -43,11 +43,14 @@
 #include <fstream>
 #include <optional>
 #include <stdexcept>
+#include <limits>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include <nlohmann/json.hpp>
+
+#include "dret/config.h"
 
 #include "axes.h"
 #include "enum_traits.h"
@@ -280,11 +283,29 @@ std::vector<T> ParseList(const nlohmann::json& j, const char* key,
   return j.at(key).get<std::vector<T>>();
 }
 
+// Storing factors: numbers, or "inf" for a rule that stores no internal node
+// (GCDA: no node's list beats its children's; PDL: no node's occurrences exceed
+// infinity times its documents). JSON has no infinity, hence the string.
+inline std::vector<float> ParseStoringFactors(const nlohmann::json& j, const std::vector<float>& fallback) {
+  if (!j.contains("storing_factor")) return fallback;
+  std::vector<float> out;
+  for (const auto& v : j.at("storing_factor")) {
+    if (v.is_string()) {
+      if (v.get<std::string>() != "inf")
+        throw std::invalid_argument("storing_factor: a number or \"inf\", not \"" + v.get<std::string>() + "\"");
+      out.push_back(dret::kInfiniteStoringFactor);
+    } else {
+      out.push_back(v.get<float>());
+    }
+  }
+  return out;
+}
+
 inline GCDASweep ParseGCDA(const nlohmann::json& j) {
   GCDASweep s;
   s.tslp = ParseEnumList<axes::GCDASLPVariant>(j, "tslp", s.tslp);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
-  s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
+  s.storing_factor = ParseStoringFactors(j, s.storing_factor);
   s.sets = ParseEnumList<axes::GCDASetsCodec>(j, "sets", s.sets);
   return s;
 }
@@ -293,7 +314,7 @@ inline DGCDASweep ParseDGCDA(const nlohmann::json& j) {
   DGCDASweep s;
   s.tslp = ParseEnumList<axes::DGCDASLPVariant>(j, "tslp", s.tslp);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
-  s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
+  s.storing_factor = ParseStoringFactors(j, s.storing_factor);
   s.sets = ParseEnumList<axes::GCDASetsCodec>(j, "sets", s.sets);
   return s;
 }
@@ -316,7 +337,7 @@ inline RMQSweep ParseRMQ(const nlohmann::json& j) {
   s.prev_doc = ParseEnumList<axes::PrevDocVariant>(j, "prev_doc", s.prev_doc);
   s.sa_sampling = ParseList<std::size_t>(j, "sa_sampling", s.sa_sampling);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
-  s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
+  s.storing_factor = ParseStoringFactors(j, s.storing_factor);
   return s;
 }
 
@@ -330,7 +351,7 @@ inline PDLSweep ParsePDL(const nlohmann::json& j) {
   s.dgcda_slp = ParseEnumList<axes::DGCDASLPVariant>(j, "dgcda_slp", s.dgcda_slp);
   s.sa_sampling = ParseList<std::size_t>(j, "sa_sampling", s.sa_sampling);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
-  s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
+  s.storing_factor = ParseStoringFactors(j, s.storing_factor);
   s.backend_block_size = ParseList<std::uint32_t>(j, "backend_block_size", s.backend_block_size);
   return s;
 }
@@ -340,7 +361,7 @@ inline GCDABackendSweep ParseGCDABackend(const nlohmann::json& j) {
   s.get_doc = ParseEnumList<axes::GetDocEnum>(j, "get_doc", s.get_doc);
   s.sets = ParseEnumList<axes::GCDASetsCodec>(j, "sets", s.sets);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
-  s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
+  s.storing_factor = ParseStoringFactors(j, s.storing_factor);
   return s;
 }
 

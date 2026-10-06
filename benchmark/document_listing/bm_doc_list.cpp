@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cmath>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -821,7 +822,7 @@ const char* CoreName(fac::rmq::CoreKind c) {
 }
 
 std::string BsSfSuffix(std::uint32_t bs, float sf) {
-  return "-bs" + std::to_string(bs) + "-sf" + std::to_string(static_cast<int>(sf));
+  return "-bs" + std::to_string(bs) + "-sf" + (dret::IsInfiniteStoringFactor(sf) ? std::string("inf") : std::to_string(static_cast<int>(sf)));
 }
 
 //~~~~~~~  Keyed-name helpers — FAMILY[k=v|k=v], canonical key order ~~~~~~~
@@ -955,7 +956,9 @@ const char* GetDocValue(GetDocEnum g) {
 }
 
 std::string IntStr(std::uint32_t x) { return std::to_string(x); }
-std::string SfStr(float sf) { return std::to_string(static_cast<int>(sf)); }
+std::string SfStr(float sf) {
+  return dret::IsInfiniteStoringFactor(sf) ? std::string("inf") : std::to_string(static_cast<int>(sf));
+}
 
 std::vector<std::int64_t> ArgsRange(const std::vector<std::uint32_t>& bs,
                                      const std::vector<float>& sf) {

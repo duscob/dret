@@ -190,6 +190,24 @@ const auto& createDefaultKeys() {
   return keys.keys;
 }
 
+// Storing factor infinity: no node's list is ever worth storing over its
+// children's (GCDA) and no node's occurrences ever exceed it times its documents
+// (PDL), so only the leaves keep lists. A finite sentinel, not a float infinity:
+// the build uses -Ofast, whose fast-math assumes there are no infinities and folds
+// any test for one. Every rule multiplies it by a list size, at most ~1e8, far
+// below the float maximum (~3.4e38), so nothing overflows.
+constexpr float kInfiniteStoringFactor = 1e30f;
+
+constexpr bool IsInfiniteStoringFactor(float t_storing_factor) {
+  return t_storing_factor >= kInfiniteStoringFactor;
+}
+
+// How a storing factor reads in cache keys and benchmark names: "inf", or the
+// number as std::format prints it (so the keys of finite values are unchanged).
+inline std::string StoringFactorTerm(float t_storing_factor) {
+  return IsInfiniteStoringFactor(t_storing_factor) ? std::string("inf") : std::format("{}", t_storing_factor);
+}
+
 // Builds a parameterised cache key: the prefix pattern t_keys[prefix][t_scheme],
 // formatted with t_args, followed by t_name. The only place such keys are built.
 template <typename... TArgs>

@@ -323,10 +323,10 @@ inline std::string PdlSelectionPrefix(const JSON& t_keys,
   const auto& terms = t_keys[conf::kPolicy];
   switch (t_policy) {
     case StoragePolicy::OccurrenceWeighted:
-      return PrefixedKey(t_keys, conf::kBlkSfPol, "", t_block_size, t_storing_factor,
+      return PrefixedKey(t_keys, conf::kBlkSfPol, "", t_block_size, StoringFactorTerm(t_storing_factor),
                          terms[conf::kOccW].get<std::string>());
     case StoragePolicy::ListWeighted:
-      return PrefixedKey(t_keys, conf::kBlkSfPol, "", t_block_size, t_storing_factor,
+      return PrefixedKey(t_keys, conf::kBlkSfPol, "", t_block_size, StoringFactorTerm(t_storing_factor),
                          terms[conf::kListW].get<std::string>());
     case StoragePolicy::LeavesOnly:
       return PrefixedKey(t_keys, conf::kBlkPol, "", t_block_size, terms[conf::kLeaves].get<std::string>());
