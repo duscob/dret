@@ -28,6 +28,8 @@
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/doc_list/doc_list_gcda.h"
+#include "dret/doc_list/doc_list_gcda_backend.h"
+#include "dret/pdl/get_docs.h"
 #include "dret/slp/combined_slp_with_unit_cover.h"
 #include "dret/slp/compact_bp_slp.h"
 #include "dret/slp/compact_louds_slp.h"
@@ -107,6 +109,53 @@ Make(TStorage t_storage,
   else
     by_slp.template operator()<Sets_RP>();
   return result;
+}
+
+// GCDA over a document-array backend: the sampled tree and node lists of the
+// (block size, storing factor) cell, the ends of a range expanded by t_get_doc
+// (DA, SA-Phi or RLCSA) instead of the grammar.
+template <typename TStorage, typename TGetDocs, typename TSets>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+BuildBackend(TStorage t_storage, dret::Config& t_config, uint32_t t_block_size, float t_storing_factor) {
+  using TIndex = dret::gcda::DocListIdxGCDABackend<TStorage, dret::Alphabet<>,
+                                                   sri::RIndexCount<TStorage, dret::Alphabet<>>, TGetDocs, TSets>;
+  auto idx = std::make_shared<TIndex>(t_storage, t_block_size, t_storing_factor);
+  construct(*idx, t_config);
+  idx->load(t_config);
+  return {idx, sdsl::size_in_bytes(*idx)};
+}
+
+template <typename TStorage, typename TSets>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeBackendForSets(TStorage t_storage, dret::Config& t_config, uint32_t t_block_size, float t_storing_factor,
+                   bench::axes::GetDocEnum t_get_doc) {
+  constexpr auto kW = dret::Alphabet<>::int_width;
+  switch (t_get_doc) {
+    case bench::axes::GetDocEnum::SAPhiR:
+      return BuildBackend<TStorage, dret::pdl::PDLGetDocsSAPhi_R<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
+                                                                                       t_storing_factor);
+    case bench::axes::GetDocEnum::RLCSA:
+      return BuildBackend<TStorage, dret::pdl::PDLGetDocsRLCSA<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
+                                                                                     t_storing_factor);
+    case bench::axes::GetDocEnum::DA:
+      return BuildBackend<TStorage, dret::pdl::PDLGetDocsDA<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
+                                                                                  t_storing_factor);
+    default:
+      throw std::invalid_argument("GCDA backend: get_doc must be da, sa_phi_r or rlcsa");
+  }
+}
+
+template <typename TStorage>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeBackend(TStorage t_storage,
+            dret::Config& t_config,
+            uint32_t t_block_size,
+            float t_storing_factor,
+            bench::axes::GetDocEnum t_get_doc,
+            bench::axes::GCDASetsCodec t_sets = bench::axes::GCDASetsCodec::RP) {
+  if (t_sets == bench::axes::GCDASetsCodec::Plain)
+    return MakeBackendForSets<TStorage, Sets_Plain>(t_storage, t_config, t_block_size, t_storing_factor, t_get_doc);
+  return MakeBackendForSets<TStorage, Sets_RP>(t_storage, t_config, t_block_size, t_storing_factor, t_get_doc);
 }
 
 }  // namespace bench::factories::gcda

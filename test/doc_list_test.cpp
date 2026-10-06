@@ -23,6 +23,7 @@
 #include "dret/rmq/doc_list_rmq_scheme.h"
 #include "dret/doc_list/doc_list_slp.h"
 #include "dret/doc_list/doc_list_gcda.h"
+#include "dret/doc_list/doc_list_gcda_backend.h"
 #include "dret/doc_list/doc_list_pdl.h"
 #include "dret/pdl/get_docs.h"
 
@@ -1157,6 +1158,34 @@ TEST_F(ComponentSweepTest, pdl_grid) {
         run.template operator()<dret::pdl::DocListIdxPDLPlain<S>>("PDL-plain");
         run.template operator()<dret::pdl::DocListIdxPDLRP<S>>("PDL-rp");
       }
+    }
+  }
+}
+
+// GCDA over a backend: the sampled tree and node lists of GCDA, the ends of a
+// range expanded by the plain DA or SA-Phi. Same answers as brute force, and the
+// shared cache gives the same index as a private one.
+TEST_F(ComponentSweepTest, gcda_backend_grid) {
+  using S = ExternalGenericStorage;
+  using RC = sri::RIndexCount<S, dret::Alphabet<>>;
+  using SetsPlain = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>;
+  using SetsRP = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>, true,
+                                   grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>;
+  using DA = dret::pdl::PDLGetDocsDA<S, dret::Alphabet<>::int_width>;
+  using SAPhi = dret::pdl::PDLGetDocsSAPhi_R<S, dret::Alphabet<>::int_width>;
+  for (std::uint32_t b : {4u, 64u}) {
+    for (float sf : {1.0f, 4.0f}) {
+      const auto label = " b=" + std::to_string(b) + " sf=" + std::to_string(sf);
+      auto run = [&]<typename TIndex>(const std::string& name) {
+        Cell(name + label, [&](dret::Config& cfg, sri::GenericStorage& st) {
+          TIndex index(std::ref(st), b, sf);
+          construct(index, cfg);
+          return index;
+        });
+      };
+      run.template operator()<dret::gcda::DocListIdxGCDABackend<S, dret::Alphabet<>, RC, DA, SetsRP>>("GCDA over DA, rp");
+      run.template operator()<dret::gcda::DocListIdxGCDABackend<S, dret::Alphabet<>, RC, SAPhi, SetsPlain>>("GCDA over SA-Phi, plain");
+      run.template operator()<dret::gcda::DocListIdxGCDABackend<S, dret::Alphabet<>, RC, SAPhi, SetsRP>>("GCDA over SA-Phi, rp");
     }
   }
 }

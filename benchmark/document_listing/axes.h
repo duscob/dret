@@ -41,6 +41,7 @@ enum class IndexEnum {
   CILCP,    // -> CilcpCore: the SAME CMR20 Definition 1 partition as CILCP_L,
             // built by one shared routine; the two differ only in whether the
             // per-run minima are stored, not in where the runs fall.
+  GCDA_BACKEND,  // GCDA's sampled tree and node lists over a DA backend (DA, SA-Phi, RLCSA)
 };
 
 // PDL stored-set codec axis. The class template differs per value

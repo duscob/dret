@@ -991,6 +991,34 @@ void RegisterQueryGCDA(const bench::spec::GCDASweep& sw, Factory<>& factory,
   }
 }
 
+// GCDA over a document-array backend. Named like GCDA with the backend in place of
+// the grammar representation: GCDA[tree=sampled|get-doc=..|sets=..|block-size=..|storing-factor=..].
+void RegisterQueryGCDABackend(const bench::spec::GCDABackendSweep& sw, Factory<>& factory,
+                              const std::vector<std::string>* patterns, std::size_t seq_size) {
+  for (auto gd : sw.get_doc) {
+    for (auto sets : sw.sets) {
+      for (auto bs : sw.block_size) {
+        for (auto sf : sw.storing_factor) {
+          const auto name = KeyedName("GCDA", {
+              {"tree", "sampled"},
+              {"get-doc", GetDocValue(gd)},
+              {"sets", SetsValue(sets)},
+              {"block-size", IntStr(bs)},
+              {"storing-factor", SfStr(sf)},
+          });
+          Factory<>::Config cfg{};
+          cfg.index_t = Factory<>::IndexEnum::GCDA_BACKEND;
+          cfg.block_size = bs;
+          cfg.storing_factor = sf;
+          cfg.get_doc = gd;
+          cfg.gcda_sets = sets;
+          benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
+        }
+      }
+    }
+  }
+}
+
 void RegisterQueryDGCDA(const bench::spec::DGCDASweep& sw, Factory<>& factory,
                         const std::vector<std::string>* patterns, std::size_t seq_size) {
   for (auto sets : sw.sets) {
@@ -1846,6 +1874,7 @@ int main(int argc, char** argv) {
         else if constexpr (std::is_same_v<T, bench::spec::RMQSweep>) RegisterQueryRMQ(sw, *factory, &patterns, seq_size);
         else if constexpr (std::is_same_v<T, bench::spec::PDLSweep>) RegisterQueryPDL(sw, *factory, &patterns, seq_size);
         else if constexpr (std::is_same_v<T, bench::spec::BruteSweep>) RegisterQueryBrute(sw, *factory, &patterns, seq_size);
+        else if constexpr (std::is_same_v<T, bench::spec::GCDABackendSweep>) RegisterQueryGCDABackend(sw, *factory, &patterns, seq_size);
       }, fs);
     } else {
       // Cache directory: in construct mode the dret::Config above sets it to
@@ -1863,6 +1892,8 @@ int main(int argc, char** argv) {
         else if constexpr (std::is_same_v<T, bench::spec::RMQSweep>) RegisterConstructRMQ(sw, config, cc);
         else if constexpr (std::is_same_v<T, bench::spec::PDLSweep>) RegisterConstructPDL(sw, config, cc);
         else if constexpr (std::is_same_v<T, bench::spec::BruteSweep>) RegisterConstructBrute(sw, config, data_path, cc);
+        else if constexpr (std::is_same_v<T, bench::spec::GCDABackendSweep>)
+          std::cerr << "gcda_backend has no construct mode; its query mode builds what it needs\n";
       }, fs);
     }
   }

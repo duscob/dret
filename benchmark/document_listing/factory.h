@@ -278,6 +278,14 @@ class Factory {
         break;
       }
 
+      case IndexEnum::GCDA_BACKEND: {
+        auto [idx, size] = bench::factories::gcda::MakeBackend(
+            std::ref(storage_), config_,
+            t_config.block_size, t_config.storing_factor, t_config.get_doc, t_config.gcda_sets);
+        index = {idx, size};
+        break;
+      }
+
       case IndexEnum::DGCDA: {
         auto [idx, size] = bench::factories::dgcda::Make(
             std::ref(storage_), config_,

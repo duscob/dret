@@ -175,6 +175,15 @@ struct PDLSweep {
   std::vector<std::uint32_t> backend_block_size{1024};
 };
 
+// GCDA over a document-array backend (dret::gcda::DocListIdxGCDABackend): the
+// sampled tree and node lists of GCDA, the ends of a range expanded by get_doc.
+struct GCDABackendSweep {
+  std::vector<axes::GetDocEnum> get_doc{axes::GetDocEnum::SAPhiR};
+  std::vector<axes::GCDASetsCodec> sets{axes::GCDASetsCodec::RP};
+  std::vector<std::uint32_t> block_size{512};
+  std::vector<float> storing_factor{4.0f};
+};
+
 struct BruteSweep {
   enum class Kind { RIndex, SrIndex };
   std::vector<Kind> kind{Kind::RIndex};
@@ -182,7 +191,7 @@ struct BruteSweep {
 };
 
 using FamilySweep = std::variant<GCDASweep, DGCDASweep, SLPNSSweep,
-                                  RMQSweep, PDLSweep, BruteSweep>;
+                                  RMQSweep, PDLSweep, BruteSweep, GCDABackendSweep>;
 
 struct Spec {
   Mode mode = Mode::Query;
@@ -326,6 +335,15 @@ inline PDLSweep ParsePDL(const nlohmann::json& j) {
   return s;
 }
 
+inline GCDABackendSweep ParseGCDABackend(const nlohmann::json& j) {
+  GCDABackendSweep s;
+  s.get_doc = ParseEnumList<axes::GetDocEnum>(j, "get_doc", s.get_doc);
+  s.sets = ParseEnumList<axes::GCDASetsCodec>(j, "sets", s.sets);
+  s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
+  s.storing_factor = ParseList<float>(j, "storing_factor", s.storing_factor);
+  return s;
+}
+
 inline BruteSweep ParseBrute(const nlohmann::json& j) {
   BruteSweep s;
   s.kind = ParseListWith<BruteSweep::Kind>(j, "kind", s.kind, ParseBruteKind);
@@ -344,6 +362,7 @@ inline FamilySweep ParseFamilyBlock(const nlohmann::json& j) {
   if (family == "rmq")     return ParseRMQ(j);
   if (family == "pdl")     return ParsePDL(j);
   if (family == "brute")   return ParseBrute(j);
+  if (family == "gcda_backend") return ParseGCDABackend(j);
   throw std::invalid_argument("sweep block: unknown family '" + family + "'");
 }
 
