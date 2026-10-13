@@ -262,6 +262,9 @@ class PDLTreeCore {
   SizeReport GetSizeReport() const {
     SizeReport r;
     append(r, "selected_marker", sdsl::size_in_bytes(selected_marker_));
+    // Rebuilt on load (not serialized), but resident: counted so a denser marker stays honest.
+    append(r, "selected_marker_rank", sdsl::size_in_bytes(selected_rank_));
+    append(r, "selected_marker_select", sdsl::size_in_bytes(selected_select_));
     append(r, "node_starts", sdsl::size_in_bytes(node_starts_));
     append(r, "node_ends", sdsl::size_in_bytes(node_ends_));
     append(r, "first_child", sdsl::size_in_bytes(first_child_));

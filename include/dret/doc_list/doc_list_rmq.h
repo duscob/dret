@@ -605,6 +605,10 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
       append(r, "rmq", sdsl::size_in_bytes(*rmq_));
     if (run_heads_)
       append(r, "run_heads", sdsl::size_in_bytes(*run_heads_));
+    if (rank_)
+      append(r, "run_heads_rank", sdsl::size_in_bytes(*rank_));
+    if (select_)
+      append(r, "run_heads_select", sdsl::size_in_bytes(*select_));
     auto get_doc_report = get_doc_.GetSizeReport();
     for (const auto& [k, v] : get_doc_report)
       append(r, k, v);
@@ -803,6 +807,10 @@ class IlcpLikeFullCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
       append(r, "rmq", sdsl::size_in_bytes(*rmq_));
     if (run_heads_)
       append(r, "run_heads", sdsl::size_in_bytes(*run_heads_));
+    if (rank_)
+      append(r, "run_heads_rank", sdsl::size_in_bytes(*rank_));
+    if (select_)
+      append(r, "run_heads_select", sdsl::size_in_bytes(*select_));
     if (run_values_)
       append(r, "run_values", sdsl::size_in_bytes(*run_values_));
     auto get_doc_report = get_doc_.GetSizeReport();
