@@ -155,7 +155,11 @@ class GetDocBv : public IndexBaseWithExternalStorage<TStorage, t_width> {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
 
     size_type written_bytes = 0;
-    written_bytes += this->template serializeItem<TBvDocEnds>(key_, out, child, "doc_end");
+    // loadInner loads doc_end with the type hash, so it is stored under the hashed key (the rank is
+    // not: loadBVRank stores it under key_ + "_rank"). With the plain key the lookup missed and an
+    // empty bitvector was written, leaving the document ends out of Brute-RI's / Brute-SRI's size.
+    written_bytes += this->template serializeItem<TBvDocEnds>(key_ + "_" + sdsl::util::class_to_hash(TBvDocEnds{}),
+                                                              out, child, "doc_end");
     written_bytes += this->template serializeRank<TBvDocEnds>(key_, out, child, "doc_end_rank");
 
     return written_bytes;

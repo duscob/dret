@@ -124,21 +124,32 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
     range_until_(t_b, t_e, until);
   }
 
+  // The structures this backend reads are shared in storage with BruteRI and GetDocBv, but an
+  // index over it needs them all the same, so they are serialized and reported here: the run-end
+  // samples, the run-start marks (+ rank/select), the mark-to-sample map and the document ends
+  // (+ rank). The run-length BWT is not: it is the count index every document-listing index
+  // already holds and reports as count_idx.
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     size_type written_bytes = 0;
-    // The locate index + doc_ends bitvector live in shared storage with
-    // BruteRI / BruteSRI / GetDocBv (typed-cache hash sharing). Per-instance
-    // serialised state is just the sampling-rate scalar.
     written_bytes += sdsl::write_member(sa_sampling_, out, child, "sa_sampling");
+    written_bytes += SerializeOrEmpty(samples_, out, child, "samples");
+    written_bytes += SerializeOrEmpty(marks_, out, child, "marks");
+    written_bytes += SerializeOrEmpty(marks_rank_, out, child, "marks_rank");
+    written_bytes += SerializeOrEmpty(marks_select_, out, child, "marks_select");
+    written_bytes += SerializeOrEmpty(mark_to_sample_, out, child, "mark_to_sample");
+    written_bytes += SerializeOrEmpty(doc_ends_, out, child, "doc_ends");
+    written_bytes += SerializeOrEmpty(doc_ends_rank_, out, child, "doc_ends_rank");
     return written_bytes;
   }
 
   SizeReport GetSizeReport() const {
     SizeReport r;
-    // Shared caches (bwt_rle, samples, marks, mark_to_sample, doc_ends) are
-    // owned upstream by the brute baselines + GetDocBv — accounted there.
-    // GetDocSAPhi's marginal cost is just the scalar sa_sampling_.
+    if (samples_) append(r, "samples", sdsl::size_in_bytes(*samples_));
+    if (marks_) append(r, "marks", sdsl::size_in_bytes(*marks_) + sdsl::size_in_bytes(*marks_rank_)
+                                       + sdsl::size_in_bytes(*marks_select_));
+    if (mark_to_sample_) append(r, "mark_to_sample", sdsl::size_in_bytes(*mark_to_sample_));
+    if (doc_ends_) append(r, "doc_ends", sdsl::size_in_bytes(*doc_ends_) + sdsl::size_in_bytes(*doc_ends_rank_));
     return r;
   }
 
@@ -159,9 +170,14 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
     // Marks bitvector + rank/select supports (use loadItemPtr-backed BVRank/Select
     // to guarantee stable pointers across std::any reallocations).
-    this->template loadItem<sdsl::sd_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS, t_source, true);
+    auto cref_marks      = this->template loadItem<sdsl::sd_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS, t_source, true);
     auto bv_marks_rank   = this->template loadBVRank<sdsl::sd_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS, t_source, true);
     auto bv_marks_select = this->template loadBVSelect<sdsl::sd_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS, t_source, true);
+    samples_ = &cref_samples.get();
+    mark_to_sample_ = &cref_m2s.get();
+    marks_ = &cref_marks.get();
+    marks_rank_ = &bv_marks_rank.get();
+    marks_select_ = &bv_marks_select.get();
 
     const std::size_t n = cref_bwt.get().size();
 
@@ -201,8 +217,10 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
     // The logical key kDocEnds maps to the actual cache file key
     // ("doc_end") via the JSON keys mapping.
     const auto key_doc_ends = t_keys[dret::conf::kDocEnds].template get<std::string>();
-    this->template loadItem<TBvDocEnds>(key_doc_ends, t_source, true);
+    auto cref_doc_ends = this->template loadItem<TBvDocEnds>(key_doc_ends, t_source, true);
     auto doc_ends_rank = this->template loadBVRank<TBvDocEnds>(key_doc_ends, t_source, true);
+    doc_ends_ = &cref_doc_ends.get();
+    doc_ends_rank_ = &doc_ends_rank.get();
     doc_at_ = [doc_ends_rank](std::size_t pos) -> std::size_t {
       return doc_ends_rank.get()(pos);
     };
@@ -284,6 +302,20 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
                      const std::function<void(std::size_t)>&)>
       range_get_doc_;
   std::size_t sa_sampling_ = 0;
+
+  // The shared structures read above (owned by the storage), for serialize() and GetSizeReport().
+  template <typename TItem>
+  static size_type SerializeOrEmpty(const TItem* t_item, std::ostream& out, sdsl::structure_tree_node* v,
+                                    const std::string& name) {
+    return t_item ? sdsl::serialize(*t_item, out, v, name) : sdsl::serialize_empty_object<TItem>(out, v, name);
+  }
+  const sdsl::int_vector<>* samples_ = nullptr;
+  const sdsl::int_vector<>* mark_to_sample_ = nullptr;
+  const sdsl::sd_vector<>* marks_ = nullptr;
+  const typename sdsl::sd_vector<>::rank_1_type* marks_rank_ = nullptr;
+  const typename sdsl::sd_vector<>::select_1_type* marks_select_ = nullptr;
+  const TBvDocEnds* doc_ends_ = nullptr;
+  const typename TBvDocEnds::rank_1_type* doc_ends_rank_ = nullptr;
 };
 
 // Free-function construct() — same shape as the other rmq::GetDoc* construct
