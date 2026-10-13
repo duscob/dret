@@ -160,13 +160,12 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
   void loadInner(TSource& t_source, const JSON& t_keys) override {
     using namespace sri::conf;
 
-    // r-index data structures (shared with BruteRI's loaded instance; loadItem
-    // returns the typed-cache ref_wrapper). These are NOT type-hashed on the
-    // disk cache key (they're the standard sr-index sidecar files), so we
-    // call loadItem with add_type_hash=false (the default).
-    auto cref_bwt        = this->template loadItem<TBwtRLE>(KEY_BWT_RLE, t_source);
-    auto cref_samples    = this->template loadItem<sdsl::int_vector<>>(KEY_BWT_RUN_LAST_TEXT_POS, t_source);
-    auto cref_m2s        = this->template loadItem<sdsl::int_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS_SORTED_TO_LAST_IDX, t_source);
+    // r-index data structures, the ones the r-index (count_idx, Brute-RI) loads too. Their files are
+    // the standard sr-index ones (no type hash in the name); loadSriItem keys them in storage as
+    // sr-index does, so they are held once, not once per convention.
+    auto cref_bwt        = this->template loadSriItem<TBwtRLE>(KEY_BWT_RLE, t_source);
+    auto cref_samples    = this->template loadSriItem<sdsl::int_vector<>>(KEY_BWT_RUN_LAST_TEXT_POS, t_source);
+    auto cref_m2s        = this->template loadSriItem<sdsl::int_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS_SORTED_TO_LAST_IDX, t_source);
 
     // Marks bitvector + rank/select supports (use loadItemPtr-backed BVRank/Select
     // to guarantee stable pointers across std::any reallocations).

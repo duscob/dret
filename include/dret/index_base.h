@@ -136,6 +136,22 @@ class IndexBaseWithExternalStorage {
     return std::cref(*item);
   }
 
+  // Like loadItem, for an item an sr-index structure in the same storage also loads (e.g. the r-index's
+  // BWT, samples, mark-to-sample map). sr-index always keys its storage entries by type
+  // (sri::storageKey), whatever the file name, so keying them here the same way holds one copy instead
+  // of two. The file name is t_key as is.
+  template <typename TItem>
+  auto loadSriItem(const std::string& t_key, TSource& t_source) {
+    const auto storage_key = sri::storageKey<TItem>(t_key);
+    auto item = get<TItem>(storage_, storage_key);
+    if (!item) {
+      auto* mutable_item = const_cast<TItem*>(set(storage_, storage_key, TItem{}));
+      load(*mutable_item, t_source, t_key, false);
+      item = mutable_item;
+    }
+    return std::cref(*item);
+  }
+
   template <typename TBv, typename TBvRank = typename TBv::rank_1_type>
   auto loadBVRank(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
     auto key_rank = t_key + "_rank";
