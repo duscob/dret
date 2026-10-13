@@ -77,6 +77,11 @@ class DocListIdxPDL
                             TStoredSetCodec>;
   using typename SchemeBase::size_type;
 
+  // A backend that finds the suffix-array range itself (RLCSA, as in the original PDL) replaces the
+  // r-index: count_idx is then neither loaded, serialized nor counted in the size.
+  static constexpr bool kBackendCounts =
+      requires(const typename TGetDocs::Inner& g, const typename TAlphabet::string_type& p) { g.Count(p); };
+
   DocListIdxPDL() = default;
 
   explicit DocListIdxPDL(const TStorage& t_storage,
@@ -132,7 +137,7 @@ class DocListIdxPDL
                       const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     std::size_t bytes = 0;
-    bytes += count_idx_.serialize(out, child, "count_idx");
+    if constexpr (!kBackendCounts) bytes += count_idx_.serialize(out, child, "count_idx");
     bytes += get_docs_.inner().serialize(out, child, "get_docs");
     if (core_) bytes += core_->serialize(out, child, "core");
     return bytes;
@@ -140,7 +145,7 @@ class DocListIdxPDL
 
   SizeReport GetSizeReport() const override {
     SizeReport r;
-    append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
+    if constexpr (!kBackendCounts) append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
     auto gd = get_docs_.inner().GetSizeReport();
     for (const auto& f : gd) append(r, "get_docs_" + f.name, f.bytes);
     if (core_) {
@@ -158,7 +163,8 @@ class DocListIdxPDL
 
  protected:
   std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const override {
-    return count_idx_.Count(t_pattern);
+    if constexpr (kBackendCounts) return get_docs_.inner().Count(t_pattern);
+    else return count_idx_.Count(t_pattern);
   }
 
   // Single-range computeCover: PDL's multi-range covers are produced by
@@ -196,7 +202,7 @@ class DocListIdxPDL
 
     std::visit(
         [this](auto&& tt_source) {
-          count_idx_.load(tt_source.get());
+          if constexpr (!kBackendCounts) count_idx_.load(tt_source.get());
           get_docs_.inner().load(tt_source.get());
         },
         t_source);

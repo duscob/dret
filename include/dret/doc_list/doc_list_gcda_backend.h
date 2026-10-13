@@ -60,11 +60,17 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
         block_size_(t_block_size),
         storing_factor_(t_storing_factor) {}
 
+  // As in DocListIdxPDL: a backend that finds the suffix-array range itself (RLCSA) replaces the
+  // r-index, which is then neither loaded, serialized nor counted in the size.
+  static constexpr bool kBackendCounts =
+      requires(const typename TGetDocs::Inner& g, const typename TAlphabet::string_type& p) { g.Count(p); };
+
   DocListIdxGCDABackend() = default;
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    std::size_t bytes = count_idx_.serialize(out, child, "count_idx");
+    std::size_t bytes = 0;
+    if constexpr (!kBackendCounts) bytes += count_idx_.serialize(out, child, "count_idx");
     bytes += get_docs_.inner().serialize(out, child, "get_docs");
     if (tree_) bytes += tree_->serialize(out, child, "sampled_tree");
     if (sets_) bytes += sets_->serialize(out, child, "sets");
@@ -73,7 +79,7 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
 
   SizeReport GetSizeReport() const override {
     SizeReport r;
-    append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
+    if constexpr (!kBackendCounts) append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
     for (const auto& f : get_docs_.inner().GetSizeReport()) append(r, "get_docs_" + f.name, f.bytes);
     if (tree_) append(r, "sampled_tree", sdsl::size_in_bytes(*tree_));
     if (sets_) append(r, "sets", sdsl::size_in_bytes(*sets_));
@@ -87,7 +93,8 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
 
  protected:
   std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const override {
-    return count_idx_.Count(t_pattern);
+    if constexpr (kBackendCounts) return get_docs_.inner().Count(t_pattern);
+    else return count_idx_.Count(t_pattern);
   }
 
   std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
@@ -114,7 +121,7 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
   void loadInner(typename StorageBase::TSource& t_source, const JSON& t_keys) override {
     std::visit(
         [this](auto&& tt_source) {
-          count_idx_.load(tt_source.get());
+          if constexpr (!kBackendCounts) count_idx_.load(tt_source.get());
           get_docs_.inner().load(tt_source.get());
         },
         t_source);

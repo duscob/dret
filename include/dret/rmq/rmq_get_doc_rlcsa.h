@@ -86,6 +86,18 @@ class GetDocRLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
         return;
   }
 
+  // Suffix-array range of t_pattern in dret's positions, [sp, ep), found by the RLCSA itself: an index
+  // over this backend counts with it (as the original PDL does) instead of loading an r-index too.
+  // Inverse of the lookups above (dret position i = RLCSA position i - 1 - D); the two suffix arrays
+  // order suffixes differently only around the separators, so a pattern's range has the same bounds.
+  template <typename TPattern>
+  std::pair<std::size_t, std::size_t> Count(const TPattern& t_pattern) const {
+    const CSA::pair_type range = rlcsa_->count(std::string(t_pattern.begin(), t_pattern.end()));
+    if (CSA::isEmpty(range)) return {0, 0};
+    const CSA::usint d = rlcsa_->getNumberOfSequences();
+    return {range.first + 1 + d, range.second + 2 + d};
+  }
+
   // Serialize the RLCSA sidecar base path so the istream reload path can
   // reopen the sidecar without needing a Config object.
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v,
