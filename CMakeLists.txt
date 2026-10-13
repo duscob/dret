@@ -107,6 +107,8 @@ include(internal_utils)
 
 include(ConfigSDSL)
 include(ConfigGrammar)
+# dret links nlohmann_json itself, so it declares it too: don't rely on sr-index's declaration.
+include(ConfigNJSON)
 include(ConfigSRIndex)
 include(ConfigRLCSA)
 find_package(OpenMP REQUIRED)

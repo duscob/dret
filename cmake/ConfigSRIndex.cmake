@@ -17,6 +17,3 @@ set(SR-INDEX_DEFAULT_ALPHABET_WIDTH ${DRET_DEFAULT_ALPHABET_WIDTH} CACHE INTERNA
 FetchContent_MakeAvailable(${ExternalProjectName})
 FetchContent_GetProperties(${ExternalProjectName})
 include_directories(${${ExternalProjectName}_SOURCE_DIR}/include)
-
-FetchContent_MakeAvailable(json)
-include_directories(${json_SOURCE_DIR}/single_include)
