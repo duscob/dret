@@ -173,8 +173,9 @@ struct PDLSweep {
   std::vector<std::size_t> sa_sampling{8};
   std::vector<std::uint32_t> block_size{512};
   std::vector<float> storing_factor{4.0f};
-  // Block size of the GCDA backend for get_doc=slp (gcda_slp light); its
-  // storing factor is fixed at 32. Default: the value it used to be pinned at.
+  // Block size of the GCDA backend for get_doc=slp (gcda_slp light; its storing
+  // factor is fixed at 32) and sample spacing for get_doc=slp_ns differential
+  // variants. Default: the value the light backend used to be pinned at.
   std::vector<std::uint32_t> backend_block_size{1024};
 };
 

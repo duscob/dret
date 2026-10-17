@@ -712,25 +712,24 @@ void BM_ConstructRMQ_NS(benchmark::State& t_state, dret::Config t_config,
   if (memory_trace) WriteSizesSidecar(t_state, sizes);
 }
 
-// PDL with a GCDA-light SLP backing, pinned to the GCDA-light knee
-// (block_size=1024, storing_factor=32) independently of PDL's own (bs, sf).
+// PDL with a GCDA-family backing that has its own block size, independent of
+// PDL's own (bs, sf): GCDA-light at (backend_bs, 32), or a differential bare
+// SLP sampled every backend_bs positions.
 //
 // This mirrors the query factory (factories/pdl.h): it constructs the inner
-// GetDocSLP explicitly at that operating point, because the plain 4-arg
-// DocListIdxPDL ctor would leave the inner SLP at GetDocSLP's own defaults of
-// (512, 4). Construct used that plain ctor, so it built a (512,4) backing the
-// query never reads while the query built the (1024,32) one itself -- the last
-// thing keeping run_unit.sh's stage B alive after the missing get_doc cases
-// were added. It is also why 1024-32_gcda_docs showed up as one of the most
-// duplicated artifacts across partitions: every partition holding any PDL
-// get_doc=slp cell needs that same pinned backing.
+// get-doc explicitly at that operating point, because the plain 4-arg
+// DocListIdxPDL ctor would build the inner backing from PDL's own block size.
+// Construct used that plain ctor, so it built a backing the query never reads
+// while the query built its own -- the last thing keeping run_unit.sh's stage B
+// alive after the missing get_doc cases were added.
 template <typename TIndex, typename TGetDocs>
-void BM_ConstructPDLGCDALight(benchmark::State& t_state, dret::Config t_config,
-                              dret::pdl::StoragePolicy t_policy,
-                              std::uint32_t bs, float sf,
-                              std::function<void()> rebuild_hook, bool memory_trace) {
+void BM_ConstructPDLBackend(benchmark::State& t_state, dret::Config t_config,
+                            dret::pdl::StoragePolicy t_policy,
+                            std::uint32_t bs, float sf,
+                            std::uint32_t backend_bs, float backend_sf,
+                            std::function<void()> rebuild_hook, bool memory_trace) {
   GS storage;
-  typename TGetDocs::Inner inner(storage, 1024, 32.0f);
+  typename TGetDocs::Inner inner(storage, backend_bs, backend_sf);
   TGetDocs get_docs(std::move(inner));
   TIndex index(storage, get_docs, bs, sf, t_policy);
   std::int64_t first_iter_ns = -1;
@@ -1251,10 +1250,15 @@ void RegisterQueryPDL(const bench::spec::PDLSweep& sw, Factory<>& factory,
           // Name bare-diff variants as RegisterQueryRMQ does: BareValue maps
           // every diff variant to "iv", so without slp=diff a differential
           // backend would take the plain iv backend's name.
+          // A differential backend samples every backend-block-size positions.
+          // The key is always in its name: a name without it means the spacing
+          // was PDL's block size, as it was before the backend had its own.
           for (auto v : sw.bare_slp) {
             if (IsBareDiff(v))
-              emit({{"slp", "diff"}, {"slp-container", DiffContainerValue(v)}},
-                   GCDASLPVariant::Light, v, DGCDASLPVariant::Default);
+              for (auto bbs : sw.backend_block_size)
+                emit({{"slp", "diff"}, {"slp-container", DiffContainerValue(v)},
+                      {"backend-block-size", IntStr(bbs)}},
+                     GCDASLPVariant::Light, v, DGCDASLPVariant::Default, bbs);
             else
               emit({{"slp-container", BareValue(v)}}, GCDASLPVariant::Light, v, DGCDASLPVariant::Default);
           }
@@ -1599,24 +1603,33 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
             }
           }
         };
+        // A backing with its own block size (factories/pdl.h): one cell per
+        // backend_block_size. Light names it only when it is not the default
+        // 1024, a differential backing always, as the query does.
+        auto reg_backend = [&]<typename TIndex, typename TGD>(float backend_sf, bool always_named) {
+          for (auto bbs : sw.backend_block_size) {
+            const auto bbs_suffix = (always_named || bbs != 1024) ? "-bbs" + std::to_string(bbs) : std::string();
+            for (auto bs : sw.block_size) {
+              for (auto sf : sw.storing_factor) {
+                const auto cell_name = base_name + BsSfSuffix(bs, sf) + bbs_suffix;
+                auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
+                                                  {PDLKeyPrefix(bs, sf, policy)});
+                benchmark::RegisterBenchmark(cell_name, BM_ConstructPDLBackend<TIndex, TGD>,
+                                              config, lib_policy, bs, sf, bbs, backend_sf, hook,
+                                              cc.memory_trace);
+              }
+            }
+          }
+        };
         switch (codec) {
           case PDLVariant::Plain:
             switch (gd) {
               case GetDocEnum::DA:   reg.template operator()<IdxPlain<GS>>(); break;
               case GetDocEnum::SLP: {
-                // Pinned GCDA-light backing at (1024,32) -- must match the query
-                // factory exactly, see BM_ConstructPDLGCDALight.
+                // GCDA-light backing at (backend_block_size, 32) -- must match the
+                // query factory exactly, see BM_ConstructPDLBackend.
                 using TGD = GetDocsSLP<GS, bench::factories::gcda::SLP_Light>;
-                for (auto bs : sw.block_size) {
-                  for (auto sf : sw.storing_factor) {
-                    const auto cell_name = base_name + BsSfSuffix(bs, sf);
-                    auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                                      {PDLKeyPrefix(bs, sf, policy)});
-                    benchmark::RegisterBenchmark(cell_name,
-                        BM_ConstructPDLGCDALight<IdxPlain<GS, TGD>, TGD>,
-                        config, lib_policy, bs, sf, hook, cc.memory_trace);
-                  }
-                }
+                reg_backend.template operator()<IdxPlain<GS, TGD>, TGD>(32.0f, false);
                 break;
               }
               case GetDocEnum::DSLP: reg.template operator()<IdxPlain<GS, GetDocsDSLP<GS>>>(); break;
@@ -1631,7 +1644,10 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
                     case BareSLPVariant::Raw:  reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Raw>>>();  break;
                     case BareSLPVariant::DV:   reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DV>>>();   break;
                     case BareSLPVariant::VV:   reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_VV>>>();   break;
-                    case BareSLPVariant::Diff: reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>>>(); break;
+                    case BareSLPVariant::Diff: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>; reg_backend.template operator()<IdxPlain<GS, TGD>, TGD>(0.0f, true); break; }
+                    case BareSLPVariant::DiffEV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffEV>; reg_backend.template operator()<IdxPlain<GS, TGD>, TGD>(0.0f, true); break; }
+                    case BareSLPVariant::DiffDV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffDV>; reg_backend.template operator()<IdxPlain<GS, TGD>, TGD>(0.0f, true); break; }
+                    case BareSLPVariant::DiffVV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffVV>; reg_backend.template operator()<IdxPlain<GS, TGD>, TGD>(0.0f, true); break; }
                     default:                   reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_IV>>>();   break;
                   }
                 }
@@ -1652,19 +1668,10 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
             switch (gd) {
               case GetDocEnum::DA:   reg.template operator()<IdxRP<GS>>(); break;
               case GetDocEnum::SLP: {
-                // Pinned GCDA-light backing at (1024,32) -- must match the query
-                // factory exactly, see BM_ConstructPDLGCDALight.
+                // GCDA-light backing at (backend_block_size, 32) -- must match the
+                // query factory exactly, see BM_ConstructPDLBackend.
                 using TGD = GetDocsSLP<GS, bench::factories::gcda::SLP_Light>;
-                for (auto bs : sw.block_size) {
-                  for (auto sf : sw.storing_factor) {
-                    const auto cell_name = base_name + BsSfSuffix(bs, sf);
-                    auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                                      {PDLKeyPrefix(bs, sf, policy)});
-                    benchmark::RegisterBenchmark(cell_name,
-                        BM_ConstructPDLGCDALight<IdxRP<GS, TGD>, TGD>,
-                        config, lib_policy, bs, sf, hook, cc.memory_trace);
-                  }
-                }
+                reg_backend.template operator()<IdxRP<GS, TGD>, TGD>(32.0f, false);
                 break;
               }
               case GetDocEnum::DSLP: reg.template operator()<IdxRP<GS, GetDocsDSLP<GS>>>(); break;
@@ -1679,7 +1686,10 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
                     case BareSLPVariant::Raw:  reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Raw>>>();  break;
                     case BareSLPVariant::DV:   reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DV>>>();   break;
                     case BareSLPVariant::VV:   reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_VV>>>();   break;
-                    case BareSLPVariant::Diff: reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>>>(); break;
+                    case BareSLPVariant::Diff: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>; reg_backend.template operator()<IdxRP<GS, TGD>, TGD>(0.0f, true); break; }
+                    case BareSLPVariant::DiffEV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffEV>; reg_backend.template operator()<IdxRP<GS, TGD>, TGD>(0.0f, true); break; }
+                    case BareSLPVariant::DiffDV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffDV>; reg_backend.template operator()<IdxRP<GS, TGD>, TGD>(0.0f, true); break; }
+                    case BareSLPVariant::DiffVV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffVV>; reg_backend.template operator()<IdxRP<GS, TGD>, TGD>(0.0f, true); break; }
                     default:                   reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_IV>>>();   break;
                   }
                 }
@@ -1700,19 +1710,10 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
             switch (gd) {
               case GetDocEnum::DA:   reg.template operator()<IdxBC<GS>>(); break;
               case GetDocEnum::SLP: {
-                // Pinned GCDA-light backing at (1024,32) -- must match the query
-                // factory exactly, see BM_ConstructPDLGCDALight.
+                // GCDA-light backing at (backend_block_size, 32) -- must match the
+                // query factory exactly, see BM_ConstructPDLBackend.
                 using TGD = GetDocsSLP<GS, bench::factories::gcda::SLP_Light>;
-                for (auto bs : sw.block_size) {
-                  for (auto sf : sw.storing_factor) {
-                    const auto cell_name = base_name + BsSfSuffix(bs, sf);
-                    auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                                      {PDLKeyPrefix(bs, sf, policy)});
-                    benchmark::RegisterBenchmark(cell_name,
-                        BM_ConstructPDLGCDALight<IdxBC<GS, TGD>, TGD>,
-                        config, lib_policy, bs, sf, hook, cc.memory_trace);
-                  }
-                }
+                reg_backend.template operator()<IdxBC<GS, TGD>, TGD>(32.0f, false);
                 break;
               }
               case GetDocEnum::DSLP: reg.template operator()<IdxBC<GS, GetDocsDSLP<GS>>>(); break;
@@ -1727,7 +1728,10 @@ void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
                     case BareSLPVariant::Raw:  reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Raw>>>();  break;
                     case BareSLPVariant::DV:   reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DV>>>();   break;
                     case BareSLPVariant::VV:   reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_VV>>>();   break;
-                    case BareSLPVariant::Diff: reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>>>(); break;
+                    case BareSLPVariant::Diff: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>; reg_backend.template operator()<IdxBC<GS, TGD>, TGD>(0.0f, true); break; }
+                    case BareSLPVariant::DiffEV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffEV>; reg_backend.template operator()<IdxBC<GS, TGD>, TGD>(0.0f, true); break; }
+                    case BareSLPVariant::DiffDV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffDV>; reg_backend.template operator()<IdxBC<GS, TGD>, TGD>(0.0f, true); break; }
+                    case BareSLPVariant::DiffVV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffVV>; reg_backend.template operator()<IdxBC<GS, TGD>, TGD>(0.0f, true); break; }
                     default:                   reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_IV>>>();   break;
                   }
                 }

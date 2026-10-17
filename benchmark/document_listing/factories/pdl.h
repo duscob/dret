@@ -121,6 +121,22 @@ MakeForCodec(TStorage t_storage, dret::Config& t_config,
     result = {idx, sdsl::size_in_bytes(*idx)};
   };
 
+  // A backing with its own block size, t_backend_block_size, independent of
+  // PDL's (block_size, storing_factor), as RMQ builds the same backing from its
+  // block-size (so both families share its cache files). The default
+  // DocListIdxPDL ctor would build the inner backing from PDL's block size; the
+  // externally-supplied get_docs ctor lets us pass a pre-built one instead.
+  auto build_backend = [&](auto type_tag, float t_backend_storing_factor) {
+    using TGetDocs = typename decltype(type_tag)::type;
+    using TIndex = TCodec<TStorage, TGetDocs>;
+    typename TGetDocs::Inner inner(t_storage, t_backend_block_size, t_backend_storing_factor);
+    TGetDocs get_docs(std::move(inner));
+    auto idx = std::make_shared<TIndex>(t_storage, get_docs, t_block_size, t_storing_factor, lib_policy);
+    construct(*idx, t_config);
+    idx->load(t_config);
+    result = {idx, sdsl::size_in_bytes(*idx)};
+  };
+
   switch (t_get_doc) {
     case GetDocEnum::SLP:
       switch (t_gcda_slp) {
@@ -128,25 +144,12 @@ MakeForCodec(TStorage t_storage, dret::Config& t_config,
         case GCDASLPVariant::CompactLOUDS: build(Tag<GetDocsSLP<TStorage, gcda::SLP_CompactLOUDS>>{}); break;
         case GCDASLPVariant::Combined:     build(Tag<GetDocsSLP<TStorage, gcda::SLP_Combined>>{}); break;
         case GCDASLPVariant::Light:
-        default: {
-          // PDL-GCDA-light: the SLP backing has its own block size,
-          // t_backend_block_size (default 1024, the value it used to be pinned
-          // at), independent of PDL's (block_size, storing_factor). Its storing
-          // factor stays 32: it only shapes GCDA's document lists, which the
-          // backing does not load. The default DocListIdxPDL ctor would leave the
-          // inner SLP at GetDocSLP's defaults (512, 4); the externally-supplied
-          // get_docs ctor lets us pass a pre-built GetDocSLP instead.
-          using TGetDocs = GetDocsSLP<TStorage, gcda::SLP_Light>;
-          using TIndex = TCodec<TStorage, TGetDocs>;
-          typename TGetDocs::Inner inner(t_storage, t_backend_block_size, 32.0f);
-          TGetDocs get_docs(std::move(inner));
-          auto idx = std::make_shared<TIndex>(t_storage, get_docs,
-                                              t_block_size, t_storing_factor, lib_policy);
-          construct(*idx, t_config);
-          idx->load(t_config);
-          result = {idx, sdsl::size_in_bytes(*idx)};
+        default:
+          // PDL-GCDA-light: the backing's block size defaults to 1024, the value
+          // it used to be pinned at. Its storing factor stays 32: it only shapes
+          // GCDA's document lists, which the backing does not load.
+          build_backend(Tag<GetDocsSLP<TStorage, gcda::SLP_Light>>{}, 32.0f);
           break;
-        }
       }
       break;
     case GetDocEnum::SLP_NS:
@@ -154,7 +157,12 @@ MakeForCodec(TStorage t_storage, dret::Config& t_config,
         case BareSLPVariant::Raw:  build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_Raw>>{});  break;
         case BareSLPVariant::DV:   build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_DV>>{});   break;
         case BareSLPVariant::VV:   build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_VV>>{});   break;
-        case BareSLPVariant::Diff: build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_Diff>>{}); break;
+        // PDL-bare-diff: the backing samples the differential grammar every
+        // t_backend_block_size positions (no storing factor).
+        case BareSLPVariant::Diff:   build_backend(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_Diff>>{}, 0.0f);   break;
+        case BareSLPVariant::DiffEV: build_backend(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_DiffEV>>{}, 0.0f); break;
+        case BareSLPVariant::DiffDV: build_backend(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_DiffDV>>{}, 0.0f); break;
+        case BareSLPVariant::DiffVV: build_backend(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_DiffVV>>{}, 0.0f); break;
         case BareSLPVariant::IV:
         default:                   build(Tag<GetDocsSLP_NS<TStorage, slp_ns::BareSLP_IV>>{});   break;
       }
