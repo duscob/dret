@@ -4,7 +4,9 @@
 // Phase C: non-sampled GCDA index. Drives an SA-range search through a
 // bare `grammar::SLP<>` (no sampled tree, no precomputed covers, no
 // `GCChunks` doc-set storage), expanding the matched range and de-duping
-// the resulting doc-id stream.
+// the resulting doc-id stream. It also takes a sampled GCDA grammar (cached,
+// on-demand, compact) without its document lists: brute force over the
+// grammar the RMQ/PDL GCDA backend loads.
 //
 // Compared to `dret::gcda::DocListIdxGCDA`, this class:
 //   - Has no `block_size` / `storing_factor` knobs (those control the
@@ -44,6 +46,7 @@
 
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_base.h"
+#include "dret/doc_list/doc_list_gcda.h"
 #include "dret/index_base.h"
 #include "dret/slp/differential_slp.h"
 #include "dret/slp/slp_components.h"
@@ -59,6 +62,11 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
 // one GCDA-nolists has always used. Differential decode needs *some* anchors;
 // the spacing is the only knob of that index.
 inline constexpr std::uint32_t kDiffBlockSize = 512;
+
+// Storing factor of a sampled GCDA grammar without its document lists. It only
+// shapes the lists, which this index does not load, so it just names the cache
+// cell; 32 is the one the RMQ/PDL GCDA backend uses.
+inline constexpr float kNolistsStoringFactor = 32.0f;
 
 //~~~~~~~  SLP-NS range expansion, dispatched by SLP type  ~~~~~~~
 
@@ -82,10 +90,32 @@ void SlpNsExpandRange(const DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, T
   ExpandSLP(slp, sp, ep, add);
 }
 
+// Sampled GCDA grammar: expand [sp, ep) through its sampled tree, as the RMQ/PDL
+// GCDA backend does. The two overloads above are more specialised and win.
+template <typename TSLP, typename TReport>
+void SlpNsExpandRange(const TSLP& slp, std::size_t sp, std::size_t ep, TReport add) {
+  ExpandSLP(slp, sp, ep, add);
+}
+
 //~~~~~~~  SLP-NS cache key + build, dispatched by SLP type  ~~~~~~~
 
+// Sampled GCDA grammar: the components of the GCDA cell (block size = the
+// spacing, storing factor) that the RMQ/PDL GCDA backend loads, shared with it.
 template <typename TSLP>
-struct SlpNsTraits;  // primary left undefined — only the two SLP kinds below
+struct SlpNsTraits {
+  static std::vector<Component> components(const JSON& t_keys, uint32_t t_spacing,
+                                           float t_storing_factor = kNolistsStoringFactor) {
+    return CacheComponents(TSLP{}, t_keys, SampledTreeCell{t_spacing, t_storing_factor});
+  }
+  static void build(Config& t_config, uint32_t t_spacing, float t_storing_factor = kNolistsStoringFactor) {
+    const auto comps = components(t_config.keys, t_spacing, t_storing_factor);
+    if (ComponentsExist(comps, t_config)) return;
+    auto event = sdsl::memory_monitor::event(comps.back().key);
+    auto da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[conf::kDA].get<std::string>(), t_config);
+    TSLP slp;
+    gcda::construct(slp, t_config, da, t_spacing, t_storing_factor);
+  }
+};
 
 // Plain bare grammar::SLP: the CNF grammar of the DA alone, the component the
 // on-demand GCDA representation also stores. It has no sampling, so it ignores
@@ -93,10 +123,10 @@ struct SlpNsTraits;  // primary left undefined — only the two SLP kinds below
 template <typename TVarsContainer, typename TLengthsContainer>
 struct SlpNsTraits<grammar::SLP<TVarsContainer, TLengthsContainer>> {
   using TSLP = grammar::SLP<TVarsContainer, TLengthsContainer>;
-  static std::vector<Component> components(const JSON& t_keys, uint32_t /*t_spacing*/) {
+  static std::vector<Component> components(const JSON& t_keys, uint32_t /*t_spacing*/, float /*t_storing_factor*/ = 0) {
     return CacheComponents(TSLP{}, t_keys);
   }
-  static void build(Config& t_config, uint32_t t_spacing) {
+  static void build(Config& t_config, uint32_t t_spacing, float /*t_storing_factor*/ = 0) {
     if (ComponentsExist(components(t_config.keys, t_spacing), t_config)) return;
     auto da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[conf::kDA].get<std::string>(), t_config);
     TSLP slp;
@@ -110,10 +140,10 @@ template <typename TSLP, typename TRoots, typename TSpanSums, typename TSamples,
           typename TSampleRootsPos, typename TBV>
 struct SlpNsTraits<DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>> {
   using TDiff = DifferentialSLP<TSLP, TRoots, TSpanSums, TSamples, TSampleRootsPos, TBV>;
-  static std::vector<Component> components(const JSON& t_keys, uint32_t t_spacing) {
+  static std::vector<Component> components(const JSON& t_keys, uint32_t t_spacing, float /*t_storing_factor*/ = 0) {
     return CacheComponents(TDiff{}, t_keys, t_spacing);
   }
-  static void build(Config& t_config, uint32_t t_spacing) {
+  static void build(Config& t_config, uint32_t t_spacing, float /*t_storing_factor*/ = 0) {
     if (ComponentsExist(components(t_config.keys, t_spacing), t_config)) return;
     auto event = sdsl::memory_monitor::event(components(t_config.keys, t_spacing).back().key);
     TDiff dslp;
@@ -133,9 +163,11 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
   using TDocId = std::size_t;
   using size_type = std::size_t;
 
-  // t_spacing is the sample spacing of a differential TSLP; a plain one ignores it.
-  explicit DocListIdxSLP(const TStorage& t_storage, uint32_t t_spacing = kDiffBlockSize)
-      : StorageBase(t_storage), count_idx_(t_storage), spacing_(t_spacing) {}
+  // t_spacing is the sample spacing of a differential TSLP, or the block size of a
+  // sampled one (with t_storing_factor); a plain one ignores both.
+  explicit DocListIdxSLP(const TStorage& t_storage, uint32_t t_spacing = kDiffBlockSize,
+                         float t_storing_factor = kNolistsStoringFactor)
+      : StorageBase(t_storage), count_idx_(t_storage), spacing_(t_spacing), storing_factor_(t_storing_factor) {}
 
   DocListIdxSLP(const TStorage& t_storage, const TCountIdx& t_count_idx)
       : StorageBase(t_storage), count_idx_(t_count_idx) {}
@@ -150,7 +182,8 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
     docs.reserve(ep - sp);
     auto add = [&docs](auto v) { docs.emplace_back(static_cast<TDocId>(v)); };
 
-    // Plain SLP → span-cover expansion; differential SLP → range decompression.
+    // Plain SLP → span-cover expansion; differential SLP → range decompression;
+    // sampled SLP → expansion through its sampled tree.
     SlpNsExpandRange(*slp_, sp, ep, add);
 
     std::sort(docs.begin(), docs.end());
@@ -175,18 +208,22 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
   uint32_t spacing() const { return spacing_; }
 
+  float storing_factor() const { return storing_factor_; }
+
  protected:
   void loadInner(typename StorageBaseImpl::TSource& t_source, const JSON& t_keys) override {
     using namespace conf;
 
     std::visit([this](auto&& tt_source) { count_idx_.load(tt_source.get()); }, t_source);
 
-    slp_ = this->template loadComponentsPtr<TSLP>(SlpNsTraits<TSLP>::components(t_keys, spacing_), t_source);
+    slp_ = this->template loadComponentsPtr<TSLP>(SlpNsTraits<TSLP>::components(t_keys, spacing_, storing_factor_),
+                                                  t_source);
   }
 
   TCountIdx count_idx_;
   const TSLP* slp_ = nullptr;
   uint32_t spacing_ = kDiffBlockSize;
+  float storing_factor_ = kNolistsStoringFactor;
 };
 
 //~~~~~~~
@@ -230,9 +267,9 @@ void construct(DocListIdxSLP<TStorage, TAlphabet, TCountIdx, TSLP>& t_index, Con
     ConstructDocArray(t_config);
   }
 
-  // Build the grammar's components — the plain CNF grammar, or the base
-  // differential SLP (bare-diff) — dispatched by TSLP.
-  SlpNsTraits<TSLP>::build(t_config, t_index.spacing());
+  // Build the grammar's components — the plain CNF grammar, the base
+  // differential SLP (bare-diff), or a sampled GCDA grammar — dispatched by TSLP.
+  SlpNsTraits<TSLP>::build(t_config, t_index.spacing(), t_index.storing_factor());
 
   auto count_idx = t_index.count_idx();
   construct(count_idx, t_config.data_path, t_config);

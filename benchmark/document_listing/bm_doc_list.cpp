@@ -607,11 +607,13 @@ void BM_ConstructGCDAFamily(benchmark::State& t_state, dret::Config t_config,
   if (memory_trace) WriteSizesSidecar(t_state, sizes);
 }
 
+// One SLP-NS cell: the spacing (block size of a sampled grammar) and storing factor.
 template <typename TIndex>
-void BM_ConstructSLPNS(benchmark::State& t_state, dret::Config t_config,
-                        std::function<void()> rebuild_hook, bool memory_trace) {
+void BM_ConstructSLPNSAt(benchmark::State& t_state, dret::Config t_config,
+                         std::function<void()> rebuild_hook, bool memory_trace,
+                         std::uint32_t spacing, float storing_factor) {
   GS storage;
-  TIndex index(storage);
+  TIndex index(storage, spacing, storing_factor);
   std::int64_t first_iter_ns = -1;
   for (auto _ : t_state) {
     if (rebuild_hook) {
@@ -637,6 +639,13 @@ void BM_ConstructSLPNS(benchmark::State& t_state, dret::Config t_config,
   appendCounters(t_state, sizes);
   t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
   if (memory_trace) WriteSizesSidecar(t_state, sizes);
+}
+
+template <typename TIndex>
+void BM_ConstructSLPNS(benchmark::State& t_state, dret::Config t_config,
+                        std::function<void()> rebuild_hook, bool memory_trace) {
+  BM_ConstructSLPNSAt<TIndex>(t_state, t_config, std::move(rebuild_hook), memory_trace,
+                              dret::kDiffBlockSize, dret::kNolistsStoringFactor);
 }
 
 // RMQ kernels accept a rebuild hook for signature consistency with the other
@@ -1075,6 +1084,25 @@ void RegisterQuerySLPNS(const bench::spec::SLPNSSweep& sw, Factory<>& factory,
       benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
     }
   }
+  // A sampled GCDA grammar without its document lists: tree=none like the bare
+  // ones, with the block size and storing factor of the GCDA cell it reads.
+  for (auto gslp : sw.gcda_slp) {
+    for (auto bs : sw.block_size) {
+      for (auto sf : sw.storing_factor) {
+        const auto name = KeyedName("GCDA", {{"slp", SlpPlainValue(gslp)},
+                                             {"tree", "none"},
+                                             {"block-size", IntStr(bs)},
+                                             {"storing-factor", SfStr(sf)}});
+        Factory<>::Config cfg{};
+        cfg.index_t = Factory<>::IndexEnum::SLP_NS;
+        cfg.slp_ns_sampled = true;
+        cfg.gcda_slp = gslp;
+        cfg.block_size = bs;
+        cfg.storing_factor = sf;
+        benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
+      }
+    }
+  }
 }
 
 void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
@@ -1425,6 +1453,27 @@ void RegisterConstructSLPNS(const bench::spec::SLPNSSweep& sw, dret::Config& con
       case BareSLPVariant::DiffVV: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DiffVV>>, config, hook, cc.memory_trace); break;
       case BareSLPVariant::IV:
       default:                  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS>>, config, hook, cc.memory_trace); break;
+    }
+  }
+  // Sampled GCDA grammars without their lists: one cell per (block size,
+  // storing factor), the GCDA cell the query loads. --rebuild leaves them alone:
+  // they are GCDA's own components.
+  for (auto gslp : sw.gcda_slp) {
+    for (auto bs : sw.block_size) {
+      for (auto sf : sw.storing_factor) {
+        const auto name = "SLP-NS-" + std::string(SlpPlainValue(gslp)) + BsSfSuffix(bs, sf);
+        auto reg = [&]<typename TIndex>() {
+          benchmark::RegisterBenchmark(name, BM_ConstructSLPNSAt<TIndex>, config, std::function<void()>{},
+                                        cc.memory_trace, bs, sf);
+        };
+        switch (gslp) {
+          case GCDASLPVariant::Combined:     reg.template operator()<Idx<GS, fac::gcda::SLP_Combined>>(); break;
+          case GCDASLPVariant::CompactBP:    reg.template operator()<Idx<GS, fac::gcda::SLP_CompactBP>>(); break;
+          case GCDASLPVariant::CompactLOUDS: reg.template operator()<Idx<GS, fac::gcda::SLP_CompactLOUDS>>(); break;
+          case GCDASLPVariant::Light:
+          default:                           reg.template operator()<Idx<GS, fac::gcda::SLP_Light>>(); break;
+        }
+      }
     }
   }
 }

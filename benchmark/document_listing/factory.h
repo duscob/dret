@@ -12,6 +12,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -93,6 +94,10 @@ class Factory {
     // How GCDA / DGCDA store their sampled nodes' document sets (Re-Pair or
     // plain). Ignored by every other family.
     GCDASetsCodec gcda_sets = GCDASetsCodec::RP;
+    // SLP_NS over a sampled GCDA grammar (gcda_slp at block_size,
+    // storing_factor) instead of a bare one (bare_slp). Ignored by every other
+    // family.
+    bool slp_ns_sampled = false;
 
     bool operator<(const Config& t_c) const {
       if (index_t != t_c.index_t)
@@ -123,6 +128,8 @@ class Factory {
         return pdl_backend_block_size < t_c.pdl_backend_block_size;
       if (gcda_sets != t_c.gcda_sets)
         return gcda_sets < t_c.gcda_sets;
+      if (slp_ns_sampled != t_c.slp_ns_sampled)
+        return slp_ns_sampled < t_c.slp_ns_sampled;
       return sa_sampling < t_c.sa_sampling;
     }
   };
@@ -331,7 +338,9 @@ class Factory {
 
       case IndexEnum::SLP_NS: {
         auto [idx, size] = bench::factories::slp_ns::Make(
-            std::ref(storage_), config_, t_config.bare_slp, t_config.block_size);
+            std::ref(storage_), config_, t_config.bare_slp, t_config.block_size,
+            t_config.slp_ns_sampled ? std::optional(t_config.gcda_slp) : std::nullopt,
+            t_config.storing_factor);
         index = {idx, size};
         break;
       }

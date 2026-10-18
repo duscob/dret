@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <memory>
 #include <utility>
 
@@ -383,6 +384,20 @@ MakeDA_S(TStorage t_storage, dret::Config& t_config) {
   return {idx, sdsl::size_in_bytes(*idx)};
 }
 
+// SA-Phi-R needs no sampling parameter, so the storage-only constructor builds
+// it as for the non-S cores (see MakeSAPhi_R).
+template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeSAPhi_R_S(TStorage t_storage, dret::Config& t_config) {
+  using TCore = TCoreT<TStorage, GetDocSAPhi_R<TStorage>, TRunValues>;
+  using TIndex = Idx<TStorage, TCore>;
+  TCore core(t_storage);
+  auto idx = std::make_shared<TIndex>(t_storage, core);
+  construct(*idx, t_config);
+  idx->load(t_config);
+  return {idx, sdsl::size_in_bytes(*idx)};
+}
+
 template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TSLP, typename TRunValues>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
 MakeSLP_S(TStorage t_storage, dret::Config& t_config,
@@ -422,12 +437,11 @@ MakeDSLP_S(TStorage t_storage, dret::Config& t_config,
   return {idx, sdsl::size_in_bytes(*idx)};
 }
 
-// NOTE: SA-Phi is not supported for the published cores (IlcpLikeFullCore /
-// SadaCore) — their 1-arg constructors don't accept the sa_sampling rate
-// the inner GetDocSAPhi needs. The MakeOnePub_T dispatch below treats
-// SAPhiR / SAPhiSR as no-ops (falls through to DA). Sweep specs should not
-// list sada-s / ilcp-s / cilcp-s under sa_phi_r/sr. The non-S cores
-// (sada / ilcp / cilcp) cover SA-Phi via MakeSAPhi_R / MakeSAPhi_SR above.
+// NOTE: the published cores (IlcpLikeFullCore / SadaCore) support SA-Phi-R
+// only: their 1-arg constructors cannot pass the sa_sampling rate SA-Phi-SR
+// needs, so SA-Phi-SR builds SA-Phi-R, as it does for the non-S cores. RLCSA
+// is unsupported and throws rather than measuring another backend under its
+// name (it used to fall through to the DA).
 
 template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
@@ -487,10 +501,9 @@ MakeOnePub_T(TStorage t_storage, dret::Config& t_config,
       }
     case GetDocEnum::SAPhiR:
     case GetDocEnum::SAPhiSR:
+      return MakeSAPhi_R_S<TCoreT, TStorage, TRunValues>(t_storage, t_config);
     case GetDocEnum::RLCSA:
-      // SA-Phi and RLCSA unsupported for -S cores (1-arg constructors can't
-      // accept the inner GetDoc state they need). Safe fall-through to DA.
-      [[fallthrough]];
+      throw std::invalid_argument("RMQ: the published cores do not support get_doc=rlcsa");
     case GetDocEnum::DA:
     default:
       return MakeDA_S<TCoreT, TStorage, TRunValues>(t_storage, t_config);

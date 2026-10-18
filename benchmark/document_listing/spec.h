@@ -127,9 +127,14 @@ struct DGCDASweep {
 
 struct SLPNSSweep {
   std::vector<axes::BareSLPVariant> tslp{axes::BareSLPVariant::IV};
-  // Sample spacing of the differential variants (plain ones have no sampling).
-  // Default: the spacing GCDA-nolists has always used.
+  // Sample spacing of the differential variants (plain ones have no sampling),
+  // and block size of the sampled ones. Default: the spacing GCDA-nolists has
+  // always used.
   std::vector<std::uint32_t> block_size{512};
+  // Sampled GCDA grammars without their document lists, one per
+  // (block_size, storing_factor) cell. None by default.
+  std::vector<axes::GCDASLPVariant> gcda_slp{};
+  std::vector<float> storing_factor{32.0f};
 };
 
 struct RMQSweep {
@@ -324,6 +329,8 @@ inline SLPNSSweep ParseSLPNS(const nlohmann::json& j) {
   SLPNSSweep s;
   s.tslp = ParseEnumList<axes::BareSLPVariant>(j, "tslp", s.tslp);
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
+  s.gcda_slp = ParseEnumList<axes::GCDASLPVariant>(j, "gcda_slp", s.gcda_slp);
+  s.storing_factor = ParseStoringFactors(j, s.storing_factor);
   return s;
 }
 
