@@ -29,6 +29,7 @@
 //                            "block_size": [512], "storing_factor": [4] },
 //       { "family": "slp_ns","tslp": ["IV"] },
 //       { "family": "brute", "kind": ["r-index"], "sampling_size": [16] }
+//       { "family": "brute", "kind": ["da", "rlcsa"] }   (brute force over the DA / RLCSA backend)
 //     ]
 //   }
 //
@@ -194,7 +195,7 @@ struct GCDABackendSweep {
 };
 
 struct BruteSweep {
-  enum class Kind { RIndex, SrIndex };
+  enum class Kind { RIndex, SrIndex, DA, RLCSA };
   std::vector<Kind> kind{Kind::RIndex};
   std::vector<std::size_t> sampling_size{8};  // Only used for sr-index.
 };
@@ -251,7 +252,9 @@ inline factories::rmq::CoreKind ParseRmqCore(const std::string& s) {
 inline BruteSweep::Kind ParseBruteKind(const std::string& s) {
   if (s == "r-index" || s == "rindex")    return BruteSweep::Kind::RIndex;
   if (s == "sr-index" || s == "srindex")  return BruteSweep::Kind::SrIndex;
-  throw std::invalid_argument("brute.kind: must be 'r-index' or 'sr-index', got '" + s + "'");
+  if (s == "da")                          return BruteSweep::Kind::DA;
+  if (s == "rlcsa")                       return BruteSweep::Kind::RLCSA;
+  throw std::invalid_argument("brute.kind: must be 'r-index', 'sr-index', 'da' or 'rlcsa', got '" + s + "'");
 }
 
 // Read a list-of-strings field and parse each via EnumTraits<E>::TryParse.

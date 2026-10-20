@@ -21,6 +21,8 @@ namespace bench::axes {
 enum class IndexEnum {
   BRUTE_R_INDEX,
   BRUTE_SR_INDEX,
+  BRUTE_DA,     // dret::DocListIdxBruteBackend over the plain DA (counts with the r-index)
+  BRUTE_RLCSA,  // dret::DocListIdxBruteBackend over the RLCSA (counts with the RLCSA)
   GCDA,
   DGCDA,    // variant axis selects Default / OTF / CRL / EV / DV / VV (see DGCDASLPVariant)
   // These names, and the benchmark labels built from them, are the 2026-09

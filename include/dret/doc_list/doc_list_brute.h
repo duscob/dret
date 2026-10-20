@@ -12,6 +12,7 @@
 
 #include "dret/config.h"
 #include "dret/construct_base.h"
+#include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/index_base.h"
 
@@ -47,20 +48,11 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, TAlphabet> {
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
     auto occurrences = locate_idx_.Locate(t_pattern);
 
-    // Document listing reports the *set* of documents. Locate yields one entry
-    // per occurrence, so a frequent pattern produces many duplicate doc ids;
-    // dedup them here (the index owns set-semantics, the benchmark sink does
-    // not). A boolean marker keyed by doc id dedups in O(occ + max_doc) and
-    // reports in ascending doc order — cheaper than sort+unique for the
-    // high-occurrence patterns this brute baseline is meant to stress.
-    std::vector<bool> seen;
+    // Locate yields one entry per occurrence; the index owns set semantics (see distinct_docs.h).
+    DistinctDocs seen(get_doc_.n_doc());
     for (const auto& item : occurrences) {
-      std::size_t d = get_doc_(item);
-      if (d >= seen.size()) seen.resize(d + 1, false);
-      seen[d] = true;
-    }
-    for (std::size_t d = 0; d < seen.size(); ++d) {
-      if (seen[d]) t_report(static_cast<TDocId>(d));
+      const std::size_t d = get_doc_(item);
+      if (seen.Insert(d)) t_report(static_cast<TDocId>(d));
     }
   }
 
@@ -169,6 +161,9 @@ class GetDocBv : public IndexBaseWithExternalStorage<TStorage, t_width> {
     return get_doc_(t_position);
   }
 
+  // The number of documents: the ones of the document-ends bitvector.
+  std::size_t n_doc() const { return n_doc_; }
+
  protected:
   using typename Base::TSource;
 
@@ -176,8 +171,9 @@ class GetDocBv : public IndexBaseWithExternalStorage<TStorage, t_width> {
     using namespace dret::conf;
     key_ = t_keys[kDocEnds].get<std::string>();
 
-    this->template loadItem<TBvDocEnds>(key_, t_source, true);
+    const auto doc_ends_cref = this->template loadItem<TBvDocEnds>(key_, t_source, true);
     auto doc_ends_rank_cref = this->template loadBVRank<TBvDocEnds>(key_, t_source, true);
+    n_doc_ = doc_ends_rank_cref.get()(doc_ends_cref.get().size());
     get_doc_ = [doc_ends_rank_cref](uint32_t t_position) {
       return doc_ends_rank_cref.get()(t_position);
     };
@@ -187,6 +183,7 @@ class GetDocBv : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   std::string key_;
   std::function<uint32_t(uint32_t)> get_doc_;
+  std::size_t n_doc_ = 0;
 };
 
 //~~~~~~~

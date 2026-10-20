@@ -11,6 +11,9 @@
 // only load(). bm_build_items uses DocListIdxBrute<> directly with
 // BM_ConstructBruteIdx<> which exercises construct(idx, config).
 //
+// Brute force over a raw-range backend (dret::DocListIdxBruteBackend: the
+// plain DA or the RLCSA) does follow construct-then-load, as the RMQ cores do.
+//
 
 #pragma once
 
@@ -18,6 +21,8 @@
 #include "sr-index/sr_index.h"
 
 #include "dret/doc_list/doc_list_brute.h"
+#include "dret/doc_list/doc_list_brute_backend.h"
+#include "dret/rmq/rmq_get_doc_rlcsa.h"
 
 namespace bench::factories::brute {
 
@@ -44,5 +49,29 @@ using IdxSr = dret::DocListIdxBrute<
 // internally -- it exists only to expose a one-argument (storage) ctor.
 template <typename TStorage>
 using IdxSrConstruct = IdxSr<TStorage>;
+
+// Brute force over the plain DA and over the RLCSA.
+template <typename TStorage>
+using IdxDA = dret::DocListIdxBruteBackend<
+    TStorage,
+    dret::Alphabet<>,
+    sri::RIndexCount<TStorage, dret::Alphabet<>>,
+    dret::rmq::GetDocDA<TStorage, dret::Alphabet<>::int_width>>;
+
+template <typename TStorage>
+using IdxRLCSA = dret::DocListIdxBruteBackend<
+    TStorage,
+    dret::Alphabet<>,
+    sri::RIndexCount<TStorage, dret::Alphabet<>>,
+    dret::rmq::GetDocRLCSA<TStorage, dret::Alphabet<>::int_width>>;
+
+template <typename TIndex, typename TStorage>
+std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
+MakeBackend(TStorage t_storage, dret::Config& t_config) {
+  auto idx = std::make_shared<TIndex>(t_storage);
+  construct(*idx, t_config);
+  idx->load(t_config);
+  return {idx, sdsl::size_in_bytes(*idx)};
+}
 
 }  // namespace bench::factories::brute

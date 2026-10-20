@@ -1356,6 +1356,12 @@ void RegisterQueryBrute(const bench::spec::BruteSweep& sw, Factory<>& factory,
       cfg.index_t = Factory<>::IndexEnum::BRUTE_R_INDEX;
       benchmark::RegisterBenchmark("BruteRI", BM_Query,
                                     &factory, cfg, patterns, seq_size);
+    } else if (kind == BruteSweep::Kind::DA || kind == BruteSweep::Kind::RLCSA) {
+      Factory<>::Config cfg{};
+      const bool da = kind == BruteSweep::Kind::DA;
+      cfg.index_t = da ? Factory<>::IndexEnum::BRUTE_DA : Factory<>::IndexEnum::BRUTE_RLCSA;
+      benchmark::RegisterBenchmark(da ? "BruteDA" : "BruteRLCSA", BM_Query,
+                                    &factory, cfg, patterns, seq_size);
     } else {
       for (auto s : sw.sampling_size) {
         Factory<>::Config cfg{};
@@ -1813,6 +1819,14 @@ void RegisterConstructBrute(const bench::spec::BruteSweep& sw, dret::Config& con
     if (kind == BruteSweep::Kind::RIndex) {
       benchmark::RegisterBenchmark("BruteRI",
           BM_ConstructBrute<dret::DocListIdxBrute<>>, config,
+          std::function<void()>{}, cc.memory_trace);
+    } else if (kind == BruteSweep::Kind::DA) {
+      benchmark::RegisterBenchmark("BruteDA",
+          BM_ConstructBrute<bench::factories::brute::IdxDA<dret::GenericStorage>>, config,
+          std::function<void()>{}, cc.memory_trace);
+    } else if (kind == BruteSweep::Kind::RLCSA) {
+      benchmark::RegisterBenchmark("BruteRLCSA",
+          BM_ConstructBrute<bench::factories::brute::IdxRLCSA<dret::GenericStorage>>, config,
           std::function<void()>{}, cc.memory_trace);
     } else {
       // One cell per sampling rate, named exactly as RegisterQueryBrute names
