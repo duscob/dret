@@ -8,6 +8,7 @@
 #include <functional>
 #include <vector>
 
+#include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_base.h"
 
 #ifdef DRET_DOC_LIST_PROFILE
@@ -51,27 +52,24 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
     std::size_t total_raw = 0;
     for (const auto& r : raw_ranges) total_raw += r.second - r.first;
     std::vector<TDocId> docs;
-    docs.reserve(total_raw);
 
-    auto add_doc = [&docs](const auto& tt_d) {
-      docs.emplace_back(tt_d);
+    // Each document is reported the first time it is seen, from the boundary ranges or from a
+    // stored list (distinct_docs.h), instead of sorting the boundary documents and merging the
+    // sorted lists.
+    DistinctDocs seen(0);
+    auto add_doc = [&docs, &seen](const auto& tt_d) {
+      if (seen.Insert(tt_d)) docs.emplace_back(tt_d);
     };
 
     for (const auto& [b, e] : raw_ranges) {
       getDocs(b, e, add_doc);
     }
-
-    sort(docs.begin(), docs.end());
-    docs.erase(unique(docs.begin(), docs.end()), docs.end());
 #ifdef DRET_DOC_LIST_PROFILE
     const auto prof_t3 = prof_clk::now();
 #endif
 
-    if (!nodes.empty()) {
-      auto get_doc_set = [this](std::size_t t_i) {
-        return this->getDocSet(t_i);
-      };
-      merge_sets_(nodes.begin(), nodes.end(), get_doc_set, docs);
+    for (auto i : nodes) {
+      for (const auto& d : this->getDocSet(i)) add_doc(d);
     }
 #ifdef DRET_DOC_LIST_PROFILE
     const auto prof_t4 = prof_clk::now();
@@ -125,6 +123,8 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
 
   virtual std::vector<TDocId> getDocSet(std::size_t t_i) const = 0;
 
+  // Not used by Search since the bitmap deduplication (distinct_docs.h); kept for the
+  // MergeSetsBinaryTreeFunctor of the index types and its tests.
   TMergeSets merge_sets_;
 };
 

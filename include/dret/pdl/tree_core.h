@@ -143,15 +143,14 @@ class PDLTreeCore {
 
   std::vector<TDocId> getDocSet(std::size_t t_codec_slot) const {
     std::vector<TDocId> out;
-    out.reserve(n_doc_);
     stored_sets_.Expand(t_codec_slot, n_doc_,
                         [&out](std::size_t d) { out.push_back(d); });
-    // DLSampledTreeScheme::Search feeds this straight into
-    // MergeSetsBinaryTreeFunctor, which merges with std::set_union -- so the
-    // result has to be sorted and unique. Codecs that already emit in
-    // ascending order (Plain, RP) declare kExpandsSorted and pay nothing here;
-    // BC concatenates per-rule runs and does not, so it is sorted once, at the
-    // only place where the ordering contract is actually consumed.
+    // Sorted and unique for every codec: Plain and RP emit in ascending order
+    // (kExpandsSorted), BC concatenates per-rule runs and is sorted here.
+    // DLSampledTreeScheme::Search no longer needs the order (it deduplicates with
+    // a bitmap, distinct_docs.h), but the contract is kept for other callers.
+    // No reserve(n_doc_): a stored list is usually far shorter than the number
+    // of documents, and reserving it cost an n_doc allocation per list.
     if constexpr (!TStoredSetCodec::kExpandsSorted) {
       std::sort(out.begin(), out.end());
       out.erase(std::unique(out.begin(), out.end()), out.end());
