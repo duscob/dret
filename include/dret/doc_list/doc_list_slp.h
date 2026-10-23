@@ -64,9 +64,11 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
 // the spacing is the only knob of that index.
 inline constexpr std::uint32_t kDiffBlockSize = 512;
 
-// Storing factor of a sampled GCDA grammar without its document lists. It only
-// shapes the lists, which this index does not load, so it just names the cache
-// cell; 32 is the one the RMQ/PDL GCDA backend uses.
+// Storing factor of a sampled GCDA grammar without its document lists. Besides
+// the lists, which this index does not load, it decides which nodes enter the
+// sampled tree (AreChildrenTooBig), so it also shapes the tree this index
+// expands through, slightly (page, compact-louds at block size 1024: 2.77 MB at
+// 4, 2.73 MB at inf). 32 is the one the RMQ/PDL GCDA backend uses.
 inline constexpr float kNolistsStoringFactor = 32.0f;
 
 //~~~~~~~  SLP-NS range expansion, dispatched by SLP type  ~~~~~~~
