@@ -195,7 +195,7 @@ struct GCDABackendSweep {
 };
 
 struct BruteSweep {
-  enum class Kind { RIndex, SrIndex, DA, RLCSA };
+  enum class Kind { RIndex, SrIndex, DA, RLCSA, Count };
   std::vector<Kind> kind{Kind::RIndex};
   std::vector<std::size_t> sampling_size{8};  // Only used for sr-index.
 };
@@ -254,7 +254,8 @@ inline BruteSweep::Kind ParseBruteKind(const std::string& s) {
   if (s == "sr-index" || s == "srindex")  return BruteSweep::Kind::SrIndex;
   if (s == "da")                          return BruteSweep::Kind::DA;
   if (s == "rlcsa")                       return BruteSweep::Kind::RLCSA;
-  throw std::invalid_argument("brute.kind: must be 'r-index', 'sr-index', 'da' or 'rlcsa', got '" + s + "'");
+  if (s == "count")                       return BruteSweep::Kind::Count;
+  throw std::invalid_argument("brute.kind: must be 'r-index', 'sr-index', 'da', 'rlcsa' or 'count', got '" + s + "'");
 }
 
 // Read a list-of-strings field and parse each via EnumTraits<E>::TryParse.

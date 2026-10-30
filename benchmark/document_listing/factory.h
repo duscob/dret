@@ -284,6 +284,13 @@ class Factory {
         break;
       }
 
+      case IndexEnum::COUNT_RI: {
+        auto [idx, size] = bench::factories::brute::MakeBackend<
+            bench::factories::brute::IdxCount<ExternalGenericStorage>>(std::ref(storage_), config_);
+        index = {idx, size};
+        break;
+      }
+
       case IndexEnum::BRUTE_RLCSA: {
         auto [idx, size] = bench::factories::brute::MakeBackend<
             bench::factories::brute::IdxRLCSA<ExternalGenericStorage>>(std::ref(storage_), config_);

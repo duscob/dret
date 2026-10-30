@@ -1362,6 +1362,10 @@ void RegisterQueryBrute(const bench::spec::BruteSweep& sw, Factory<>& factory,
       cfg.index_t = da ? Factory<>::IndexEnum::BRUTE_DA : Factory<>::IndexEnum::BRUTE_RLCSA;
       benchmark::RegisterBenchmark(da ? "BruteDA" : "BruteRLCSA", BM_Query,
                                     &factory, cfg, patterns, seq_size);
+    } else if (kind == BruteSweep::Kind::Count) {
+      Factory<>::Config cfg{};
+      cfg.index_t = Factory<>::IndexEnum::COUNT_RI;
+      benchmark::RegisterBenchmark("CountRI", BM_Query, &factory, cfg, patterns, seq_size);
     } else {
       for (auto s : sw.sampling_size) {
         Factory<>::Config cfg{};
@@ -1827,6 +1831,10 @@ void RegisterConstructBrute(const bench::spec::BruteSweep& sw, dret::Config& con
     } else if (kind == BruteSweep::Kind::RLCSA) {
       benchmark::RegisterBenchmark("BruteRLCSA",
           BM_ConstructBrute<bench::factories::brute::IdxRLCSA<dret::GenericStorage>>, config,
+          std::function<void()>{}, cc.memory_trace);
+    } else if (kind == BruteSweep::Kind::Count) {
+      benchmark::RegisterBenchmark("CountRI",
+          BM_ConstructBrute<bench::factories::brute::IdxCount<dret::GenericStorage>>, config,
           std::function<void()>{}, cc.memory_trace);
     } else {
       // One cell per sampling rate, named exactly as RegisterQueryBrute names
