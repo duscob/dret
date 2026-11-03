@@ -64,17 +64,20 @@ void collectSizes(SizeReport& out,
 // Algorithm: iterate through the sampled-tree leaves intersecting [bp, ep).
 // For each leaf, expand its `Map` variable forward by either the full leaf
 // length or the remaining `ep - bp`, whichever is smaller. The first leaf
-// may have a non-zero `skip_front` (when bp lies mid-leaf); in that case
-// we wrap the user's `report` callback to drop the first `skip_front`
-// invocations before forwarding the next ones.
+// may have a non-zero `skip_front` (when bp lies mid-leaf). It is expanded
+// from its nearer end -- backward when the range runs to the leaf's end or
+// lies closer to it -- and the user's `report` callback is wrapped to drop
+// the skipped invocations before forwarding the next ones. Backward reports
+// the leaf's part in reverse order; ExpandSLPUntil keeps the forward order.
 //
 // `grammar::ExpandCompactSLPForward` takes a non-const lvalue `TReport &`,
 // so the wrapper must be a named local lambda (named-lambda pattern).
-template<typename... Ts, typename Report>
-void ExpandSLP(const grammar::CompactLOUDSSLP<Ts...>& slp,
-               std::size_t bp,
-               std::size_t ep,
-               Report& report) {
+// kNearerEnd = false keeps every leaf forward, in position order (ExpandSLPUntil).
+template<bool kNearerEnd, typename... Ts, typename Report>
+void ExpandLOUDSLeaves(const grammar::CompactLOUDSSLP<Ts...>& slp,
+                       std::size_t bp,
+                       std::size_t ep,
+                       Report& report) {
   if (bp >= ep) return;
 
   auto leaf = slp.Leaf(bp);
@@ -97,18 +100,32 @@ void ExpandSLP(const grammar::CompactLOUDSSLP<Ts...>& slp,
                                         length,
                                         report);
     } else {
-      std::size_t remaining_skip = skip;
+      // Reach bp from the nearer end of the leaf: LOUDS stores no span lengths, so the skipped
+      // positions are expanded and dropped, and from the far end they would cost up to the leaf.
+      std::size_t skip_back = next_pos - target;  // 0 when the range runs to the end of the leaf
+      bool backward = kNearerEnd && skip_back < skip;
+      std::size_t remaining_skip = backward ? skip_back : skip;
       auto wrapped = [&report, &remaining_skip](const auto& v) {
         if (remaining_skip > 0) { --remaining_skip; return; }
         report(v);
       };
-      grammar::ExpandCompactSLPForward(slp.BvTree(),
-                                        slp.Sigma(),
-                                        slp.CompactLeaves(),
-                                        slp.LeafRank(),
-                                        var,
-                                        length,
-                                        wrapped);
+      if (backward) {
+        grammar::ExpandCompactSLPBackward(slp.BvTree(),
+                                           slp.Sigma(),
+                                           slp.CompactLeaves(),
+                                           slp.LeafRank(),
+                                           var,
+                                           skip_back + take,
+                                           wrapped);
+      } else {
+        grammar::ExpandCompactSLPForward(slp.BvTree(),
+                                          slp.Sigma(),
+                                          slp.CompactLeaves(),
+                                          slp.LeafRank(),
+                                          var,
+                                          length,
+                                          wrapped);
+      }
     }
 
     bp = target;
@@ -118,9 +135,17 @@ void ExpandSLP(const grammar::CompactLOUDSSLP<Ts...>& slp,
   }
 }
 
+template<typename... Ts, typename Report>
+void ExpandSLP(const grammar::CompactLOUDSSLP<Ts...>& slp,
+               std::size_t bp,
+               std::size_t ep,
+               Report& report) {
+  ExpandLOUDSLeaves<true>(slp, bp, ep, report);
+}
+
 // ---- ExpandSLPUntil overload ----
 //
-// The ExpandSLP above is already in position order, but
+// The forward-only expansion is in position order, but
 // grammar::ExpandCompactSLPForward offers no way to stop, so this keeps the
 // order and drops everything after the report asks to stop. Correct, not
 // faster: LOUDS still expands the whole range.
@@ -134,7 +159,7 @@ void ExpandSLPUntil(const grammar::CompactLOUDSSLP<Ts...>& slp,
     if (going)
       going = report(v);
   };
-  ExpandSLP(slp, bp, ep, filtered);
+  ExpandLOUDSLeaves<false>(slp, bp, ep, filtered);
 }
 
 }  // namespace dret

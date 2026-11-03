@@ -170,6 +170,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(pdl_cache_collision_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_cache_collision_test.cpp)
     cxx_test_with_flags_and_args(pdl_header_inclusion_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_header_inclusion_test.cpp)
     cxx_test_with_flags_and_args(repair_plan_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/repair_plan_test.cpp)
+    cxx_test_with_flags_and_args(slp_expand_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/slp_expand_test.cpp)
 endif ()
 
 

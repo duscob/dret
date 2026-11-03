@@ -4,10 +4,34 @@
 
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <vector>
 
 namespace dret {
+
+// An SLP that stores the span length of each rule (grammar::SLP, the base of the sampled-ondemand
+// representation) lets a skip pass over a whole variable in O(1). Without it (BasicSLP under
+// sampled-cached, the compact topologies) a skip descends to every terminal it passes, so reaching a
+// position inside a sampled leaf costs its distance to the leaf end. Only stored lengths qualify: an
+// SLP that computes SpanLength by descent (dret::BasicSLPOnTheFlySpanLength) must not get here.
+template<typename SLP, typename VarType>
+concept StoresSpanLength = requires(const SLP &_slp, VarType _var) {
+  { _slp.SpanLength(_var) } -> std::convertible_to<std::size_t>;
+};
+
+// True (and _skip reduced) when the SLP stores span lengths and the whole of _var lies in the skip.
+template<typename VarType, typename SLP>
+bool SkipWhole(VarType _var, std::size_t &_skip, const SLP &_slp) {
+  if constexpr (StoresSpanLength<SLP, VarType>) {
+    const std::size_t len = _slp.SpanLength(_var);
+    if (len <= _skip) {
+      _skip -= len;
+      return true;
+    }
+  }
+  return false;
+}
 
 template<typename VarType, typename SLP, typename Report>
 void ExpandSLPFromLeft(VarType _var, std::size_t &_length, const SLP &_slp, Report &_report) {
@@ -42,6 +66,7 @@ void ExpandSLPFromFront(VarType _var, std::size_t _length, const SLP &_slp, Repo
 
 template<typename VarType, typename SLP, typename Report>
 void ExpandSLPFromLeft(VarType _var, std::size_t &_skip, std::size_t &_length, const SLP &_slp, Report &_report) {
+  if (SkipWhole(_var, _skip, _slp)) return;
   if (_slp.IsTerminal(_var)) {
     --_skip;
     return;
@@ -101,6 +126,7 @@ void ExpandSLPFromBack(VarType _var, std::size_t _length, const SLP &_slp, Repor
 
 template<typename VarType, typename SLP, typename Report>
 void ExpandSLPFromRight(VarType _var, std::size_t &_skip, std::size_t &_length, const SLP &_slp, Report &_report) {
+  if (SkipWhole(_var, _skip, _slp)) return;
   if (_slp.IsTerminal(_var)) {
     --_skip;
     return;
