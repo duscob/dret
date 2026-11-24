@@ -9,6 +9,7 @@
 // Schema (informal):
 //
 //   {
+//     "spec_version": 2,    (the RMQ core names; see ParseRmqCore)
 //     "mode":     "query" | "construct",
 //     "dataset":  { "dir": "...", "name": "...", "patterns": "...",
 //                   "data_width": 8, "sa_algo": "SDSL_LIBDIVSUFSORT",
@@ -21,7 +22,7 @@
 //                            "storing_factor": [4] },
 //       { "family": "dgcda", "tslp": ["Default","OTF"], "block_size": [512],
 //                            "storing_factor": [4] },
-//       { "family": "rmq",   "core": ["sada","ilcp","cilcp-l"],
+//       { "family": "rmq",   "core": ["sada","ilcp","cilcp-v"],   (needs "spec_version": 2)
 //                            "get_doc": ["da","slp"], "gcda_slp": ["Light"],
 //                            "block_size": [512], "storing_factor": [4] },
 //       { "family": "pdl",   "codec": ["Plain"], "get_doc": ["DA"],
@@ -140,22 +141,22 @@ struct SLPNSSweep {
 
 struct RMQSweep {
   std::vector<factories::rmq::CoreKind> core{
-      factories::rmq::CoreKind::SADA_L,
-      factories::rmq::CoreKind::ILCP_L,
-      factories::rmq::CoreKind::CILCP_L,
       factories::rmq::CoreKind::SADA,
       factories::rmq::CoreKind::ILCP,
-      factories::rmq::CoreKind::CILCP};
+      factories::rmq::CoreKind::CILCP,
+      factories::rmq::CoreKind::SADA_V,
+      factories::rmq::CoreKind::ILCP_V,
+      factories::rmq::CoreKind::CILCP_V};
   std::vector<axes::GetDocEnum> get_doc{axes::GetDocEnum::DA};
   std::vector<axes::GCDASLPVariant> gcda_slp{axes::GCDASLPVariant::Light};
   std::vector<axes::BareSLPVariant> bare_slp{axes::BareSLPVariant::IV};
   // DGCDA variant axis for get_doc=dslp (the differential get-doc backend).
   std::vector<axes::DGCDASLPVariant> dgcda_slp{axes::DGCDASLPVariant::Default};
-  // TRunValues axis for the published ILCP / CILCP cores. Default DV
-  // matches IlcpLikeFullCore's default; other variants in {iv, dv, vv} fan
-  // the -S cores out across the run-values container.
+  // TRunValues axis for the value-rule ILCP-V / CILCP-V cores. Default DV
+  // matches IlcpLikeValueCore's default; other variants in {iv, dv, vv} fan
+  // the -V cores out across the run-values container.
   std::vector<axes::RunValuesVariant> run_values{axes::RunValuesVariant::DV};
-  // TPrevDoc axis for the published SADA core. Default IV matches its default;
+  // TPrevDoc axis for the value-rule SADA-V core. Default IV matches its default;
   // other variants in {iv, dv, vv}.
   std::vector<axes::PrevDocVariant> prev_doc{axes::PrevDocVariant::IV};
   // SA-Phi sampling rate axis for get_doc=sa_phi_sr. Ignored for sa_phi_r
@@ -204,6 +205,8 @@ using FamilySweep = std::variant<GCDASweep, DGCDASweep, SLPNSSweep,
                                   RMQSweep, PDLSweep, BruteSweep, GCDABackendSweep>;
 
 struct Spec {
+  // 0 when the spec does not say (see ParseRmqCore).
+  int spec_version = 0;
   Mode mode = Mode::Query;
   Dataset dataset;
   Workload workload;
@@ -221,32 +224,61 @@ inline Mode ParseMode(const std::string& s) {
   throw std::invalid_argument("spec.mode: must be 'query' or 'construct', got '" + s + "'");
 }
 
-// Core vocabulary. NOTE the 2026-09 rename: the plain names now denote the
-// PUBLISHED algorithms, which is what they mean in the literature and in the
-// paper. What used to be called "sada" / "ilcp" / "cilcp" -- the variants that
-// drop the value array -- are now "sada-l" / "ilcp-l" / "cilcp-l".
-//
-// The old "-s" spellings are rejected rather than aliased, because "sada" itself
-// changed meaning: silently reinterpreting an old spec would run a different core
-// than its author intended, and the results would look perfectly plausible. Any
-// spec naming a "-s" core therefore fails loudly and must be migrated.
-inline factories::rmq::CoreKind ParseRmqCore(const std::string& s) {
-  if (s == "sada")    return factories::rmq::CoreKind::SADA;
-  if (s == "ilcp")    return factories::rmq::CoreKind::ILCP;
-  if (s == "cilcp")   return factories::rmq::CoreKind::CILCP;
-  if (s == "sada-l")  return factories::rmq::CoreKind::SADA_L;
-  if (s == "ilcp-l")  return factories::rmq::CoreKind::ILCP_L;
-  if (s == "cilcp-l") return factories::rmq::CoreKind::CILCP_L;
-  if (s == "sada-s" || s == "ilcp-s" || s == "cilcp-s") {
-    const std::string base = s.substr(0, s.size() - 2);
-    throw std::invalid_argument(
-        "rmq.core: '" + s + "' was renamed in 2026-09. The published algorithm now takes "
-        "the plain name, so '" + base + "' is what '" + s + "' used to be, and the "
-        "value-free variant formerly called '" + base + "' is now '" + base + "-l'. "
-        "Migrate the spec: a bare old name now selects the OTHER core.");
+// Core vocabulary, versioned by spec.spec_version, because the names were
+// swapped twice:
+//   2026-09 (version 1): "sada" / "ilcp" / "cilcp" were the value-rule cores and
+//     "sada-l" / "ilcp-l" / "cilcp-l" the marking ones; before that, the value
+//     cores were the "-s" spellings and the plain names the marking cores.
+//   2026-11 (version 2, current): the plain names are the published algorithms,
+//     which stop by marking (Sadakane 2007; Gagie et al. 2017; CMR20), and
+//     "sada-v" / "ilcp-v" / "cilcp-v" are dret's value-rule variants.
+// A spec without spec_version may use only the unambiguous names ("-l" for the
+// marking cores, "-v" for the value cores): a plain name there could mean either
+// core, and reading it the wrong way would run the other core with plausible
+// results. The "-s" spellings are rejected in every version.
+inline constexpr int kSpecVersion = 2;
+
+inline factories::rmq::CoreKind ParseRmqCore(const std::string& s, int t_version) {
+  using factories::rmq::CoreKind;
+  const bool plain = s == "sada" || s == "ilcp" || s == "cilcp";
+  const auto base = [&s](std::size_t t_suffix) { return s.substr(0, s.size() - t_suffix); };
+  auto marking = [](const std::string& b) {
+    return b == "sada" ? CoreKind::SADA : b == "ilcp" ? CoreKind::ILCP : CoreKind::CILCP;
+  };
+  auto value = [](const std::string& b) {
+    return b == "sada" ? CoreKind::SADA_V : b == "ilcp" ? CoreKind::ILCP_V : CoreKind::CILCP_V;
+  };
+  auto suffixed = [&s](const char* t_suffix) {
+    for (const char* b : {"sada", "ilcp", "cilcp"})
+      if (s == std::string(b) + t_suffix) return true;
+    return false;
+  };
+
+  if (suffixed("-s")) {
+    throw std::invalid_argument("rmq.core: '" + s + "' is a pre-2026-09 name; use '" + base(2) +
+                                "-v' (the value-rule core) with spec_version " +
+                                std::to_string(kSpecVersion));
   }
-  throw std::invalid_argument("rmq.core: must be 'sada' / 'ilcp' / 'cilcp' / "
-                              "'sada-l' / 'ilcp-l' / 'cilcp-l', got '" + s + "'");
+  if (plain) {
+    if (t_version == 2) return marking(s);
+    if (t_version == 1) return value(s);
+    throw std::invalid_argument("rmq.core: '" + s + "' means the marking core under spec_version 2 and the "
+                                "value-rule core under spec_version 1; set spec_version");
+  }
+  if (suffixed("-l")) {
+    if (t_version == 2)
+      throw std::invalid_argument("rmq.core: '" + s + "' is a 2026-09 name; under spec_version 2 the "
+                                  "marking core is '" + base(2) + "'");
+    return marking(base(2));
+  }
+  if (suffixed("-v")) {
+    if (t_version == 1)
+      throw std::invalid_argument("rmq.core: '" + s + "' does not exist under spec_version 1, where the "
+                                  "value-rule core is '" + base(2) + "'");
+    return value(base(2));
+  }
+  throw std::invalid_argument("rmq.core: must be 'sada' / 'ilcp' / 'cilcp' (marking) or 'sada-v' / "
+                              "'ilcp-v' / 'cilcp-v' (value rule), got '" + s + "'");
 }
 
 inline BruteSweep::Kind ParseBruteKind(const std::string& s) {
@@ -338,9 +370,10 @@ inline SLPNSSweep ParseSLPNS(const nlohmann::json& j) {
   return s;
 }
 
-inline RMQSweep ParseRMQ(const nlohmann::json& j) {
+inline RMQSweep ParseRMQ(const nlohmann::json& j, int t_version) {
   RMQSweep s;
-  s.core = ParseListWith<factories::rmq::CoreKind>(j, "core", s.core, ParseRmqCore);
+  s.core = ParseListWith<factories::rmq::CoreKind>(
+      j, "core", s.core, [t_version](const std::string& c) { return ParseRmqCore(c, t_version); });
   s.get_doc = ParseEnumList<axes::GetDocEnum>(j, "get_doc", s.get_doc);
   s.gcda_slp = ParseEnumList<axes::GCDASLPVariant>(j, "gcda_slp", s.gcda_slp);
   s.bare_slp = ParseEnumList<axes::BareSLPVariant>(j, "bare_slp", s.bare_slp);
@@ -384,7 +417,7 @@ inline BruteSweep ParseBrute(const nlohmann::json& j) {
   return s;
 }
 
-inline FamilySweep ParseFamilyBlock(const nlohmann::json& j) {
+inline FamilySweep ParseFamilyBlock(const nlohmann::json& j, int t_version) {
   if (!j.contains("family") || !j.at("family").is_string()) {
     throw std::invalid_argument("sweep block: missing or non-string 'family'");
   }
@@ -392,7 +425,7 @@ inline FamilySweep ParseFamilyBlock(const nlohmann::json& j) {
   if (family == "gcda")    return ParseGCDA(j);
   if (family == "dgcda")   return ParseDGCDA(j);
   if (family == "slp_ns")  return ParseSLPNS(j);
-  if (family == "rmq")     return ParseRMQ(j);
+  if (family == "rmq")     return ParseRMQ(j, t_version);
   if (family == "pdl")     return ParsePDL(j);
   if (family == "brute")   return ParseBrute(j);
   if (family == "gcda_backend") return ParseGCDABackend(j);
@@ -441,13 +474,19 @@ inline Workload ParseWorkload(const nlohmann::json& j) {
 
 inline Spec ParseSpec(const nlohmann::json& j) {
   Spec s;
+  if (j.contains("spec_version")) {
+    s.spec_version = j.at("spec_version").get<int>();
+    if (s.spec_version < 1 || s.spec_version > detail::kSpecVersion)
+      throw std::invalid_argument("spec_version: 1 (2026-09 names) or " + std::to_string(detail::kSpecVersion) +
+                                  " (current), got " + std::to_string(s.spec_version));
+  }
   if (j.contains("mode")) s.mode = detail::ParseMode(j.at("mode").get<std::string>());
   if (j.contains("dataset")) s.dataset = detail::ParseDataset(j.at("dataset"));
   if (j.contains("workload")) s.workload = detail::ParseWorkload(j.at("workload"));
   if (j.contains("repair")) s.repair = detail::ParseRePair(j.at("repair"));
   if (j.contains("sweep")) {
     for (const auto& block : j.at("sweep")) {
-      s.sweep.push_back(detail::ParseFamilyBlock(block));
+      s.sweep.push_back(detail::ParseFamilyBlock(block, s.spec_version));
     }
   }
   if (s.dataset.dir.empty() || s.dataset.name.empty()) {

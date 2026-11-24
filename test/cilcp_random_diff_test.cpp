@@ -148,24 +148,15 @@ using GDDiff = dret::backend::BareGrammar<S, kW, TBareDiff>;
 using GDSAPhi = dret::backend::SAPhi<S, kW>;
 
 template <typename TGetDoc>
-using IlcpL = dret::rmq::IlcpLCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
-template <typename TGetDoc>
-using CilcpL = dret::rmq::CilcpLCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
-template <typename TGetDoc>
 using Ilcp = dret::rmq::IlcpCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
 template <typename TGetDoc>
 using Cilcp = dret::rmq::CilcpCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
+template <typename TGetDoc>
+using IlcpV = dret::rmq::IlcpValueCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
+template <typename TGetDoc>
+using CilcpV = dret::rmq::CilcpValueCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
 
 using RandomDiffTypes = ::testing::Types<
-    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
-                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::SadaLCore<ExternalGenericStorage>>,
-    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
-                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::IlcpLCore<ExternalGenericStorage>>,
-    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
-                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::CilcpLCore<ExternalGenericStorage>>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                              sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                              dret::rmq::SadaCore<ExternalGenericStorage>>,
@@ -175,12 +166,21 @@ using RandomDiffTypes = ::testing::Types<
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                              sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                              dret::rmq::CilcpCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                             dret::rmq::SadaValueCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                             dret::rmq::IlcpValueCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                             dret::rmq::CilcpValueCore<ExternalGenericStorage>>,
     // The run fan-out over every other backend: the ILCP family is what expands
     // runs, so it is what a backend's range expansion can get wrong.
-    WithBlock<IlcpL<GDCached>>, WithBlock<CilcpL<GDCached>>, WithBlock<Ilcp<GDCached>>, WithBlock<Cilcp<GDCached>>,
-    WithBlock<IlcpL<GDDiffTree>>, WithBlock<CilcpL<GDDiffTree>>, WithBlock<Ilcp<GDDiffTree>>, WithBlock<Cilcp<GDDiffTree>>,
-    WithBlock<IlcpL<GDDiff>>, WithBlock<CilcpL<GDDiff>>, WithBlock<Ilcp<GDDiff>>, WithBlock<Cilcp<GDDiff>>,
-    Plain<IlcpL<GDSAPhi>>, Plain<CilcpL<GDSAPhi>>, Plain<Ilcp<GDSAPhi>>, Plain<Cilcp<GDSAPhi>>>;
+    WithBlock<Ilcp<GDCached>>, WithBlock<Cilcp<GDCached>>, WithBlock<IlcpV<GDCached>>, WithBlock<CilcpV<GDCached>>,
+    WithBlock<Ilcp<GDDiffTree>>, WithBlock<Cilcp<GDDiffTree>>, WithBlock<IlcpV<GDDiffTree>>, WithBlock<CilcpV<GDDiffTree>>,
+    WithBlock<Ilcp<GDDiff>>, WithBlock<Cilcp<GDDiff>>, WithBlock<IlcpV<GDDiff>>, WithBlock<CilcpV<GDDiff>>,
+    Plain<Ilcp<GDSAPhi>>, Plain<Cilcp<GDSAPhi>>, Plain<IlcpV<GDSAPhi>>, Plain<CilcpV<GDSAPhi>>>;
 
 TYPED_TEST_SUITE(RandomDiffTypedTests, RandomDiffTypes);
 
@@ -254,11 +254,11 @@ template <typename T>
 class ExpandUntilTypedTests : public RandomDiffTypedTests<T> {};
 
 using ExpandUntilTypes = ::testing::Types<
-    Backend<dret::backend::PlainDA<S, kW>, Plain<IlcpL<dret::backend::PlainDA<S, kW>>>>,
-    Backend<GDCached, WithBlock<IlcpL<GDCached>>>,
-    Backend<GDDiffTree, WithBlock<IlcpL<GDDiffTree>>>,
-    Backend<GDDiff, WithBlock<IlcpL<GDDiff>>>,
-    Backend<GDSAPhi, Plain<IlcpL<GDSAPhi>>>>;
+    Backend<dret::backend::PlainDA<S, kW>, Plain<Ilcp<dret::backend::PlainDA<S, kW>>>>,
+    Backend<GDCached, WithBlock<Ilcp<GDCached>>>,
+    Backend<GDDiffTree, WithBlock<Ilcp<GDDiffTree>>>,
+    Backend<GDDiff, WithBlock<Ilcp<GDDiff>>>,
+    Backend<GDSAPhi, Plain<Ilcp<GDSAPhi>>>>;
 
 TYPED_TEST_SUITE(ExpandUntilTypedTests, ExpandUntilTypes);
 

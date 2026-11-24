@@ -378,7 +378,7 @@ int main(int argc, char** argv) {
   // refuses a file without it, and migrate_result_names.py skips a file that
   // has it -- which is what stops the migrator renaming an already-correct
   // fresh run (its rewrite is not idempotent: SADA would become SADA-L).
-  benchmark::AddCustomContext("core_naming", "2026-09");
+  benchmark::AddCustomContext("core_naming", "2026-11");
 
   gflags::SetUsageMessage("This program calculates the ri items for the given text.");
   gflags::AllowCommandLineReparsing();
@@ -427,9 +427,9 @@ int main(int argc, char** argv) {
   namespace rmq_fac = bench::factories::rmq;
   using GS = dret::GenericStorage;
   if (HasVariant(rmq_get_doc_variants, GetDocEnum::DA)) {
-    using SadaIdx = rmq_fac::Idx<GS, rmq_fac::SadaCore<GS>>;
-    using IlcpIdx = rmq_fac::Idx<GS, rmq_fac::IlcpCore<GS>>;
-    using CilcpIdx = rmq_fac::Idx<GS, rmq_fac::CilcpCore<GS>>;
+    using SadaIdx = rmq_fac::Idx<GS, rmq_fac::SadaValueCore<GS>>;
+    using IlcpIdx = rmq_fac::Idx<GS, rmq_fac::IlcpValueCore<GS>>;
+    using CilcpIdx = rmq_fac::Idx<GS, rmq_fac::CilcpValueCore<GS>>;
     benchmark::RegisterBenchmark("DocListSADA-DA", BM_ConstructBruteIdx<SadaIdx>, config, data_path);
     benchmark::RegisterBenchmark("DocListILCP-DA", BM_ConstructBruteIdx<IlcpIdx>, config, data_path);
     benchmark::RegisterBenchmark("DocListCILCP-DA", BM_ConstructBruteIdx<CilcpIdx>, config, data_path);
@@ -443,22 +443,22 @@ int main(int argc, char** argv) {
   auto register_slp_ns_for_tslp = [&]<typename TSLP>(const char* suffix) {
     using IdxSLP    = bench::factories::slp_ns::Idx<GS, TSLP>;
     using GetDoc    = rmq_fac::GetDocSLP_NS<GS, TSLP>;
-    using SadaCore  = rmq_fac::SadaCore<GS, GetDoc>;
-    using IlcpCore  = rmq_fac::IlcpCore<GS, GetDoc>;
-    using CilcpCore = rmq_fac::CilcpCore<GS, GetDoc>;
-    using SadaIdx   = rmq_fac::Idx<GS, SadaCore>;
-    using IlcpIdx   = rmq_fac::Idx<GS, IlcpCore>;
-    using CilcpIdx  = rmq_fac::Idx<GS, CilcpCore>;
+    using SadaValueCore  = rmq_fac::SadaValueCore<GS, GetDoc>;
+    using IlcpValueCore  = rmq_fac::IlcpValueCore<GS, GetDoc>;
+    using CilcpValueCore = rmq_fac::CilcpValueCore<GS, GetDoc>;
+    using SadaIdx   = rmq_fac::Idx<GS, SadaValueCore>;
+    using IlcpIdx   = rmq_fac::Idx<GS, IlcpValueCore>;
+    using CilcpIdx  = rmq_fac::Idx<GS, CilcpValueCore>;
 
     benchmark::RegisterBenchmark(
         std::string("DocListSLP-NS") + suffix, BM_ConstructDocListIdxSLP<IdxSLP>, config);
     if (HasVariant(rmq_get_doc_variants, GetDocEnum::SLP_NS)) {
       benchmark::RegisterBenchmark(std::string("DocListSADA-SLP-NS") + suffix,
-                                   BM_ConstructDocListIdxRMQCompressedNS<SadaIdx, SadaCore>, config);
+                                   BM_ConstructDocListIdxRMQCompressedNS<SadaIdx, SadaValueCore>, config);
       benchmark::RegisterBenchmark(std::string("DocListILCP-SLP-NS") + suffix,
-                                   BM_ConstructDocListIdxRMQCompressedNS<IlcpIdx, IlcpCore>, config);
+                                   BM_ConstructDocListIdxRMQCompressedNS<IlcpIdx, IlcpValueCore>, config);
       benchmark::RegisterBenchmark(std::string("DocListCILCP-SLP-NS") + suffix,
-                                   BM_ConstructDocListIdxRMQCompressedNS<CilcpIdx, CilcpCore>, config);
+                                   BM_ConstructDocListIdxRMQCompressedNS<CilcpIdx, CilcpValueCore>, config);
     }
   };
 
@@ -497,21 +497,21 @@ int main(int argc, char** argv) {
     // build via grammar:: type-hashing on disk.
     auto register_rmq_slp_for_tslp = [&]<typename TSLP>(const char* suffix) {
       using GetDoc    = rmq_fac::GetDocSLP<GS, TSLP>;
-      using SadaCore  = rmq_fac::SadaCore<GS, GetDoc>;
-      using IlcpCore  = rmq_fac::IlcpCore<GS, GetDoc>;
-      using CilcpCore = rmq_fac::CilcpCore<GS, GetDoc>;
-      using SadaIdx   = rmq_fac::Idx<GS, SadaCore>;
-      using IlcpIdx   = rmq_fac::Idx<GS, IlcpCore>;
-      using CilcpIdx  = rmq_fac::Idx<GS, CilcpCore>;
+      using SadaValueCore  = rmq_fac::SadaValueCore<GS, GetDoc>;
+      using IlcpValueCore  = rmq_fac::IlcpValueCore<GS, GetDoc>;
+      using CilcpValueCore = rmq_fac::CilcpValueCore<GS, GetDoc>;
+      using SadaIdx   = rmq_fac::Idx<GS, SadaValueCore>;
+      using IlcpIdx   = rmq_fac::Idx<GS, IlcpValueCore>;
+      using CilcpIdx  = rmq_fac::Idx<GS, CilcpValueCore>;
       const std::string sep = (suffix[0] == '\0') ? std::string{} : std::string("-") + suffix;
       benchmark::RegisterBenchmark(std::string("DocListSADA-SLP") + sep,
-                                   BM_ConstructDocListIdxRMQCompressed<SadaIdx, SadaCore>, config)
+                                   BM_ConstructDocListIdxRMQCompressed<SadaIdx, SadaValueCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
       benchmark::RegisterBenchmark(std::string("DocListILCP-SLP") + sep,
-                                   BM_ConstructDocListIdxRMQCompressed<IlcpIdx, IlcpCore>, config)
+                                   BM_ConstructDocListIdxRMQCompressed<IlcpIdx, IlcpValueCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
       benchmark::RegisterBenchmark(std::string("DocListCILCP-SLP") + sep,
-                                   BM_ConstructDocListIdxRMQCompressed<CilcpIdx, CilcpCore>, config)
+                                   BM_ConstructDocListIdxRMQCompressed<CilcpIdx, CilcpValueCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
     };
     if (HasVariant(rmq_get_doc_variants, GetDocEnum::SLP)) {
@@ -528,28 +528,28 @@ int main(int argc, char** argv) {
     // RMQ-DSLP.
     if (HasVariant(rmq_get_doc_variants, GetDocEnum::DSLP)) {
       using GetDoc    = rmq_fac::GetDocDSLP<GS>;
-      using SadaCore  = rmq_fac::SadaCore<GS, GetDoc>;
-      using IlcpCore  = rmq_fac::IlcpCore<GS, GetDoc>;
-      using CilcpCore = rmq_fac::CilcpCore<GS, GetDoc>;
-      using SadaIdx   = rmq_fac::Idx<GS, SadaCore>;
-      using IlcpIdx   = rmq_fac::Idx<GS, IlcpCore>;
-      using CilcpIdx  = rmq_fac::Idx<GS, CilcpCore>;
-      benchmark::RegisterBenchmark("DocListSADA-DSLP", BM_ConstructDocListIdxRMQCompressed<SadaIdx, SadaCore>, config)
+      using SadaValueCore  = rmq_fac::SadaValueCore<GS, GetDoc>;
+      using IlcpValueCore  = rmq_fac::IlcpValueCore<GS, GetDoc>;
+      using CilcpValueCore = rmq_fac::CilcpValueCore<GS, GetDoc>;
+      using SadaIdx   = rmq_fac::Idx<GS, SadaValueCore>;
+      using IlcpIdx   = rmq_fac::Idx<GS, IlcpValueCore>;
+      using CilcpIdx  = rmq_fac::Idx<GS, CilcpValueCore>;
+      benchmark::RegisterBenchmark("DocListSADA-DSLP", BM_ConstructDocListIdxRMQCompressed<SadaIdx, SadaValueCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-      benchmark::RegisterBenchmark("DocListILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<IlcpIdx, IlcpCore>, config)
+      benchmark::RegisterBenchmark("DocListILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<IlcpIdx, IlcpValueCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
-      benchmark::RegisterBenchmark("DocListCILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<CilcpIdx, CilcpCore>, config)
+      benchmark::RegisterBenchmark("DocListCILCP-DSLP", BM_ConstructDocListIdxRMQCompressed<CilcpIdx, CilcpValueCore>, config)
           ->ArgsProduct({block_sizes, storing_factors});
     }
 
     if (HasVariant(rmq_get_doc_variants, GetDocEnum::RLCSA)) {
       using GetDoc    = rmq_fac::GetDocRLCSA<GS>;
-      using SadaCore  = rmq_fac::SadaCore<GS, GetDoc>;
-      using IlcpCore  = rmq_fac::IlcpCore<GS, GetDoc>;
-      using CilcpCore = rmq_fac::CilcpCore<GS, GetDoc>;
-      using SadaIdx   = rmq_fac::Idx<GS, SadaCore>;
-      using IlcpIdx   = rmq_fac::Idx<GS, IlcpCore>;
-      using CilcpIdx  = rmq_fac::Idx<GS, CilcpCore>;
+      using SadaValueCore  = rmq_fac::SadaValueCore<GS, GetDoc>;
+      using IlcpValueCore  = rmq_fac::IlcpValueCore<GS, GetDoc>;
+      using CilcpValueCore = rmq_fac::CilcpValueCore<GS, GetDoc>;
+      using SadaIdx   = rmq_fac::Idx<GS, SadaValueCore>;
+      using IlcpIdx   = rmq_fac::Idx<GS, IlcpValueCore>;
+      using CilcpIdx  = rmq_fac::Idx<GS, CilcpValueCore>;
       benchmark::RegisterBenchmark("DocListSADA-RLCSA", BM_ConstructBruteIdx<SadaIdx>, config, data_path);
       benchmark::RegisterBenchmark("DocListILCP-RLCSA", BM_ConstructBruteIdx<IlcpIdx>, config, data_path);
       benchmark::RegisterBenchmark("DocListCILCP-RLCSA", BM_ConstructBruteIdx<CilcpIdx>, config, data_path);

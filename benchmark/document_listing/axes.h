@@ -26,22 +26,22 @@ enum class IndexEnum {
   COUNT_RI,     // the r-index count alone (factories::brute::IdxCount): no document is reported
   GCDA,
   DGCDA,    // variant axis selects Default / OTF / CRL / EV / DV / VV (see DGCDASLPVariant)
-  // These names, and the benchmark labels built from them, are the 2026-09
-  // vocabulary: the plain names are the published algorithms and the -L names
-  // the value-free variants. Producers stamp context.core_naming = "2026-09",
-  // which is what experiments/analyze.py requires and what makes
-  // migrate_result_names.py skip a fresh file instead of renaming it again.
-  SADA_L,   // -> SadaLCore:  RMinQ on prev_doc, marker-based stop
-  ILCP_L,   // -> IlcpLCore:  RMinQ on backward-ILCP runs, marker-based stop
-  CILCP_L,  // -> CilcpLCore: doc-aware merged runs, no stored values
+  // These names, and the benchmark labels built from them, are the 2026-11
+  // vocabulary: the plain names are the published algorithms (marking, no
+  // stored values) and the -V names dret's value-rule variants. Producers stamp
+  // context.core_naming = "2026-11". Under the 2026-09 names (results before
+  // then) the marking cores were SADA-L / ILCP-L / CILCP-L and the value cores
+  // had the plain names.
+  SADA,     // -> SadaCore:  RMinQ on prev_doc, marker-based stop
+  ILCP,     // -> IlcpCore:  RMinQ on backward-ILCP runs, marker-based stop
+  CILCP,    // -> CilcpCore: CMR20's document-aware merged runs, marker-based stop
   SLP_NS,   // Phase C: dret::DocListIdxSLP — non-sampled grammar::SLP<>
   PDL,      // Precomputed Document Listing — variant axis selects Plain/RP/BC
-  // The published algorithms: same runs as the cores above, plus the stored
-  // array their value-based recursion stop consults (Sadakane 2007; Gagie,
-  // Navarro, Puglisi 2014; Cobas, Mäkinen, Rossi SPIRE 2020).
-  SADA,     // -> SadaCore
-  ILCP,     // -> IlcpCore
-  CILCP,    // -> CilcpCore: the SAME CMR20 Definition 1 partition as CILCP_L,
+  // dret's value-rule variants: same runs as the cores above, plus the stored
+  // array their value-based recursion stop consults.
+  SADA_V,   // -> SadaValueCore
+  ILCP_V,   // -> IlcpValueCore
+  CILCP_V,  // -> CilcpValueCore: the SAME CMR20 partition as CILCP,
             // built by one shared routine; the two differ only in whether the
             // per-run minima are stored, not in where the runs fall.
   GCDA_BACKEND,  // GCDA's sampled tree and node lists over a DA backend (DA, SA-Phi, RLCSA)
@@ -125,8 +125,8 @@ enum class BareSLPVariant {
   DiffVV,
 };
 
-// TRunValues container choice for the published doc-listing cores
-// (IndexEnum::ILCP / CILCP). The persisted per-run min(VILCP) array
+// TRunValues container choice for the value-rule doc-listing cores
+// (IndexEnum::ILCP_V / CILCP). The persisted per-run min(VILCP) array
 // can be encoded fixed-width and bit-compressed (IV) or with variable-
 // length per-element codes (DV / VV).
 enum class RunValuesVariant {
@@ -136,7 +136,7 @@ enum class RunValuesVariant {
 };
 
 // TPrevDoc container choice for the Sadakane-style SADA family
-// (IndexEnum::SADA). The
+// (IndexEnum::SADA_V). The
 // persisted prev_doc array stores per-SA-position previous-occurrence
 // SA positions — values cover [0, n) roughly uniformly, so the natural
 // default is fixed-width int_vector (DAC / VLC have little to compress

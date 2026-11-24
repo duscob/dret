@@ -93,14 +93,14 @@ using GetDocRLCSA = dret::backend::RLCSA<TStorage, kWidth>;
 
 // Core template aliases. TGetDoc defaults to the DA backing.
 template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
-using SadaLCore = dret::rmq::SadaLCore<TStorage,
+using SadaCore = dret::rmq::SadaCore<TStorage,
                                       kWidth,
                                       sdsl::rmq_succinct_sct<true>,
                                       sdsl::sd_vector<>,
                                       TGetDoc>;
 
 template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
-using IlcpLCore = dret::rmq::IlcpLCore<TStorage,
+using IlcpCore = dret::rmq::IlcpCore<TStorage,
                                       kWidth,
                                       sdsl::sd_vector<>,
                                       sdsl::rmq_succinct_sct<true>,
@@ -108,22 +108,22 @@ using IlcpLCore = dret::rmq::IlcpLCore<TStorage,
                                       TGetDoc>;
 
 template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>
-using CilcpLCore = dret::rmq::CilcpLCore<TStorage,
+using CilcpCore = dret::rmq::CilcpCore<TStorage,
                                         kWidth,
                                         sdsl::sd_vector<>,
                                         sdsl::rmq_succinct_sct<true>,
                                         sdsl::sd_vector<>,
                                         TGetDoc>;
 
-// The published cores (labelled -S in benchmark output, see axes.h): same runs
-// as their -L counterparts, plus the array their canonical value-based recursion
-// stop consults. SADA persists prev_doc; ILCP and CILCP persist run_values.
-// CILCP does NOT have its own partition: it and CilcpLCore both build the CMR20
-// Definition 1 runs through one shared routine and their run_heads are
-// byte-identical, which CilcpPartitionTest asserts. They differ only in whether
-// the per-run minima are stored.
+// The value-rule cores (labelled -V in benchmark output, see axes.h): same runs
+// as the published cores above, plus the array their value-based recursion stop
+// consults. SADA-V persists prev_doc; ILCP-V and CILCP-V persist run_values.
+// CILCP-V does NOT have its own partition: it and CilcpCore both build the CMR20
+// runs through one shared routine and their run_heads are byte-identical,
+// which CilcpPartitionTest asserts. They differ only in whether the per-run
+// minima are stored.
 
-// TPrevDoc container choices for the published SADA core. Independent of
+// TPrevDoc container choices for the value-rule SADA-V core. Independent of
 // TGetDoc; controls
 // how the persisted per-SA-position prev_doc array is encoded on disk.
 using PrevDoc_IV = sdsl::int_vector<>;   // fixed-width, bit-compressed (default)
@@ -133,14 +133,14 @@ using PrevDoc_VV = sdsl::vlc_vector<>;
 template <typename TStorage,
           typename TGetDoc = GetDocDA<TStorage>,
           typename TPrevDoc = PrevDoc_IV>
-using SadaCore = dret::rmq::SadaCore<TStorage,
+using SadaValueCore = dret::rmq::SadaValueCore<TStorage,
                                         kWidth,
                                         sdsl::rmq_succinct_sct<true>,
                                         sdsl::sd_vector<>,
                                         TGetDoc,
                                         TPrevDoc>;
 
-// TRunValues container choices for the published cores. Independent of TGetDoc;
+// TRunValues container choices for the value-rule cores. Independent of TGetDoc;
 // controls how the persisted per-run min(VILCP) array is encoded on disk.
 using RunValues_IV = sdsl::int_vector<>;   // fixed-width, bit-compressed
 using RunValues_DV = sdsl::dac_vector<>;   // direct access codes (default)
@@ -149,7 +149,7 @@ using RunValues_VV = sdsl::vlc_vector<>;   // variable-length codes
 template <typename TStorage,
           typename TGetDoc = GetDocDA<TStorage>,
           typename TRunValues = RunValues_DV>
-using IlcpCore = dret::rmq::IlcpCore<TStorage,
+using IlcpValueCore = dret::rmq::IlcpValueCore<TStorage,
                                         kWidth,
                                         sdsl::sd_vector<>,
                                         sdsl::rmq_succinct_sct<true>,
@@ -160,7 +160,7 @@ using IlcpCore = dret::rmq::IlcpCore<TStorage,
 template <typename TStorage,
           typename TGetDoc = GetDocDA<TStorage>,
           typename TRunValues = RunValues_DV>
-using CilcpCore = dret::rmq::CilcpCore<TStorage,
+using CilcpValueCore = dret::rmq::CilcpValueCore<TStorage,
                                           kWidth,
                                           sdsl::sd_vector<>,
                                           sdsl::rmq_succinct_sct<true>,
@@ -175,15 +175,13 @@ using Idx = dret::rmq::DocListIdxRMQ<TStorage,
                                       sri::RIndexCount<TStorage, dret::Alphabet<>>,
                                       TCore>;
 
-// Which core to build.
-// SADA / ILCP / CILCP are the published algorithms (Sadakane 2007;
-// Gagie, Navarro, Puglisi 2014; Cobas, Makinen, Rossi SPIRE 2020): they keep the
-// array the RMQ was built over and stop the recursion on its values.
-// The -L ("light") cores drop that array -- the whole point of listing without
-// frequencies -- and stop on the reported-document marker instead, or, for
-// CILCP_L, do not stop at all because the marker test is unsound once runs are
-// merged by document.
-enum class CoreKind { SADA, ILCP, CILCP, SADA_L, ILCP_L, CILCP_L };
+// Which core to build (2026-11 names, spec_version 2).
+// SADA / ILCP / CILCP are the published algorithms (Sadakane 2007; Gagie et
+// al. 2017; Cobas, Makinen, Rossi SPIRE 2020): they stop the recursion by
+// marking reported documents and store no values. The -V cores are dret's
+// value-rule variants: they also store the array the RMQ was built over and
+// stop on its values.
+enum class CoreKind { SADA_V, ILCP_V, CILCP_V, SADA, ILCP, CILCP };
 
 namespace detail {
 
@@ -245,7 +243,7 @@ MakeDSLP(TStorage t_storage, dret::Config& t_config,
 }
 
 // Build one RMQ SA-Phi-R variant (r-index-backed; no sampling parameter).
-// The non-S core constructors accept either 1 arg (storage) or 3 args
+// The published cores' constructors accept either 1 arg (storage) or 3 args
 // (storage, bs, sf); for SA-Phi the inner GetDocSAPhi needs no per-core
 // (bs, sf), so we use the 1-arg form — the inner GetDoc is
 // default-constructed and its sa_sampling stays at 0 (the r-index sentinel,
@@ -367,12 +365,12 @@ MakeOne(TStorage t_storage, dret::Config& t_config,
   }
 }
 
-//~~~~~~~  Published-core dispatch (3-arg TCoreT taking <TStorage, TGetDoc, TRunValues>)
+//~~~~~~~  Value-rule-core dispatch (3-arg TCoreT taking <TStorage, TGetDoc, TRunValues>)
 //
-// IlcpCore / CilcpCore take an extra TRunValues template parameter on top
+// IlcpValueCore / CilcpValueCore take an extra TRunValues template parameter on top
 // of the standard 2-arg core template, so the existing 2-arg MakeOne path
 // doesn't fit. The MakeXxx_S helpers mirror MakeXxx but plumb TRunValues
-// through; MakeOnePub_T dispatches on TGetDoc with TRunValues fixed; MakeOnePub
+// through; MakeOnePub_T dispatches on TGetDoc with TRunValues fixed; MakeOneValue
 // fans out across TRunValues.
 
 template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
@@ -387,7 +385,7 @@ MakeDA_S(TStorage t_storage, dret::Config& t_config) {
 }
 
 // SA-Phi-R needs no sampling parameter, so the storage-only constructor builds
-// it as for the non-S cores (see MakeSAPhi_R).
+// it as for the published cores (see MakeSAPhi_R).
 template <template <typename, typename, typename> class TCoreT, typename TStorage, typename TRunValues>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
 MakeSAPhi_R_S(TStorage t_storage, dret::Config& t_config) {
@@ -439,9 +437,9 @@ MakeDSLP_S(TStorage t_storage, dret::Config& t_config,
   return {idx, sdsl::size_in_bytes(*idx)};
 }
 
-// NOTE: the published cores (IlcpLikeFullCore / SadaCore) support SA-Phi-R
+// NOTE: the value-rule cores (IlcpLikeValueCore / SadaValueCore) support SA-Phi-R
 // only: their 1-arg constructors cannot pass the sa_sampling rate SA-Phi-SR
-// needs, so SA-Phi-SR builds SA-Phi-R, as it does for the non-S cores. RLCSA
+// needs, so SA-Phi-SR builds SA-Phi-R, as it does for the published cores. RLCSA
 // is unsupported and throws rather than measuring another backend under its
 // name (it used to fall through to the DA).
 
@@ -505,7 +503,7 @@ MakeOnePub_T(TStorage t_storage, dret::Config& t_config,
     case GetDocEnum::SAPhiSR:
       return MakeSAPhi_R_S<TCoreT, TStorage, TRunValues>(t_storage, t_config);
     case GetDocEnum::RLCSA:
-      throw std::invalid_argument("RMQ: the published cores do not support get_doc=rlcsa");
+      throw std::invalid_argument("RMQ: the value-rule cores do not support get_doc=rlcsa");
     case GetDocEnum::DA:
     default:
       return MakeDA_S<TCoreT, TStorage, TRunValues>(t_storage, t_config);
@@ -514,7 +512,7 @@ MakeOnePub_T(TStorage t_storage, dret::Config& t_config,
 
 template <template <typename, typename, typename> class TCoreT, typename TStorage>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-MakeOnePub(TStorage t_storage, dret::Config& t_config,
+MakeOneValue(TStorage t_storage, dret::Config& t_config,
          uint32_t t_block_size, float t_storing_factor,
          bench::axes::GetDocEnum t_get_doc,
          bench::axes::GCDASLPVariant t_gcda_slp,
@@ -537,13 +535,13 @@ MakeOnePub(TStorage t_storage, dret::Config& t_config,
   }
 }
 
-// The published SADA core has TPrevDoc instead of TRunValues. Mirrors MakeOnePub but
+// The published SADA core has TPrevDoc instead of TRunValues. Mirrors MakeOneValue but
 // dispatches on PrevDocVariant; the inner T-dispatch reuses the existing
 // MakeXxx_S helpers (TCoreT here is a 3-arg <TStorage, TGetDoc, TPrevDoc>
-// template — same shape as IlcpCore / CilcpCore).
+// template — same shape as IlcpValueCore / CilcpValueCore).
 template <template <typename, typename, typename> class TCoreT, typename TStorage>
 std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-MakeOnePubadaPub(TStorage t_storage, dret::Config& t_config,
+MakeOneSadaValue(TStorage t_storage, dret::Config& t_config,
               uint32_t t_block_size, float t_storing_factor,
               bench::axes::GetDocEnum t_get_doc,
               bench::axes::GCDASLPVariant t_gcda_slp,
@@ -581,24 +579,24 @@ Make(TStorage t_storage, dret::Config& t_config,
      bench::axes::PrevDocVariant t_prev_doc = bench::axes::PrevDocVariant::IV,
      std::size_t t_sa_sampling = 0) {
   switch (t_core) {
-    case CoreKind::ILCP_L:
-      return detail::MakeOne<IlcpLCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                        t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
-    case CoreKind::CILCP_L:
-      return detail::MakeOne<CilcpLCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                         t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
-    case CoreKind::SADA:
-      return detail::MakeOnePubadaPub<SadaCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                               t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_prev_doc, t_sa_sampling);
     case CoreKind::ILCP:
-      return detail::MakeOnePub<IlcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
-                                          t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
+      return detail::MakeOne<IlcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                        t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
     case CoreKind::CILCP:
-      return detail::MakeOnePub<CilcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
+      return detail::MakeOne<CilcpCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                         t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
+    case CoreKind::SADA_V:
+      return detail::MakeOneSadaValue<SadaValueCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                               t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_prev_doc, t_sa_sampling);
+    case CoreKind::ILCP_V:
+      return detail::MakeOneValue<IlcpValueCore>(t_storage, t_config, t_block_size, t_storing_factor,
+                                          t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
+    case CoreKind::CILCP_V:
+      return detail::MakeOneValue<CilcpValueCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                            t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_run_values, t_sa_sampling);
-    case CoreKind::SADA_L:
+    case CoreKind::SADA:
     default:
-      return detail::MakeOne<SadaLCore>(t_storage, t_config, t_block_size, t_storing_factor,
+      return detail::MakeOne<SadaCore>(t_storage, t_config, t_block_size, t_storing_factor,
                                         t_get_doc, t_gcda_slp, t_bare_slp, t_dgcda_slp, t_sa_sampling);
   }
 }

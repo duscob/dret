@@ -77,7 +77,7 @@ const std::vector<std::string> kDocsB = {"BB", "BCCCBBCBB", "BAB", "A"};
 //
 // This one was found by cilcp_random_diff_test (seed 20260907, collection 48)
 // and is verified to fail against that same broken build, so it guards the
-// boundary-run handling in IlcpLikeLeanCore::findDocs. Pattern "BAB" returns
+// boundary-run handling in IlcpLikeCore::findDocs. Pattern "BAB" returns
 // {0} where the answer is {0, 2}.
 const std::vector<std::string> kDocsC = {"BBBABABAA", "A", "CBCBABAAC"};
 
@@ -98,22 +98,22 @@ using CilcpFanoutTypes = ::testing::Types<
     dret::DocListIdxBrute<ExternalGenericStorage>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                              sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::SadaLCore<ExternalGenericStorage>>,
-    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
-                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::IlcpLCore<ExternalGenericStorage>>,
-    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
-                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::CilcpLCore<ExternalGenericStorage>>,
-    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
-                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                              dret::rmq::SadaCore<ExternalGenericStorage>>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                              sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                              dret::rmq::IlcpCore<ExternalGenericStorage>>,
     dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                              sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                             dret::rmq::CilcpCore<ExternalGenericStorage>>>;
+                             dret::rmq::CilcpCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                             dret::rmq::SadaValueCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                             dret::rmq::IlcpValueCore<ExternalGenericStorage>>,
+    dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                             sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                             dret::rmq::CilcpValueCore<ExternalGenericStorage>>>;
 
 TYPED_TEST_SUITE(CilcpFanoutTypedTests, CilcpFanoutTypes);
 
@@ -166,24 +166,24 @@ class CilcpPartitionTest : public BaseConfigTests<8> {
   sri::GenericStorage storage_;
 };
 
-TEST_F(CilcpPartitionTest, cilcp_and_cilcp_s_share_one_partition) {
+TEST_F(CilcpPartitionTest, marking_and_value_cilcp_share_one_partition) {
   using Cilcp  = dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
                      sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
-                     dret::rmq::CilcpLCore<ExternalGenericStorage>>;
-  using CilcpS = dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
-                     sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
                      dret::rmq::CilcpCore<ExternalGenericStorage>>;
+  using CilcpV = dret::rmq::DocListIdxRMQ<ExternalGenericStorage, dret::Alphabet<>,
+                     sri::RIndexCount<ExternalGenericStorage, dret::Alphabet<>>,
+                     dret::rmq::CilcpValueCore<ExternalGenericStorage>>;
   auto bytes = [](const auto& idx, const std::string& key) -> std::size_t {
     for (const auto& [k, v] : idx.core().GetSizeReport())
       if (k == key) return v;
     return 0;
   };
   Cilcp  a(std::ref(this->storage_)); construct(a, this->config_);
-  CilcpS b(std::ref(this->storage_)); construct(b, this->config_);
+  CilcpV b(std::ref(this->storage_)); construct(b, this->config_);
 
   EXPECT_GT(bytes(a, "run_heads"), 0u);
   EXPECT_EQ(bytes(a, "run_heads"), bytes(b, "run_heads")) << "partitions differ";
   EXPECT_EQ(bytes(a, "rmq"), bytes(b, "rmq")) << "run counts differ";
-  EXPECT_EQ(bytes(a, "run_values"), 0u) << "CILCP-L must not store run values";
+  EXPECT_EQ(bytes(a, "run_values"), 0u) << "CILCP must not store run values";
   EXPECT_GT(bytes(b, "run_values"), 0u) << "CILCP must store run values";
 }

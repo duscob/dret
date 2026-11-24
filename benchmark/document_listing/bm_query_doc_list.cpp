@@ -48,14 +48,14 @@ DEFINE_string(bare_slp_variants,
 
 DEFINE_string(run_values_variants,
               "dv",
-              "TRunValues container variants for the published ILCP / CILCP cores "
-              "(ILCP / CILCP in benchmark output): "
+              "TRunValues container variants for the value-rule ILCP-V / CILCP-V cores "
+              "(ILCP-V / CILCP-V in benchmark output): "
               "comma-separated iv,dv,vv.");
 
 DEFINE_string(prev_doc_variants,
               "iv",
-              "TPrevDoc container variants for the published SADA core "
-              "(SADA in benchmark output): comma-separated iv,dv,vv.");
+              "TPrevDoc container variants for the value-rule SADA-V core "
+              "(SADA-V in benchmark output): comma-separated iv,dv,vv.");
 
 DEFINE_string(dgcda_slp_variants,
               "default,otf,crl,ev,dv,vv",
@@ -238,7 +238,7 @@ int main(int argc, char* argv[]) {
   // refuses a file without it, and migrate_result_names.py skips a file that
   // has it -- which is what stops the migrator renaming an already-correct
   // fresh run (its rewrite is not idempotent: SADA would become SADA-L).
-  benchmark::AddCustomContext("core_naming", "2026-09");
+  benchmark::AddCustomContext("core_naming", "2026-11");
 
   gflags::AllowCommandLineReparsing();
   gflags::ParseCommandLineFlags(&argc, &argv, false);
@@ -341,27 +341,27 @@ int main(int argc, char* argv[]) {
 
   for (const auto get_doc : rmq_get_doc_variants) {
     if (get_doc == Factory<>::GetDocEnum::DA) {
-      idx_configs.push_back({"SADA-L-DA", Factory<>::Config{Factory<>::IndexEnum::SADA_L}, false});
-      idx_configs.push_back({"ILCP-L-DA", Factory<>::Config{Factory<>::IndexEnum::ILCP_L}, false});
-      idx_configs.push_back({"CILCP-L-DA", Factory<>::Config{Factory<>::IndexEnum::CILCP_L}, false});
+      idx_configs.push_back({"SADA-DA", Factory<>::Config{Factory<>::IndexEnum::SADA}, false});
+      idx_configs.push_back({"ILCP-DA", Factory<>::Config{Factory<>::IndexEnum::ILCP}, false});
+      idx_configs.push_back({"CILCP-DA", Factory<>::Config{Factory<>::IndexEnum::CILCP}, false});
       // The published SADA core fans out across the TPrevDoc axis.
       for (const auto prev_doc : prev_doc_variants) {
         const auto pd_suffix = std::string("-") +
             bench::axes::EnumTraits<bench::axes::PrevDocVariant>::Name(prev_doc);
-        Factory<>::Config sada_cfg_pub{Factory<>::IndexEnum::SADA};
+        Factory<>::Config sada_cfg_pub{Factory<>::IndexEnum::SADA_V};
         sada_cfg_pub.prev_doc = prev_doc;
-        idx_configs.push_back({"SADA-DA" + pd_suffix, sada_cfg_pub, false});
+        idx_configs.push_back({"SADA-V-DA" + pd_suffix, sada_cfg_pub, false});
       }
-      // The published ILCP / CILCP cores fan out across the TRunValues axis.
+      // The value-rule ILCP-V / CILCP-V cores fan out across the TRunValues axis.
       for (const auto run_values : run_values_variants) {
         const auto rv_suffix = std::string("-") +
             bench::axes::EnumTraits<bench::axes::RunValuesVariant>::Name(run_values);
-        Factory<>::Config ilcp_cfg_pub{Factory<>::IndexEnum::ILCP};
+        Factory<>::Config ilcp_cfg_pub{Factory<>::IndexEnum::ILCP_V};
         ilcp_cfg_pub.run_values = run_values;
-        Factory<>::Config cilcp_cfg_pub{Factory<>::IndexEnum::CILCP};
+        Factory<>::Config cilcp_cfg_pub{Factory<>::IndexEnum::CILCP_V};
         cilcp_cfg_pub.run_values = run_values;
-        idx_configs.push_back({"ILCP-DA" + rv_suffix, ilcp_cfg_pub, false});
-        idx_configs.push_back({"CILCP-DA" + rv_suffix, cilcp_cfg_pub, false});
+        idx_configs.push_back({"ILCP-V-DA" + rv_suffix, ilcp_cfg_pub, false});
+        idx_configs.push_back({"CILCP-V-DA" + rv_suffix, cilcp_cfg_pub, false});
       }
     }
     if (get_doc == Factory<>::GetDocEnum::SLP_NS) {
@@ -372,42 +372,42 @@ int main(int argc, char* argv[]) {
         const auto suffix = (bare_slp == Factory<>::BareSLPVariant::IV)
                                 ? std::string{}
                                 : std::string("-") + bench::axes::EnumTraits<bench::axes::BareSLPVariant>::Name(bare_slp);
-        Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA_L, 0, 512, 4,
+        Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA, 0, 512, 4,
                                    Factory<>::GetDocEnum::SLP_NS,
                                    Factory<>::GCDASLPVariant::Light, bare_slp};
-        Factory<>::Config ilcp_cfg{Factory<>::IndexEnum::ILCP_L, 0, 512, 4,
+        Factory<>::Config ilcp_cfg{Factory<>::IndexEnum::ILCP, 0, 512, 4,
                                    Factory<>::GetDocEnum::SLP_NS,
                                    Factory<>::GCDASLPVariant::Light, bare_slp};
-        Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP_L, 0, 512, 4,
+        Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP, 0, 512, 4,
                                     Factory<>::GetDocEnum::SLP_NS,
                                     Factory<>::GCDASLPVariant::Light, bare_slp};
-        idx_configs.push_back({"SADA-L-SLP-NS" + suffix, sada_cfg, false});
-        idx_configs.push_back({"ILCP-L-SLP-NS" + suffix, ilcp_cfg, false});
-        idx_configs.push_back({"CILCP-L-SLP-NS" + suffix, cilcp_cfg, false});
+        idx_configs.push_back({"SADA-SLP-NS" + suffix, sada_cfg, false});
+        idx_configs.push_back({"ILCP-SLP-NS" + suffix, ilcp_cfg, false});
+        idx_configs.push_back({"CILCP-SLP-NS" + suffix, cilcp_cfg, false});
         // The published SADA core fans out across TPrevDoc at this bare_slp.
         for (const auto prev_doc : prev_doc_variants) {
           const auto pd_suffix = std::string("-") +
               bench::axes::EnumTraits<bench::axes::PrevDocVariant>::Name(prev_doc);
-          Factory<>::Config sada_cfg_pub{Factory<>::IndexEnum::SADA, 0, 512, 4,
+          Factory<>::Config sada_cfg_pub{Factory<>::IndexEnum::SADA_V, 0, 512, 4,
                                        Factory<>::GetDocEnum::SLP_NS,
                                        Factory<>::GCDASLPVariant::Light, bare_slp};
           sada_cfg_pub.prev_doc = prev_doc;
-          idx_configs.push_back({"SADA-SLP-NS" + suffix + pd_suffix, sada_cfg_pub, false});
+          idx_configs.push_back({"SADA-V-SLP-NS" + suffix + pd_suffix, sada_cfg_pub, false});
         }
-        // The published ILCP / CILCP cores fan out across TRunValues here.
+        // The value-rule ILCP-V / CILCP-V cores fan out across TRunValues here.
         for (const auto run_values : run_values_variants) {
           const auto rv_suffix = std::string("-") +
               bench::axes::EnumTraits<bench::axes::RunValuesVariant>::Name(run_values);
-          Factory<>::Config ilcp_cfg_pub{Factory<>::IndexEnum::ILCP, 0, 512, 4,
+          Factory<>::Config ilcp_cfg_pub{Factory<>::IndexEnum::ILCP_V, 0, 512, 4,
                                        Factory<>::GetDocEnum::SLP_NS,
                                        Factory<>::GCDASLPVariant::Light, bare_slp};
           ilcp_cfg_pub.run_values = run_values;
-          Factory<>::Config cilcp_cfg_pub{Factory<>::IndexEnum::CILCP, 0, 512, 4,
+          Factory<>::Config cilcp_cfg_pub{Factory<>::IndexEnum::CILCP_V, 0, 512, 4,
                                         Factory<>::GetDocEnum::SLP_NS,
                                         Factory<>::GCDASLPVariant::Light, bare_slp};
           cilcp_cfg_pub.run_values = run_values;
-          idx_configs.push_back({"ILCP-SLP-NS" + suffix + rv_suffix, ilcp_cfg_pub, false});
-          idx_configs.push_back({"CILCP-SLP-NS" + suffix + rv_suffix, cilcp_cfg_pub, false});
+          idx_configs.push_back({"ILCP-V-SLP-NS" + suffix + rv_suffix, ilcp_cfg_pub, false});
+          idx_configs.push_back({"CILCP-V-SLP-NS" + suffix + rv_suffix, cilcp_cfg_pub, false});
         }
       }
     }
@@ -506,36 +506,36 @@ int main(int argc, char* argv[]) {
                                     : std::string{};
           const auto suffix = std::string("-") + bench::axes::EnumTraits<bench::axes::GetDocEnum>::Name(get_doc) + variant_suffix +
                               "-bs" + std::to_string(bs) + "-sf" + std::to_string(sf);
-          Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA_L, 0,
+          Factory<>::Config sada_cfg{Factory<>::IndexEnum::SADA, 0,
                                      static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
-          Factory<>::Config ilcp_cfg{Factory<>::IndexEnum::ILCP_L, 0,
+          Factory<>::Config ilcp_cfg{Factory<>::IndexEnum::ILCP, 0,
                                      static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
-          Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP_L, 0,
+          Factory<>::Config cilcp_cfg{Factory<>::IndexEnum::CILCP, 0,
                                       static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
-          idx_configs.push_back({"SADA-L" + suffix, sada_cfg, false});
-          idx_configs.push_back({"ILCP-L" + suffix, ilcp_cfg, false});
-          idx_configs.push_back({"CILCP-L" + suffix, cilcp_cfg, false});
+          idx_configs.push_back({"SADA" + suffix, sada_cfg, false});
+          idx_configs.push_back({"ILCP" + suffix, ilcp_cfg, false});
+          idx_configs.push_back({"CILCP" + suffix, cilcp_cfg, false});
           // The published SADA core fans out across TPrevDoc at this cell.
           for (const auto prev_doc : prev_doc_variants) {
             const auto pd_suffix = std::string("-") +
                 bench::axes::EnumTraits<bench::axes::PrevDocVariant>::Name(prev_doc);
-            Factory<>::Config sada_cfg_pub{Factory<>::IndexEnum::SADA, 0,
+            Factory<>::Config sada_cfg_pub{Factory<>::IndexEnum::SADA_V, 0,
                                          static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
             sada_cfg_pub.prev_doc = prev_doc;
-            idx_configs.push_back({"SADA" + suffix + pd_suffix, sada_cfg_pub, false});
+            idx_configs.push_back({"SADA-V" + suffix + pd_suffix, sada_cfg_pub, false});
           }
-          // The published ILCP / CILCP cores fan out across TRunValues here.
+          // The value-rule ILCP-V / CILCP-V cores fan out across TRunValues here.
           for (const auto run_values : run_values_variants) {
             const auto rv_suffix = std::string("-") +
                 bench::axes::EnumTraits<bench::axes::RunValuesVariant>::Name(run_values);
-            Factory<>::Config ilcp_cfg_pub{Factory<>::IndexEnum::ILCP, 0,
+            Factory<>::Config ilcp_cfg_pub{Factory<>::IndexEnum::ILCP_V, 0,
                                          static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
             ilcp_cfg_pub.run_values = run_values;
-            Factory<>::Config cilcp_cfg_pub{Factory<>::IndexEnum::CILCP, 0,
+            Factory<>::Config cilcp_cfg_pub{Factory<>::IndexEnum::CILCP_V, 0,
                                           static_cast<uint32_t>(bs), static_cast<float>(sf), get_doc, gcda_slp};
             cilcp_cfg_pub.run_values = run_values;
-            idx_configs.push_back({"ILCP" + suffix + rv_suffix, ilcp_cfg_pub, false});
-            idx_configs.push_back({"CILCP" + suffix + rv_suffix, cilcp_cfg_pub, false});
+            idx_configs.push_back({"ILCP-V" + suffix + rv_suffix, ilcp_cfg_pub, false});
+            idx_configs.push_back({"CILCP-V" + suffix + rv_suffix, cilcp_cfg_pub, false});
           }
         }
       }
