@@ -31,7 +31,10 @@
 #include "dret/doc_list/doc_list_pdl.h"
 #include "dret/doc_list/doc_list_pdl.h"
 #include "dret/doc_list/doc_list_pdl.h"
-#include "dret/pdl/get_docs.h"
+#include "dret/backend/da.h"
+#include "dret/backend/grammar.h"
+#include "dret/backend/rlcsa.h"
+#include "dret/backend/sa_phi.h"
 #include "dret/pdl/storage_policy.h"
 #include "dret/size_report.h"
 

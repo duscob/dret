@@ -738,9 +738,8 @@ void BM_ConstructPDLBackend(benchmark::State& t_state, dret::Config t_config,
                             std::uint32_t backend_bs, float backend_sf,
                             std::function<void()> rebuild_hook, bool memory_trace) {
   GS storage;
-  typename TGetDocs::Inner inner(storage, backend_bs, backend_sf);
-  TGetDocs get_docs(std::move(inner));
-  TIndex index(storage, get_docs, bs, sf, t_policy);
+  TGetDocs backend(storage, backend_bs, backend_sf);
+  TIndex index(storage, backend, bs, sf, t_policy);
   std::int64_t first_iter_ns = -1;
   for (auto _ : t_state) {
     if (rebuild_hook) {

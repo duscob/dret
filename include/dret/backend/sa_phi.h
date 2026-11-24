@@ -8,9 +8,8 @@
 // sr-index subsampled run-end samples when TLocateIdx is an SrIndex
 // specialisation — deferred; see docs/pdl_rlcsa_baseline_plan.md).
 //
-// Same interface as the rest of the rmq::GetDoc* family
-// (rmq_get_doc_policies.h) so both PDL (via PDLRawRangePolicy) and the RMQ
-// cores can consume it through their existing TGetDoc template parameter.
+// A document-array backend (backend/backend.h), so every index that expands
+// positions -- brute force, GCDA over a backend, PDL, the RMQ cores -- can use it.
 //
 // The class is templated on TLocateIdx so the same implementation serves
 // both backings:
@@ -62,12 +61,13 @@
 #include "sr-index/sequence_ops.h"        // sri::CircularPredecessor, RandomAccessFor*
 
 #include "dret/collection.h"
+#include "dret/backend/backend.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"
 
-namespace dret::rmq {
+namespace dret::backend {
 
 // Document-array lookup over SA[i] + doc-ends bitvector. Templated on
 // TLocateIdx so the same class serves both r-index and sr-index backings —
@@ -77,7 +77,7 @@ template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TLocateIdx = sri::RIndex<TStorage, dret::Alphabet<t_width>>,
           typename TBvDocEnds = sdsl::sd_vector<>>
-class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class SAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
   using typename Base::size_type;
@@ -85,10 +85,10 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
   // For TLocateIdx = SrIndex variants, t_sa_sampling is the subsample rate;
   // for TLocateIdx = RIndex it is ignored (r-index has no sampling knob).
   // SR support is currently deferred; treat as RIndex.
-  explicit GetDocSAPhi(const TStorage& t_storage, std::size_t t_sa_sampling = 0)
+  explicit SAPhi(const TStorage& t_storage, std::size_t t_sa_sampling = 0)
       : Base(t_storage), sa_sampling_(t_sa_sampling) {}
 
-  GetDocSAPhi() = default;
+  SAPhi() = default;
 
   std::size_t sa_sampling() const { return sa_sampling_; }
 
@@ -97,8 +97,7 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
     return doc_at_(sa_at_(t_i));
   }
 
-  // Range expansion [b, e). Mirrors the existing rmq::GetDoc* API so PDL's
-  // PDLRawRangePolicy can wrap this verbatim.
+  // Range expansion [b, e).
   //
   // Delegates to range_get_doc_, which iterates BWT runs and reuses the
   // intermediate SA values from a single per-run Phi-walk to emit doc ids
@@ -318,11 +317,10 @@ class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
   const typename TBvDocEnds::rank_1_type* doc_ends_rank_ = nullptr;
 };
 
-// Free-function construct() — same shape as the other rmq::GetDoc* construct
-// overloads in rmq_get_doc_policies.h. Builds (or short-circuits when warm)
-// the underlying r-index cache + the doc-ends bitvector.
+// Builds (or short-circuits when warm) the underlying r-index cache and the
+// doc-ends bitvector, as every backend's construct() builds its structures.
 template <typename TStorage, uint8_t t_width, typename TLocateIdx, typename TBvDocEnds>
-void construct(GetDocSAPhi<TStorage, t_width, TLocateIdx, TBvDocEnds>& t_get_doc, Config& t_config) {
+void construct(SAPhi<TStorage, t_width, TLocateIdx, TBvDocEnds>& t_get_doc, Config& t_config) {
   using namespace dret::conf;
 
   // Text + doc-ends caches (shared with GetDocBv / brute / etc.).
@@ -337,4 +335,4 @@ void construct(GetDocSAPhi<TStorage, t_width, TLocateIdx, TBvDocEnds>& t_get_doc
   sri::construct(tmp_idx, t_config.data_path.string(), t_config);
 }
 
-}  // namespace dret::rmq
+}  // namespace dret::backend

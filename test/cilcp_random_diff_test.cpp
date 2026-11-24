@@ -33,8 +33,10 @@
 
 #include "dret/doc_list/doc_list_brute.h"
 #include "dret/doc_list/doc_list_rmq.h"
-#include "dret/rmq/rmq_get_doc_policies.h"
-#include "dret/rmq/rmq_get_doc_sa_phi.h"
+#include "dret/backend/da.h"
+#include "dret/backend/grammar.h"
+#include "dret/backend/rlcsa.h"
+#include "dret/backend/sa_phi.h"
 
 #include "base_test.h"
 
@@ -140,10 +142,10 @@ template <typename TCore>
 using Plain = dret::rmq::DocListIdxRMQ<S, dret::Alphabet<>, TCount, TCore>;
 
 using TBareDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
-using GDCached = dret::rmq::GetDocSLP<S, kW>;
-using GDDiffTree = dret::rmq::GetDocDSLP<S, kW>;
-using GDDiff = dret::rmq::GetDocSLP_NS<S, kW, TBareDiff>;
-using GDSAPhi = dret::rmq::GetDocSAPhi<S, kW>;
+using GDCached = dret::backend::GCDAGrammar<S, kW>;
+using GDDiffTree = dret::backend::DiffGCDAGrammar<S, kW>;
+using GDDiff = dret::backend::BareGrammar<S, kW, TBareDiff>;
+using GDSAPhi = dret::backend::SAPhi<S, kW>;
 
 template <typename TGetDoc>
 using IlcpL = dret::rmq::IlcpLCore<S, kW, sdsl::sd_vector<>, sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
@@ -252,7 +254,7 @@ template <typename T>
 class ExpandUntilTypedTests : public RandomDiffTypedTests<T> {};
 
 using ExpandUntilTypes = ::testing::Types<
-    Backend<dret::rmq::GetDocDA<S, kW>, Plain<IlcpL<dret::rmq::GetDocDA<S, kW>>>>,
+    Backend<dret::backend::PlainDA<S, kW>, Plain<IlcpL<dret::backend::PlainDA<S, kW>>>>,
     Backend<GDCached, WithBlock<IlcpL<GDCached>>>,
     Backend<GDDiffTree, WithBlock<IlcpL<GDDiffTree>>>,
     Backend<GDDiff, WithBlock<IlcpL<GDDiff>>>,
@@ -274,7 +276,7 @@ TYPED_TEST(ExpandUntilTypedTests, emits_in_order_and_stops) {
     typename TypeParam::Index index(std::ref(this->storage_));
     construct(index, this->config_);
 
-    dret::rmq::GetDocDA<S, kW> truth(std::ref(this->storage_));
+    dret::backend::PlainDA<S, kW> truth(std::ref(this->storage_));
     truth.load(this->config_);
     auto get_doc = TypeParam::Make(std::ref(this->storage_));
     get_doc.load(this->config_);

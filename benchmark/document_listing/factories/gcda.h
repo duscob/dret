@@ -29,7 +29,9 @@
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/doc_list/doc_list_gcda_backend.h"
-#include "dret/pdl/get_docs.h"
+#include "dret/backend/da.h"
+#include "dret/backend/rlcsa.h"
+#include "dret/backend/sa_phi.h"
 #include "dret/slp/combined_slp_with_unit_cover.h"
 #include "dret/slp/compact_bp_slp.h"
 #include "dret/slp/compact_louds_slp.h"
@@ -132,13 +134,13 @@ MakeBackendForSets(TStorage t_storage, dret::Config& t_config, uint32_t t_block_
   constexpr auto kW = dret::Alphabet<>::int_width;
   switch (t_get_doc) {
     case bench::axes::GetDocEnum::SAPhiR:
-      return BuildBackend<TStorage, dret::pdl::PDLGetDocsSAPhi_R<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
+      return BuildBackend<TStorage, dret::backend::SAPhi<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
                                                                                        t_storing_factor);
     case bench::axes::GetDocEnum::RLCSA:
-      return BuildBackend<TStorage, dret::pdl::PDLGetDocsRLCSA<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
+      return BuildBackend<TStorage, dret::backend::RLCSA<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
                                                                                      t_storing_factor);
     case bench::axes::GetDocEnum::DA:
-      return BuildBackend<TStorage, dret::pdl::PDLGetDocsDA<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
+      return BuildBackend<TStorage, dret::backend::PlainDA<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
                                                                                   t_storing_factor);
     default:
       throw std::invalid_argument("GCDA backend: get_doc must be da, sa_phi_r or rlcsa");

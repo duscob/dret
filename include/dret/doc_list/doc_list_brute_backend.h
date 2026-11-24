@@ -21,20 +21,21 @@
 
 #include "sr-index/r_index.h"
 
+#include "dret/backend/backend.h"
+#include "dret/backend/da.h"
 #include "dret/collection.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/index_base.h"
-#include "dret/rmq/rmq_get_doc_policies.h"
 
 namespace dret {
 
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TGetDoc = rmq::GetDocDA<TStorage, TAlphabet::int_width>>
+          typename TGetDoc = backend::PlainDA<TStorage, TAlphabet::int_width>>
 class DocListIdxBruteBackend : public DocListIndexExtStorage<TStorage, TAlphabet> {
  public:
   using StorageBase = DocListIndexExtStorage<TStorage, TAlphabet>;
@@ -43,7 +44,7 @@ class DocListIdxBruteBackend : public DocListIndexExtStorage<TStorage, TAlphabet
   using TDocId = std::size_t;
   using size_type = std::size_t;
 
-  static constexpr bool kBackendCounts = requires(const TGetDoc& g, const TPattern& p) { g.Count(p); };
+  static constexpr bool kBackendCounts = backend::CountsPattern<TGetDoc, TPattern>;
 
   explicit DocListIdxBruteBackend(const TStorage& t_storage)
       : StorageBase(t_storage), count_idx_(t_storage), get_doc_(t_storage) {}

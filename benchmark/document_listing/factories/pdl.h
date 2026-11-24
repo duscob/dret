@@ -23,10 +23,12 @@
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/doc_list/doc_list_pdl.h"
-#include "dret/pdl/get_docs.h"
+#include "dret/backend/da.h"
+#include "dret/backend/grammar.h"
+#include "dret/backend/rlcsa.h"
+#include "dret/backend/sa_phi.h"
 #include "dret/pdl/set_codecs.h"
 #include "dret/pdl/storage_policy.h"
-#include "dret/rmq/rmq_get_doc_rlcsa.h"
 
 #include "../axes.h"
 #include "../enum_traits.h"
@@ -42,29 +44,29 @@ inline constexpr std::uint8_t kWidth = dret::Alphabet<>::int_width;
 // type so PDL can pick any GCDA-family backend (the same TSLP defaults the RMQ
 // and GCDA/DGCDA/SLP-NS factories use, so the typed cache files are shared).
 template <typename TStorage>
-using GetDocsDA   = dret::pdl::PDLGetDocsDA<TStorage, kWidth>;
+using GetDocsDA   = dret::backend::PlainDA<TStorage, kWidth>;
 
 template <typename TStorage, typename TSLP = gcda::SLP_Light>
-using GetDocsSLP  = dret::pdl::PDLGetDocsSLP<TStorage, kWidth, TSLP>;
+using GetDocsSLP  = dret::backend::GCDAGrammar<TStorage, kWidth, TSLP>;
 
 template <typename TStorage, typename TSLP = slp_ns::BareSLP_IV>
-using GetDocsSLP_NS = dret::pdl::PDLGetDocsSLP_NS<TStorage, kWidth, TSLP>;
+using GetDocsSLP_NS = dret::backend::BareGrammar<TStorage, kWidth, TSLP>;
 
 template <typename TStorage, typename TDSLP = dgcda::SLP_Default>
-using GetDocsDSLP = dret::pdl::PDLGetDocsDSLP<TStorage, kWidth, TDSLP>;
+using GetDocsDSLP = dret::backend::DiffGCDAGrammar<TStorage, kWidth, TDSLP>;
 
 // SA-Phi backings — the RLCSA-style PDL baseline. R variant uses dense
 // r-index samples (no sampling knob); SR variant uses subsampled sr-index
 // samples (sa_sampling knob threaded through the spec).
 template <typename TStorage>
-using GetDocsSAPhi_R  = dret::pdl::PDLGetDocsSAPhi_R<TStorage, kWidth>;
+using GetDocsSAPhi_R  = dret::backend::SAPhi<TStorage, kWidth>;
 
 template <typename TStorage>
-using GetDocsSAPhi_SR = dret::pdl::PDLGetDocsSAPhi_SR<TStorage, kWidth>;
+using GetDocsSAPhi_SR = dret::backend::SAPhi<TStorage, kWidth, sri::SrIndexValidArea<TStorage, dret::Alphabet<kWidth>>>;
 
 // RLCSA backing — paper-faithful batched locate(range) + getSequenceForPosition.
 template <typename TStorage>
-using GetDocsRLCSA = dret::pdl::PDLGetDocsRLCSA<TStorage, kWidth>;
+using GetDocsRLCSA = dret::backend::RLCSA<TStorage, kWidth>;
 
 // Typed-index aliases. One template per codec; TGetDocs defaults to DA.
 // TStorage and TGetDocs are both parametric.
@@ -124,14 +126,13 @@ MakeForCodec(TStorage t_storage, dret::Config& t_config,
   // A backing with its own block size, t_backend_block_size, independent of
   // PDL's (block_size, storing_factor), as RMQ builds the same backing from its
   // block-size (so both families share its cache files). The default
-  // DocListIdxPDL ctor would build the inner backing from PDL's block size; the
-  // externally-supplied get_docs ctor lets us pass a pre-built one instead.
+  // DocListIdxPDL ctor would build the backing from PDL's block size; the
+  // externally-supplied backend ctor lets us pass a pre-built one instead.
   auto build_backend = [&](auto type_tag, float t_backend_storing_factor) {
     using TGetDocs = typename decltype(type_tag)::type;
     using TIndex = TCodec<TStorage, TGetDocs>;
-    typename TGetDocs::Inner inner(t_storage, t_backend_block_size, t_backend_storing_factor);
-    TGetDocs get_docs(std::move(inner));
-    auto idx = std::make_shared<TIndex>(t_storage, get_docs, t_block_size, t_storing_factor, lib_policy);
+    TGetDocs backend(t_storage, t_backend_block_size, t_backend_storing_factor);
+    auto idx = std::make_shared<TIndex>(t_storage, backend, t_block_size, t_storing_factor, lib_policy);
     construct(*idx, t_config);
     idx->load(t_config);
     result = {idx, sdsl::size_in_bytes(*idx)};

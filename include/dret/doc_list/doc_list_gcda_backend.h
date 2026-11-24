@@ -26,11 +26,12 @@
 
 #include "sr-index/r_index.h"
 
+#include "dret/backend/backend.h"
+#include "dret/backend/sa_phi.h"
 #include "dret/collection.h"
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/doc_list/doc_list_sampled_tree_base.h"
 #include "dret/index_base.h"
-#include "dret/pdl/get_docs.h"
 #include "dret/slp/slp_components.h"
 
 namespace dret::gcda {
@@ -38,7 +39,7 @@ namespace dret::gcda {
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TGetDocs = pdl::PDLGetDocsSAPhi_R<TStorage, TAlphabet::int_width>,
+          typename TBackend = backend::SAPhi<TStorage, TAlphabet::int_width>,
           typename TSets = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>,
                                              true,
                                              grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
@@ -50,21 +51,20 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
   using SchemeBase = DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>;
   using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
   using typename SchemeBase::size_type;
-  using GetDocs = TGetDocs;
+  using Backend = TBackend;
   using Sets = TSets;
 
   explicit DocListIdxGCDABackend(const TStorage& t_storage, uint32_t t_block_size = 512, float t_storing_factor = 4)
       : SchemeBase(TMergeSets()),
         StorageBase(t_storage),
         count_idx_(t_storage),
-        get_docs_(typename TGetDocs::Inner{t_storage}),
+        backend_(t_storage),
         block_size_(t_block_size),
         storing_factor_(t_storing_factor) {}
 
   // As in DocListIdxPDL: a backend that finds the suffix-array range itself (RLCSA) replaces the
   // r-index, which is then neither loaded, serialized nor counted in the size.
-  static constexpr bool kBackendCounts =
-      requires(const typename TGetDocs::Inner& g, const typename TAlphabet::string_type& p) { g.Count(p); };
+  static constexpr bool kBackendCounts = ::dret::backend::CountsPattern<TBackend, typename TAlphabet::string_type>;
 
   DocListIdxGCDABackend() = default;
 
@@ -72,7 +72,7 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     std::size_t bytes = 0;
     if constexpr (!kBackendCounts) bytes += count_idx_.serialize(out, child, "count_idx");
-    bytes += get_docs_.inner().serialize(out, child, "get_docs");
+    bytes += backend_.serialize(out, child, "get_docs");
     if (tree_) bytes += tree_->serialize(out, child, "sampled_tree");
     if (sets_) bytes += sets_->serialize(out, child, "sets");
     return bytes;
@@ -81,20 +81,20 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
   SizeReport GetSizeReport() const override {
     SizeReport r;
     if constexpr (!kBackendCounts) append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
-    for (const auto& f : get_docs_.inner().GetSizeReport()) append(r, "get_docs_" + f.name, f.bytes);
+    for (const auto& f : backend_.GetSizeReport()) append(r, "get_docs_" + f.name, f.bytes);
     if (tree_) append(r, "sampled_tree", sdsl::size_in_bytes(*tree_));
     if (sets_) append(r, "sets", sdsl::size_in_bytes(*sets_));
     return r;
   }
 
   const TCountIdx& count_idx() const { return count_idx_; }
-  TGetDocs& get_docs() { return get_docs_; }
+  TBackend& backend() { return backend_; }
   uint32_t block_size() const { return block_size_; }
   float storing_factor() const { return storing_factor_; }
 
  protected:
   std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const override {
-    if constexpr (kBackendCounts) return get_docs_.inner().Count(t_pattern);
+    if constexpr (kBackendCounts) return backend_.Count(t_pattern);
     else return count_idx_.Count(t_pattern);
   }
 
@@ -111,7 +111,7 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
                std::size_t t_ep,
                const std::function<void(typename SchemeBase::TDocId)>& t_report) const override {
     auto report = [&t_report](std::size_t d) { t_report(d); };
-    get_docs_.getDocs(t_sp, t_ep, report);
+    backend_(t_sp, t_ep, report);
   }
 
   std::vector<typename SchemeBase::TDocId> getDocSet(std::size_t t_i) const override {
@@ -123,7 +123,7 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
     std::visit(
         [this](auto&& tt_source) {
           if constexpr (!kBackendCounts) count_idx_.load(tt_source.get());
-          get_docs_.inner().load(tt_source.get());
+          backend_.load(tt_source.get());
         },
         t_source);
     const SampledTreeCell cell{block_size_, storing_factor_};
@@ -132,7 +132,7 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
   }
 
   TCountIdx count_idx_;
-  TGetDocs get_docs_;
+  TBackend backend_;
   const TSampledTree* tree_ = nullptr;
   const TSets* sets_ = nullptr;
   uint32_t block_size_ = 512;
@@ -141,9 +141,9 @@ class DocListIdxGCDABackend : public DLSampledTreeScheme<TMergeSets, typename TA
 
 // The sampled tree and the node lists come from the cell's GCDA build (which
 // reads the DA grammar); the backend builds its own cache.
-template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TGetDocs, typename TSets,
+template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TBackend, typename TSets,
           typename TSampledTree, typename TMergeSets>
-void construct(DocListIdxGCDABackend<TStorage, TAlphabet, TCountIdx, TGetDocs, TSets, TSampledTree, TMergeSets>& t_index,
+void construct(DocListIdxGCDABackend<TStorage, TAlphabet, TCountIdx, TBackend, TSets, TSampledTree, TMergeSets>& t_index,
                Config& t_config) {
   using namespace conf;
   EnsureDA<TAlphabet::int_width>(t_config);
@@ -159,7 +159,7 @@ void construct(DocListIdxGCDABackend<TStorage, TAlphabet, TCountIdx, TGetDocs, T
     construct(sets, t_config, cell.block_size, cell.storing_factor);
   }
 
-  construct(t_index.get_docs(), t_config);
+  construct(t_index.backend(), t_config);
   auto count_idx = t_index.count_idx();
   construct(count_idx, t_config.data_path, t_config);
 

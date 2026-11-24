@@ -26,7 +26,10 @@
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/doc_list/doc_list_gcda_backend.h"
 #include "dret/doc_list/doc_list_pdl.h"
-#include "dret/pdl/get_docs.h"
+#include "dret/backend/da.h"
+#include "dret/backend/grammar.h"
+#include "dret/backend/rlcsa.h"
+#include "dret/backend/sa_phi.h"
 
 #include "base_test.h"
 
@@ -36,26 +39,26 @@ template <typename TStorage>
 using RMQCountIdx = sri::RIndexCount<TStorage, dret::Alphabet<>>;
 
 template <typename TStorage>
-using RMQGetDocSLP = dret::rmq::GetDocSLP<TStorage>;
+using RMQGetDocSLP = dret::backend::GCDAGrammar<TStorage>;
 
 template <typename TStorage>
-using RMQGetDocSLP_NS = dret::rmq::GetDocSLP_NS<TStorage>;
+using RMQGetDocSLP_NS = dret::backend::BareGrammar<TStorage>;
 
 using BareSLP_Raw = grammar::SLP<>;
 using BareSLP_DV = grammar::SLP<sdsl::dac_vector<>, sdsl::dac_vector<>>;
 using BareSLP_VV = grammar::SLP<sdsl::vlc_vector<>, sdsl::vlc_vector<>>;
 
 template <typename TStorage>
-using RMQGetDocSLP_NS_Raw = dret::rmq::GetDocSLP_NS<TStorage, dret::Alphabet<>::int_width, BareSLP_Raw>;
+using RMQGetDocSLP_NS_Raw = dret::backend::BareGrammar<TStorage, dret::Alphabet<>::int_width, BareSLP_Raw>;
 
 template <typename TStorage>
-using RMQGetDocSLP_NS_DV = dret::rmq::GetDocSLP_NS<TStorage, dret::Alphabet<>::int_width, BareSLP_DV>;
+using RMQGetDocSLP_NS_DV = dret::backend::BareGrammar<TStorage, dret::Alphabet<>::int_width, BareSLP_DV>;
 
 template <typename TStorage>
-using RMQGetDocSLP_NS_VV = dret::rmq::GetDocSLP_NS<TStorage, dret::Alphabet<>::int_width, BareSLP_VV>;
+using RMQGetDocSLP_NS_VV = dret::backend::BareGrammar<TStorage, dret::Alphabet<>::int_width, BareSLP_VV>;
 
 template <typename TStorage>
-using RMQGetDocDSLP = dret::rmq::GetDocDSLP<TStorage>;
+using RMQGetDocDSLP = dret::backend::DiffGCDAGrammar<TStorage>;
 
 template <typename TStorage>
 using RMQSadaSLPCore = dret::rmq::SadaLCore<TStorage,
@@ -198,7 +201,7 @@ using RMQCilcpSLPNSVVCore = dret::rmq::CilcpLCore<TStorage,
 // RMQ × RLCSA cores are intentionally NOT defined here: RLCSA's GSA-style SA
 // ordering doesn't match dret's SA ordering, so SADA/ILCP's RMQ recursion
 // would mis-stop on the swapped doc IDs. PDL × RLCSA below works (set-based).
-// See include/dret/rmq/rmq_get_doc_rlcsa.h.
+// See include/dret/backend/rlcsa.h.
 
 template <typename TStorage>
 using RMQSadaSLPIndex =
@@ -274,7 +277,7 @@ using RMQCilcpSLPNSVVIndex =
 
 // PDL codec aliases parameterised on the get-doc backend, so the type lists can
 // exercise the SLP / bare-SLP / differential get-doc paths (not just the DA
-// default). The bare path (PDLGetDocsSLP_NS) is the newest; SLP / DSLP were
+// default). The bare path (backend::BareGrammar) is the newest; SLP / DSLP were
 // previously only covered by the benchmark.
 template <typename TStorage, typename TGetDocs>
 using PDLPlainBk = dret::pdl::DocListIdxPDLPlain<
@@ -390,15 +393,15 @@ using DocListIndexConstructTypes = ::testing::Types<
     dret::pdl::DocListIdxPDLPlain<dret::GenericStorage>,
     dret::pdl::DocListIdxPDLRP<dret::GenericStorage>,
     dret::pdl::DocListIdxPDLBC<dret::GenericStorage>,
-    PDLPlainBk<dret::GenericStorage, dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>,
-    PDLPlainBk<dret::GenericStorage, dret::pdl::PDLGetDocsSLP_NS<dret::GenericStorage>>,
-    PDLPlainBk<dret::GenericStorage, dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>,
-    PDLRPBk<dret::GenericStorage, dret::pdl::PDLGetDocsSLP<dret::GenericStorage>>,
-    PDLRPBk<dret::GenericStorage, dret::pdl::PDLGetDocsSLP_NS<dret::GenericStorage>>,
-    PDLRPBk<dret::GenericStorage, dret::pdl::PDLGetDocsDSLP<dret::GenericStorage>>,
+    PDLPlainBk<dret::GenericStorage, dret::backend::GCDAGrammar<dret::GenericStorage>>,
+    PDLPlainBk<dret::GenericStorage, dret::backend::BareGrammar<dret::GenericStorage>>,
+    PDLPlainBk<dret::GenericStorage, dret::backend::DiffGCDAGrammar<dret::GenericStorage>>,
+    PDLRPBk<dret::GenericStorage, dret::backend::GCDAGrammar<dret::GenericStorage>>,
+    PDLRPBk<dret::GenericStorage, dret::backend::BareGrammar<dret::GenericStorage>>,
+    PDLRPBk<dret::GenericStorage, dret::backend::DiffGCDAGrammar<dret::GenericStorage>>,
     // RMQ × RLCSA omitted (search-type incompatibility — see DocListIndexSearchTypes).
     // PDL × RLCSA still exercises the RLCSA construct+load path.
-    PDLPlainBk<dret::GenericStorage, dret::pdl::PDLGetDocsRLCSA<dret::GenericStorage>>>;
+    PDLPlainBk<dret::GenericStorage, dret::backend::RLCSA<dret::GenericStorage>>>;
 
 TYPED_TEST_SUITE(DocListIndexConstructTypedTests, DocListIndexConstructTypes);
 
@@ -556,20 +559,20 @@ using DocListIndexSearchTypes = ::testing::Types<
     dret::pdl::DocListIdxPDLPlain<ExternalGenericStorage>,
     dret::pdl::DocListIdxPDLRP<ExternalGenericStorage>,
     dret::pdl::DocListIdxPDLBC<ExternalGenericStorage>,
-    PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsSLP<ExternalGenericStorage>>,
-    PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsSLP_NS<ExternalGenericStorage>>,
-    PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>>,
-    PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsSLP<ExternalGenericStorage>>,
-    PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsSLP_NS<ExternalGenericStorage>>,
-    PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>>,
+    PDLPlainBk<ExternalGenericStorage, dret::backend::GCDAGrammar<ExternalGenericStorage>>,
+    PDLPlainBk<ExternalGenericStorage, dret::backend::BareGrammar<ExternalGenericStorage>>,
+    PDLPlainBk<ExternalGenericStorage, dret::backend::DiffGCDAGrammar<ExternalGenericStorage>>,
+    PDLRPBk<ExternalGenericStorage, dret::backend::GCDAGrammar<ExternalGenericStorage>>,
+    PDLRPBk<ExternalGenericStorage, dret::backend::BareGrammar<ExternalGenericStorage>>,
+    PDLRPBk<ExternalGenericStorage, dret::backend::DiffGCDAGrammar<ExternalGenericStorage>>,
     // RMQ × RLCSA is NOT in the search-type list: RLCSA's GSA-style SA
     // ordering doesn't match dret's, and SADA/ILCP miss docs on real data.
     // (Small test data doesn't trip the bug because patterns avoid the
     // "ambiguous zones" where multiple doc-end suffixes share a prefix.)
-    // The factory falls RMQ × RLCSA through to DA; see rmq_get_doc_rlcsa.h.
+    // The factory falls RMQ × RLCSA through to DA; see backend/rlcsa.h.
     // PDL × RLCSA is set-based and works correctly.
-    PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsRLCSA<ExternalGenericStorage>>,
-    PDLRPBk<ExternalGenericStorage, dret::pdl::PDLGetDocsRLCSA<ExternalGenericStorage>>>;
+    PDLPlainBk<ExternalGenericStorage, dret::backend::RLCSA<ExternalGenericStorage>>,
+    PDLRPBk<ExternalGenericStorage, dret::backend::RLCSA<ExternalGenericStorage>>>;
 
 TYPED_TEST_SUITE(DocListIndexSearchTypedTests, DocListIndexSearchTypes);
 
@@ -698,7 +701,7 @@ TEST_F(RMQSLPCacheReuseTest, rmq_slp_reuses_gcda_slp_cache) {
 TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_sweeps_block_size) {
   using S = ExternalGenericStorage;
   using TDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
-  using TGetDoc = dret::rmq::GetDocSLP_NS<S, dret::Alphabet<>::int_width, TDiff>;
+  using TGetDoc = dret::backend::BareGrammar<S, dret::Alphabet<>::int_width, TDiff>;
   using TCount = RMQCountIdx<S>;
   using SadaL = dret::rmq::SadaLCore<S, dret::Alphabet<>::int_width, sdsl::rmq_succinct_sct<true>,
                                      sdsl::sd_vector<>, TGetDoc>;
@@ -730,7 +733,7 @@ TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_sweeps_block_size) {
 TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_reuses_gcda_nolists_grammar) {
   using S = ExternalGenericStorage;
   using TDiff = dret::DifferentialSLP<grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>;
-  using TGetDoc = dret::rmq::GetDocSLP_NS<S, dret::Alphabet<>::int_width, TDiff>;
+  using TGetDoc = dret::backend::BareGrammar<S, dret::Alphabet<>::int_width, TDiff>;
   using CilcpL = dret::rmq::CilcpLCore<S, dret::Alphabet<>::int_width, sdsl::sd_vector<>,
                                        sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDoc>;
 
@@ -755,7 +758,7 @@ TEST_F(RMQSLPCacheReuseTest, rmq_bare_diff_reuses_gcda_nolists_grammar) {
 TEST_F(RMQSLPCacheReuseTest, pdl_rp_lists_without_lengths) {
   using S = ExternalGenericStorage;
   using Legacy = dret::pdl::DocListIdxPDL<S, dret::Alphabet<>, sri::RIndexCount<S, dret::Alphabet<>>,
-                                          dret::pdl::PDLGetDocsDA<S>, dret::pdl::RPCodecWithLengths>;
+                                          dret::backend::PlainDA<S>, dret::pdl::RPCodecWithLengths>;
   using Current = dret::pdl::DocListIdxPDLRP<S>;
 
   Legacy legacy(std::ref(storage_), 2, 2.0f);
@@ -938,11 +941,11 @@ TEST_F(RMQSLPCacheReuseTest, rmq_dslp_reuses_dgcda_dslp_cache) {
 }
 
 TEST_F(RMQSLPCacheReuseTest, pdl_rlcsa_sidecar_not_rebuilt) {
-  // The RLCSA sidecar is constructed by GetDocRLCSA via PDLRawRangePolicy.
+  // The RLCSA sidecar is constructed by backend::RLCSA's construct().
   // Test via PDL × RLCSA — the only supported consumer (RMQ × RLCSA is
   // disabled at the factory level due to SA-ordering incompatibility; see
-  // rmq_get_doc_rlcsa.h header comment).
-  using PDLRLCSA = PDLPlainBk<ExternalGenericStorage, dret::pdl::PDLGetDocsRLCSA<ExternalGenericStorage>>;
+  // backend/rlcsa.h header comment).
+  using PDLRLCSA = PDLPlainBk<ExternalGenericStorage, dret::backend::RLCSA<ExternalGenericStorage>>;
 
   PDLRLCSA pdl1(std::ref(storage_));
   construct(pdl1, config_);
@@ -1126,7 +1129,7 @@ TEST_F(ComponentSweepTest, nolists_and_rmq_backends_grid) {
   }
   nolists.template operator()<TSLP>("nolists-plain", dret::kDiffBlockSize);
 
-  using TGetDocDiff = dret::rmq::GetDocSLP_NS<S, dret::Alphabet<>::int_width, TDiff>;
+  using TGetDocDiff = dret::backend::BareGrammar<S, dret::Alphabet<>::int_width, TDiff>;
   using CilcpLDiff = dret::rmq::CilcpLCore<S, dret::Alphabet<>::int_width, sdsl::sd_vector<>,
                                            sdsl::rmq_succinct_sct<true>, sdsl::sd_vector<>, TGetDocDiff>;
   using IlcpLSLP = dret::rmq::IlcpLCore<S, dret::Alphabet<>::int_width, sdsl::sd_vector<>,
@@ -1178,8 +1181,8 @@ TEST_F(ComponentSweepTest, gcda_backend_grid) {
   using SetsPlain = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>;
   using SetsRP = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>, true,
                                    grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>;
-  using DA = dret::pdl::PDLGetDocsDA<S, dret::Alphabet<>::int_width>;
-  using SAPhi = dret::pdl::PDLGetDocsSAPhi_R<S, dret::Alphabet<>::int_width>;
+  using DA = dret::backend::PlainDA<S, dret::Alphabet<>::int_width>;
+  using SAPhi = dret::backend::SAPhi<S, dret::Alphabet<>::int_width>;
   for (std::uint32_t b : {4u, 64u}) {
     for (float sf : {1.0f, 4.0f, dret::kInfiniteStoringFactor}) {
       const auto label = " b=" + std::to_string(b) + " sf=" + std::to_string(sf);

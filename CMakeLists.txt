@@ -50,6 +50,14 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/index_base.h
         ${PROJECT_SOURCE_DIR}/include/dret/construct_base.h
         ${PROJECT_SOURCE_DIR}/include/dret/size_report.h
+        ${PROJECT_SOURCE_DIR}/include/dret/collection.h
+
+        # backend/: document-array backends, shared by every index that expands positions.
+        ${PROJECT_SOURCE_DIR}/include/dret/backend/backend.h
+        ${PROJECT_SOURCE_DIR}/include/dret/backend/da.h
+        ${PROJECT_SOURCE_DIR}/include/dret/backend/grammar.h
+        ${PROJECT_SOURCE_DIR}/include/dret/backend/sa_phi.h
+        ${PROJECT_SOURCE_DIR}/include/dret/backend/rlcsa.h
 
         # common/: small cross-cutting utilities.
         ${PROJECT_SOURCE_DIR}/include/dret/common/algorithm.h
@@ -66,11 +74,9 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/slp/compact_bp_slp.h
         ${PROJECT_SOURCE_DIR}/include/dret/slp/compact_louds_slp.h
 
-        # rmq/: RMQ scheme + shared cores + get-doc policies (shared by freq and list).
+        # rmq/: RMQ traversal schemes.
         ${PROJECT_SOURCE_DIR}/include/dret/rmq/doc_index_rmq_common.h
         ${PROJECT_SOURCE_DIR}/include/dret/rmq/doc_list_rmq_scheme.h
-        ${PROJECT_SOURCE_DIR}/include/dret/rmq/rmq_get_doc_policies.h
-        ${PROJECT_SOURCE_DIR}/include/dret/rmq/rmq_get_doc_rlcsa.h
 
         # doc_freq/: document-frequency family.
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_base.h
@@ -88,13 +94,12 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_gcda.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_pdl.h
 
-        # pdl/: PDL infrastructure (codecs + sparse tree + storage policy + get-doc adapter).
+        # pdl/: PDL infrastructure (codecs + sparse tree + storage policy).
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/storage_policy.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/tree_builder.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/build_pdl_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/pdl/set_codecs.h
-        ${PROJECT_SOURCE_DIR}/include/dret/pdl/get_docs.h
 )
 
 add_library(dret INTERFACE)
@@ -155,7 +160,6 @@ if (dret_build_tests)
     add_dependencies(pdl_set_codecs_test dsextract)
     cxx_test_with_flags_and_args(pdl_template_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_template_test.cpp)
     add_dependencies(pdl_template_test dsextract)
-    cxx_test_with_flags_and_args(pdl_get_docs_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_get_docs_test.cpp)
     cxx_test_with_flags_and_args(pdl_index_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_index_test.cpp)
     add_dependencies(pdl_index_test dsextract)
     cxx_test_with_flags_and_args(pdl_construct_load_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_construct_load_test.cpp)

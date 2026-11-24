@@ -22,7 +22,8 @@
 
 #include "dret/doc_list/doc_list_brute.h"
 #include "dret/doc_list/doc_list_brute_backend.h"
-#include "dret/rmq/rmq_get_doc_rlcsa.h"
+#include "dret/backend/da.h"
+#include "dret/backend/rlcsa.h"
 
 namespace bench::factories::brute {
 
@@ -56,14 +57,14 @@ using IdxDA = dret::DocListIdxBruteBackend<
     TStorage,
     dret::Alphabet<>,
     sri::RIndexCount<TStorage, dret::Alphabet<>>,
-    dret::rmq::GetDocDA<TStorage, dret::Alphabet<>::int_width>>;
+    dret::backend::PlainDA<TStorage, dret::Alphabet<>::int_width>>;
 
 template <typename TStorage>
 using IdxRLCSA = dret::DocListIdxBruteBackend<
     TStorage,
     dret::Alphabet<>,
     sri::RIndexCount<TStorage, dret::Alphabet<>>,
-    dret::rmq::GetDocRLCSA<TStorage, dret::Alphabet<>::int_width>>;
+    dret::backend::RLCSA<TStorage, dret::Alphabet<>::int_width>>;
 
 // A backend that reads nothing: brute force over it is the r-index count alone, the step every index
 // that counts with sri::RIndexCount starts with (all but Brute-RI and Brute-SRI), timed in isolation.

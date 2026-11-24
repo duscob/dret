@@ -2,8 +2,9 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/16/26.
 //
 // DocListIdxPDL: PDL document-listing index parameterised on the stored-set
-// codec. Composes a count sub-index (default: sri::RIndexCount), a raw-range
-// get-doc policy (default: PDLGetDocsDA), and a PDLTreeCore<..., TStoredSetCodec>
+// codec. Composes a count sub-index (default: sri::RIndexCount), a document-array
+// backend for the ranges no stored node covers (default: backend::PlainDA; see
+// backend/backend.h), and a PDLTreeCore<..., TStoredSetCodec>
 // for the sparse suffix-tree navigation + per-slot stored-set expansion.
 //
 // The three PlainCodec / RPCodec / BCCodec variants are exposed as alias
@@ -42,6 +43,8 @@
 #include "sr-index/r_index.h"
 
 #include "dret/collection.h"
+#include "dret/backend/backend.h"
+#include "dret/backend/da.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_sampled_tree_base.h"
@@ -49,7 +52,6 @@
 #include "dret/index_base.h"
 #include "dret/size_report.h"
 #include "dret/pdl/build_pdl_core.h"
-#include "dret/pdl/get_docs.h"
 #include "dret/pdl/set_codecs.h"
 #include "dret/pdl/storage_policy.h"
 #include "dret/pdl/tree_builder.h"
@@ -60,7 +62,7 @@ namespace dret::pdl {
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
           typename TStoredSetCodec = PlainCodec<>,
           typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>,
@@ -80,8 +82,7 @@ class DocListIdxPDL
 
   // A backend that finds the suffix-array range itself (RLCSA, as in the original PDL) replaces the
   // r-index: count_idx is then neither loaded, serialized nor counted in the size.
-  static constexpr bool kBackendCounts =
-      requires(const typename TGetDocs::Inner& g, const typename TAlphabet::string_type& p) { g.Count(p); };
+  static constexpr bool kBackendCounts = ::dret::backend::CountsPattern<TBackend, typename TAlphabet::string_type>;
 
   DocListIdxPDL() = default;
 
@@ -92,7 +93,7 @@ class DocListIdxPDL
       : SchemeBase(TMergeSets()),
         StorageBase(t_storage),
         count_idx_(t_storage),
-        get_docs_(typename TGetDocs::Inner{t_storage}),
+        backend_(t_storage),
         block_size_(t_block_size),
         storing_factor_(t_storing_factor),
         policy_(t_policy) {}
@@ -108,27 +109,25 @@ class DocListIdxPDL
       : SchemeBase(TMergeSets()),
         StorageBase(t_storage),
         count_idx_(t_count_idx),
-        get_docs_(typename TGetDocs::Inner{t_storage}),
+        backend_(t_storage),
         block_size_(t_block_size),
         storing_factor_(t_storing_factor),
         policy_(t_policy) {}
 
-  // Externally-supplied get_docs variant. Used by the benchmark factory to pin
-  // the raw-range get-doc backing's parameters (e.g. the GCDA-light SLP's own
-  // block_size / storing_factor) to a chosen operating point — independently
-  // of PDL's own (block_size, storing_factor) above. The default ctor builds
-  // get_docs_ from {t_storage} only, which leaves the inner GCDA SLP at its
-  // default (512, 4); this ctor lets the caller pass a pre-built TGetDocs with
-  // the desired inner configuration.
+  // Externally-supplied backend. Used by the benchmark factory to set the
+  // backend's own parameters (e.g. the GCDA-light grammar's block size and
+  // storing factor) independently of PDL's (block_size, storing_factor) above.
+  // The other ctors build the backend from {t_storage} only, which leaves a
+  // GCDA grammar at its default (512, 4).
   DocListIdxPDL(const TStorage& t_storage,
-                const TGetDocs& t_get_docs,
+                const TBackend& t_backend,
                 uint32_t t_block_size = 512,
                 float t_storing_factor = 4.0f,
                 StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
       : SchemeBase(TMergeSets()),
         StorageBase(t_storage),
         count_idx_(t_storage),
-        get_docs_(t_get_docs),
+        backend_(t_backend),
         block_size_(t_block_size),
         storing_factor_(t_storing_factor),
         policy_(t_policy) {}
@@ -139,7 +138,7 @@ class DocListIdxPDL
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     std::size_t bytes = 0;
     if constexpr (!kBackendCounts) bytes += count_idx_.serialize(out, child, "count_idx");
-    bytes += get_docs_.inner().serialize(out, child, "get_docs");
+    bytes += backend_.serialize(out, child, "get_docs");
     if (core_) bytes += core_->serialize(out, child, "core");
     return bytes;
   }
@@ -147,7 +146,7 @@ class DocListIdxPDL
   SizeReport GetSizeReport() const override {
     SizeReport r;
     if constexpr (!kBackendCounts) append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
-    auto gd = get_docs_.inner().GetSizeReport();
+    auto gd = backend_.GetSizeReport();
     for (const auto& f : gd) append(r, "get_docs_" + f.name, f.bytes);
     if (core_) {
       auto core_r = core_->GetSizeReport();
@@ -157,14 +156,14 @@ class DocListIdxPDL
   }
 
   const TCountIdx& count_idx() const { return count_idx_; }
-  const TGetDocs& get_docs() const { return get_docs_; }
+  const TBackend& backend() const { return backend_; }
   uint32_t block_size() const { return block_size_; }
   float storing_factor() const { return storing_factor_; }
   StoragePolicy policy() const { return policy_; }
 
  protected:
   std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const override {
-    if constexpr (kBackendCounts) return get_docs_.inner().Count(t_pattern);
+    if constexpr (kBackendCounts) return backend_.Count(t_pattern);
     else return count_idx_.Count(t_pattern);
   }
 
@@ -190,7 +189,7 @@ class DocListIdxPDL
                std::size_t t_ep,
                const std::function<void(typename SchemeBase::TDocId)>& t_report) const override {
     auto wrapper = [&t_report](std::size_t d) { t_report(d); };
-    get_docs_.getDocs(t_sp, t_ep, wrapper);
+    backend_(t_sp, t_ep, wrapper);
   }
 
   std::vector<typename SchemeBase::TDocId> getDocSet(std::size_t t_codec_slot) const override {
@@ -204,7 +203,7 @@ class DocListIdxPDL
     std::visit(
         [this](auto&& tt_source) {
           if constexpr (!kBackendCounts) count_idx_.load(tt_source.get());
-          get_docs_.inner().load(tt_source.get());
+          backend_.load(tt_source.get());
         },
         t_source);
 
@@ -213,7 +212,7 @@ class DocListIdxPDL
   }
 
   TCountIdx count_idx_;
-  TGetDocs get_docs_;
+  TBackend backend_;
   const TCore* core_ = nullptr;
   uint32_t block_size_ = 512;
   float storing_factor_ = 4.0f;
@@ -230,42 +229,42 @@ class DocListIdxPDL
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
           typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>,
           typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
-using DocListIdxPDLPlain = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+using DocListIdxPDLPlain = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend,
                                           PlainCodec<>, TBitvector, TIntVector, TMergeSets>;
 
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
           typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>,
           typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
-using DocListIdxPDLRP = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+using DocListIdxPDLRP = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend,
                                        RPCodec<>, TBitvector, TIntVector, TMergeSets>;
 
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
           typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>,
           typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
-using DocListIdxPDLBC = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+using DocListIdxPDLBC = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend,
                                        BCCodec<>, TBitvector, TIntVector, TMergeSets>;
 
 template <typename TStorage,
           typename TAlphabet,
           typename TCountIdx,
-          typename TGetDocs,
+          typename TBackend,
           typename TStoredSetCodec,
           typename TBitvector,
           typename TIntVector,
           typename TMergeSets>
-void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend,
                               TStoredSetCodec, TBitvector, TIntVector, TMergeSets>& t_index,
                Config& t_config) {
   using namespace conf;
@@ -322,13 +321,12 @@ void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
                     t_config);
   }
 
-  // Raw get-doc backing cache. DA-backed is a no-op (DA was built above);
-  // SLP / DSLP variants build their own LightSLP / DSLP cache entries via
-  // construct() in rmq_get_doc_policies.h. Copy the index's get_docs so we
-  // don't need a default-constructible TGetDocs (which would be ill-formed
+  // The backend's own structures (backend/*.h): the grammars build their
+  // components, the DA and SA-Phi find theirs built above or build them. A copy
+  // of the index's backend, as TBackend need not be default-constructible (not
   // when TStorage is std::reference_wrapper).
-  auto get_docs = t_index.get_docs();
-  construct(get_docs, t_config);
+  auto backend = t_index.backend();
+  construct(backend, t_config);
 
   // Count sub-index — same delegation pattern as GCDA.
   auto count_idx = t_index.count_idx();

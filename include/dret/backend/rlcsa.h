@@ -41,21 +41,22 @@
 #include <rlcsa.h>
 
 #include "dret/collection.h"
+#include "dret/backend/backend.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"
 
-namespace dret::rmq {
+namespace dret::backend {
 
 template <typename TStorage = GenericStorage, uint8_t t_width = 8>
-class GetDocRLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class RLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
   using typename Base::size_type;
 
-  explicit GetDocRLCSA(const TStorage& t_storage) : Base(t_storage) {}
-  GetDocRLCSA() = default;
+  explicit RLCSA(const TStorage& t_storage) : Base(t_storage) {}
+  RLCSA() = default;
 
   // Single-position lookup.
   std::size_t operator()(std::size_t t_i) const {
@@ -134,7 +135,7 @@ class GetDocRLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
     }
     rlcsa_ = std::make_shared<CSA::RLCSA>(base_, /*print=*/false);
     if (!rlcsa_->isOk())
-      throw std::runtime_error("GetDocRLCSA: failed to load RLCSA from " + base_);
+      throw std::runtime_error("RLCSA: failed to load RLCSA from " + base_);
   }
 
  private:
@@ -146,7 +147,7 @@ class GetDocRLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
 // sidecar files from the kText cache, remapping dret's \x01 doc-delimiters
 // back to the \x00 that RLCSA expects.
 template <typename TStorage, uint8_t t_width>
-void construct(GetDocRLCSA<TStorage, t_width>&, Config& t_config) {
+void construct(RLCSA<TStorage, t_width>&, Config& t_config) {
   using namespace dret::conf;
 
   EnsureText<t_width>(t_config);
@@ -177,8 +178,8 @@ void construct(GetDocRLCSA<TStorage, t_width>&, Config& t_config) {
   CSA::RLCSA rlcsa(buf.data(), static_cast<CSA::usint>(n), /*block_size=*/32,
                    /*sa_sample_rate=*/128, /*threads=*/1, /*delete_data=*/false);
   if (!rlcsa.isOk())
-    throw std::runtime_error("construct(GetDocRLCSA): RLCSA construction failed");
+    throw std::runtime_error("construct(RLCSA): RLCSA construction failed");
   rlcsa.writeTo(base);
 }
 
-}  // namespace dret::rmq
+}  // namespace dret::backend
