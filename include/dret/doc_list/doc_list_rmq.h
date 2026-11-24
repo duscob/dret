@@ -30,6 +30,7 @@
 #include "sr-index/r_index.h"
 #include "sr-index/sr_index.h"
 
+#include "dret/collection.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/rmq/doc_index_rmq_common.h"
@@ -47,18 +48,6 @@ namespace rmq {
 
 
 namespace internal {
-
-// Number of documents = number of '\1' delimiters in the cached text (which is the
-// post-`ConstructText` form: documents separated by `\1`, followed by a final `\0`).
-inline std::size_t ReadNDoc(const Config& t_config) {
-  sdsl::int_vector_buffer<8> text_buf(sdsl::cache_file_name(t_config.keys[conf::kText].get<std::string>(), t_config));
-  std::size_t n = 0;
-  for (std::size_t i = 0; i < text_buf.size(); ++i) {
-    if (text_buf[i] == 1)
-      ++n;
-  }
-  return n;
-}
 
 // Build the backward-ILCP array: for each SA position i with document d and local
 // doc-suffix index j, ILCP[i] = LCP between that suffix and the previous suffix of
@@ -279,12 +268,7 @@ class SadaLCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     key_rmq_ = t_keys[kSADA][kRmq].get<std::string>();
     rmq_ = this->template loadItemPtr<TRMQ>(key_rmq_, t_source, true);
 
-    // Config path: loads from the kRmqNDoc cache entry (key-based lookup).
-    // Istream path: reads the next int_vector<64> sequentially from the stream,
-    // matching the n_doc_vec written by serialize() above.
-    const auto key_n_doc = t_keys[kRmqNDoc].get<std::string>();
-    const auto* n_doc_vec = this->template loadItemPtr<sdsl::int_vector<64>>(key_n_doc, t_source, true);
-    n_doc_ = static_cast<std::size_t>((*n_doc_vec)[0]);
+    n_doc_ = this->loadNDoc(t_keys, t_source);
   }
 
   std::string key_rmq_;
@@ -400,9 +384,7 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     key_prev_doc_ = t_keys[kSADA][kPrevDoc].get<std::string>();
     prev_doc_ = this->template loadItemPtr<TPrevDoc>(key_prev_doc_, t_source, true);
 
-    const auto key_n_doc = t_keys[kRmqNDoc].get<std::string>();
-    const auto* n_doc_vec = this->template loadItemPtr<sdsl::int_vector<64>>(key_n_doc, t_source, true);
-    n_doc_ = static_cast<std::size_t>((*n_doc_vec)[0]);
+    n_doc_ = this->loadNDoc(t_keys, t_source);
   }
 
   std::string key_rmq_;
@@ -640,11 +622,7 @@ class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
     // n_runs is always derivable from rank after rank is loaded.
     n_runs_ = (*rank_)(run_heads_->size());
 
-    // Config path: loads from kRmqNDoc cache; istream path: reads from stream
-    // (matching the n_doc_vec written by serialize() between select and get_doc).
-    const auto key_n_doc = t_keys[kRmqNDoc].get<std::string>();
-    const auto* n_doc_vec = this->template loadItemPtr<sdsl::int_vector<64>>(key_n_doc, t_source, true);
-    n_doc_ = static_cast<std::size_t>((*n_doc_vec)[0]);
+    n_doc_ = this->loadNDoc(t_keys, t_source);
   }
 
   std::string key_rmq_;
@@ -849,9 +827,7 @@ class IlcpLikeFullCore : public IndexBaseWithExternalStorage<TStorage, t_width> 
 
     n_runs_ = (*rank_)(run_heads_->size());
 
-    const auto key_n_doc = t_keys[kRmqNDoc].get<std::string>();
-    const auto* n_doc_vec = this->template loadItemPtr<sdsl::int_vector<64>>(key_n_doc, t_source, true);
-    n_doc_ = static_cast<std::size_t>((*n_doc_vec)[0]);
+    n_doc_ = this->loadNDoc(t_keys, t_source);
   }
 
   std::string key_rmq_;
@@ -966,42 +942,6 @@ class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
 
 namespace internal {
-
-// Ensure Text/SA/DocEnds/DA are present in the cache. Each call is a no-op when
-// the respective cache entry already exists.
-template <uint8_t t_width, typename TBvDocEnds>
-void EnsureBasicStructures(Config& t_config) {
-  using namespace dret::conf;
-
-  if (!cache_file_exists(t_config.keys[kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<t_width>(t_config);
-  }
-
-  if (const auto key = t_config.keys[kSA].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    sdsl::construct_sa<t_width>(t_config);
-  }
-
-  if (const auto key = t_config.keys[kDocEnds].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocEnd<t_width, TBvDocEnds>(t_config);
-  }
-
-  // ConstructDocArray writes DA only with type-hash; the no-hash check would never
-  // see it, causing DA to be rebuilt on every construct() call. Match the storage.
-  if (const auto key = t_config.keys[kDA].get<std::string>();
-      !sdsl::cache_file_exists<sdsl::int_vector<>>(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocArray<TBvDocEnds>(t_config);
-  }
-
-  if (const auto key = t_config.keys[kRmqNDoc].get<std::string>();
-      !sdsl::cache_file_exists<sdsl::int_vector<64>>(key, t_config)) {
-    sdsl::int_vector<64> n_doc_vec(1, ReadNDoc(t_config));
-    sdsl::store_to_cache(n_doc_vec, key, t_config, true);
-  }
-}
 
 // Store run_heads bitvector (with rank/select) and the RMQ built from run values.
 template <typename TBvRunHeads, typename TRMQ>
@@ -1129,7 +1069,7 @@ inline void StoreRunValues(Config& t_config,
 template <typename TStorage, uint8_t t_width, typename TRMQ, typename TBvDocEnds, typename TGetDoc>
 void construct(SadaLCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, Config& t_config) {
   using namespace dret::conf;
-  internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
+  EnsureCollection<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kSADA][kRmq].get<std::string>();
   if (!sdsl::cache_file_exists<TRMQ>(key_rmq, t_config)) {
@@ -1138,7 +1078,7 @@ void construct(SadaLCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, 
     sdsl::int_vector<> da;
     sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-    std::size_t n_doc = internal::ReadNDoc(t_config);
+    std::size_t n_doc = ReadNDoc<t_width>(t_config);
 
     // prev_doc[i] = the previous SA position holding DA[i], or 0 when there is
     // none. Using 0 as "no previous occurrence" is only safe because SA position
@@ -1170,7 +1110,7 @@ void construct(SadaLCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>& t_core, 
 template <typename TStorage, uint8_t t_width, typename TRMQ, typename TBvDocEnds, typename TGetDoc, typename TPrevDoc>
 void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc, TPrevDoc>& t_core, Config& t_config) {
   using namespace dret::conf;
-  internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
+  EnsureCollection<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kSADA][kRmq].get<std::string>();
   auto key_prev_doc = t_config.keys[kSADA][kPrevDoc].get<std::string>();
@@ -1181,7 +1121,7 @@ void construct(SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc, TPrevDoc>&
     sdsl::int_vector<> da;
     sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
 
-    std::size_t n_doc = internal::ReadNDoc(t_config);
+    std::size_t n_doc = ReadNDoc<t_width>(t_config);
 
     sdsl::int_vector<> prev_doc(da.size(), 0, sdsl::bits::hi(da.size()) + 1);
     std::vector<std::size_t> last_occ(n_doc + 2, 0);
@@ -1220,7 +1160,7 @@ template <typename TStorage,
 void construct(IlcpLikeLeanCore<IlcpLeanVariant::ILCP_L, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
                Config& t_config) {
   using namespace dret::conf;
-  internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
+  EnsureCollection<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kILCP][kRmq].get<std::string>();
   auto key_run_heads = t_config.keys[kILCP][kRunHeads].get<std::string>();
@@ -1228,7 +1168,7 @@ void construct(IlcpLikeLeanCore<IlcpLeanVariant::ILCP_L, TStorage, t_width, TBvR
       || !sdsl::cache_file_exists<TBvRunHeads>(key_run_heads, t_config)) {
     auto event = sdsl::memory_monitor::event(key_rmq);
 
-    std::size_t n_doc = internal::ReadNDoc(t_config);
+    std::size_t n_doc = ReadNDoc<t_width>(t_config);
     auto ilcp = internal::LoadOrComputeIlcp<t_width>(t_config, n_doc);
 
     sdsl::bit_vector run_heads(ilcp.size(), 0);
@@ -1259,7 +1199,7 @@ template <typename TStorage,
 void construct(IlcpLikeLeanCore<IlcpLeanVariant::CILCP_L, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>& t_core,
                Config& t_config) {
   using namespace dret::conf;
-  internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
+  EnsureCollection<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kCILCP][kRmq].get<std::string>();
   auto key_run_heads = t_config.keys[kCILCP][kRunHeads].get<std::string>();
@@ -1267,7 +1207,7 @@ void construct(IlcpLikeLeanCore<IlcpLeanVariant::CILCP_L, TStorage, t_width, TBv
       || !sdsl::cache_file_exists<TBvRunHeads>(key_run_heads, t_config)) {
     auto event = sdsl::memory_monitor::event(key_rmq);
 
-    std::size_t n_doc = internal::ReadNDoc(t_config);
+    std::size_t n_doc = ReadNDoc<t_width>(t_config);
     auto ilcp = internal::LoadOrComputeIlcp<t_width>(t_config, n_doc);
 
     sdsl::int_vector<> da;
@@ -1308,7 +1248,7 @@ template <typename TStorage,
 void construct(IlcpLikeFullCore<IlcpFullVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>& t_core,
                Config& t_config) {
   using namespace dret::conf;
-  internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
+  EnsureCollection<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kILCP][kRmq].get<std::string>();
   auto key_run_heads = t_config.keys[kILCP][kRunHeads].get<std::string>();
@@ -1322,7 +1262,7 @@ void construct(IlcpLikeFullCore<IlcpFullVariant::ILCP, TStorage, t_width, TBvRun
   if (rle_missing || values_missing) {
     auto event = sdsl::memory_monitor::event(key_run_values);
 
-    std::size_t n_doc = internal::ReadNDoc(t_config);
+    std::size_t n_doc = ReadNDoc<t_width>(t_config);
     auto ilcp = internal::LoadOrComputeIlcp<t_width>(t_config, n_doc);
 
     sdsl::bit_vector run_heads(ilcp.size(), 0);
@@ -1364,7 +1304,7 @@ template <typename TStorage,
 void construct(IlcpLikeFullCore<IlcpFullVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>& t_core,
                Config& t_config) {
   using namespace dret::conf;
-  internal::EnsureBasicStructures<t_width, TBvDocEnds>(t_config);
+  EnsureCollection<t_width, TBvDocEnds>(t_config);
 
   auto key_rmq = t_config.keys[kCILCP][kRmq].get<std::string>();
   auto key_run_heads = t_config.keys[kCILCP][kRunHeads].get<std::string>();
@@ -1378,7 +1318,7 @@ void construct(IlcpLikeFullCore<IlcpFullVariant::CILCP, TStorage, t_width, TBvRu
   if (rle_missing || values_missing) {
     auto event = sdsl::memory_monitor::event(key_run_values);
 
-    std::size_t n_doc = internal::ReadNDoc(t_config);
+    std::size_t n_doc = ReadNDoc<t_width>(t_config);
     auto ilcp = internal::LoadOrComputeIlcp<t_width>(t_config, n_doc);
 
     sdsl::int_vector<> da;

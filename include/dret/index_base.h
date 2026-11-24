@@ -152,6 +152,13 @@ class IndexBaseWithExternalStorage {
     return std::cref(*item);
   }
 
+  // The number of documents, cached at conf::kNDoc (see dret/collection.h). From a stream it is the
+  // next int_vector<64>, where serialize() wrote it.
+  std::size_t loadNDoc(const JSON& t_keys, TSource& t_source) {
+    const auto* n_doc = loadItemPtr<sdsl::int_vector<64>>(t_keys[conf::kNDoc].get<std::string>(), t_source, true);
+    return static_cast<std::size_t>((*n_doc)[0]);
+  }
+
   template <typename TBv, typename TBvRank = typename TBv::rank_1_type>
   auto loadBVRank(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
     auto key_rank = t_key + "_rank";

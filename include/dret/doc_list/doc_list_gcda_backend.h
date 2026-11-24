@@ -26,6 +26,7 @@
 
 #include "sr-index/r_index.h"
 
+#include "dret/collection.h"
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/doc_list/doc_list_sampled_tree_base.h"
 #include "dret/index_base.h"
@@ -145,23 +146,7 @@ template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TG
 void construct(DocListIdxGCDABackend<TStorage, TAlphabet, TCountIdx, TGetDocs, TSets, TSampledTree, TMergeSets>& t_index,
                Config& t_config) {
   using namespace conf;
-  if (!cache_file_exists(t_config.keys[kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<TAlphabet::int_width>(t_config);
-  }
-  if (const auto key = t_config.keys[kSA].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    sdsl::construct_sa<TAlphabet::int_width>(t_config);
-  }
-  if (const auto key = t_config.keys[kDocEnds].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocEnd<TAlphabet::int_width, sdsl::sd_vector<>>(t_config);
-  }
-  if (const auto key = t_config.keys[kDA].get<std::string>();
-      !sdsl::cache_file_exists<sdsl::int_vector<>>(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocArray(t_config);
-  }
+  EnsureDA<TAlphabet::int_width>(t_config);
 
   const SampledTreeCell cell{t_index.block_size(), t_index.storing_factor()};
   if (!sdsl::cache_file_exists<TSampledTree>(CellKey(t_config.keys, kDaSampledTree, cell), t_config)) {

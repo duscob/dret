@@ -21,11 +21,11 @@
 
 #include "sr-index/r_index.h"
 
+#include "dret/collection.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_base.h"
-#include "dret/doc_list/doc_list_rmq.h"
 #include "dret/index_base.h"
 #include "dret/rmq/rmq_get_doc_policies.h"
 
@@ -98,9 +98,7 @@ class DocListIdxBruteBackend : public DocListIndexExtStorage<TStorage, TAlphabet
         },
         t_source);
 
-    const auto* n_doc_vec =
-        this->template loadItemPtr<sdsl::int_vector<64>>(t_keys[kRmqNDoc].get<std::string>(), t_source, true);
-    n_doc_ = static_cast<std::size_t>((*n_doc_vec)[0]);
+    n_doc_ = this->loadNDoc(t_keys, t_source);
   }
 
   TCountIdx count_idx_;
@@ -111,11 +109,11 @@ class DocListIdxBruteBackend : public DocListIndexExtStorage<TStorage, TAlphabet
 //~~~~~~~
 
 
-// Text, SA, document ends, DA and the number of documents as the RMQ cores build them, the backend's
-// own structures and, unless the backend counts, the r-index.
+// The collection's structures (EnsureCollection: text, SA, document ends, DA and the number of
+// documents), the backend's own structures and, unless the backend counts, the r-index.
 template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TGetDoc>
 void construct(DocListIdxBruteBackend<TStorage, TAlphabet, TCountIdx, TGetDoc>& t_index, Config& t_config) {
-  rmq::internal::EnsureBasicStructures<TAlphabet::int_width, sdsl::sd_vector<>>(t_config);
+  EnsureCollection<TAlphabet::int_width>(t_config);
 
   auto get_doc = t_index.get_doc();
   construct(get_doc, t_config);

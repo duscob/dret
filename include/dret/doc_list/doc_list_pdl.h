@@ -41,6 +41,7 @@
 
 #include "sr-index/r_index.h"
 
+#include "dret/collection.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_sampled_tree_base.h"
@@ -272,32 +273,9 @@ void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
   using TCore = typename Index::TCore;
   constexpr uint8_t t_width = TAlphabet::int_width;
 
-  // Preliminaries — same shape as GCDA's construct(DocListIdxGCDA&, Config&).
-  if (!cache_file_exists(t_config.keys[kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<t_width>(t_config);
-  }
-  if (const auto key = t_config.keys[kSA].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    sdsl::construct_sa<t_width>(t_config);
-  }
-  if (const auto key = t_config.keys[kDocEnds].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocEnd<t_width, sdsl::sd_vector<>>(t_config);
-  }
-  if (const auto key = t_config.keys[kDA].get<std::string>();
-      !sdsl::cache_file_exists<sdsl::int_vector<>>(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocArray(t_config);
-  }
-  // LCP is PDL-specific (the sparse suffix tree is built from it).
-  if (!cache_file_exists(sdsl::conf::KEY_LCP, t_config)) {
-    auto event = sdsl::memory_monitor::event(std::string(sdsl::conf::KEY_LCP));
-    if (!cache_file_exists(sdsl::conf::KEY_ISA, t_config)) {
-      sdsl::construct_isa(t_config);
-    }
-    sdsl::construct_lcp_kasai<t_width>(t_config);
-  }
+  // The collection's structures, and the LCP array the sparse suffix tree is built from.
+  EnsureDA<t_width>(t_config);
+  EnsureLCP<t_width>(t_config);
 
   // PDLTreeCore as components: the tree under the block size, the selected
   // nodes and their lists under the block size, the policy and, for a policy
@@ -313,7 +291,7 @@ void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
     sdsl::load_from_cache(lcp, sdsl::conf::KEY_LCP, t_config);
 
     const std::size_t n = da.size();
-    const std::size_t n_doc = ReadNDocFromText(t_config);
+    const std::size_t n_doc = ReadNDoc<t_width>(t_config);
 
     // PDL construction pipeline (Tasks 6-11) plus the bridge into the
     // compact PDLTreeCore (Task 12 via build_pdl_core.h).
