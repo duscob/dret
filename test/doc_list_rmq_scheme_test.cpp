@@ -1,5 +1,5 @@
 //
-// Unit tests for dret::rmq::ListDocsRMQScheme + MarkedReported.
+// Unit tests for dret::rmq::ListDocsRMQScheme with the marking stop over a ListSink.
 //
 // These exercise the stateless RMQ-doc-listing scheme directly with synthetic
 // inputs — no index construction, no Config, no Factory. Split out of
@@ -17,6 +17,7 @@
 #include <sdsl/rmq_succinct_sct.hpp>
 
 #include "dret/rmq/doc_list_rmq_scheme.h"
+#include "dret/sink.h"
 
 //~~~~~~~
 // Basic scheme coverage on a synthetic DA + SADA-style prev_doc RMQ.
@@ -46,16 +47,15 @@ class ListDocsRMQSchemeTest : public ::testing::Test {
   }
 
   std::vector<std::size_t> query(std::size_t sp, std::size_t ep_closed) {
-    dret::rmq::MarkedReported mr(n_doc_);
     std::vector<std::size_t> reported;
+    auto push = [&reported](std::size_t d) { reported.push_back(d); };
+    dret::ListSink<decltype(push)> sink(n_doc_, push);
     auto get_doc = [this](std::size_t k) {
       return static_cast<std::size_t>(da_[k]);
     };
-    auto report = [&mr, &reported](std::size_t /*k*/, std::size_t d) {
-      mr.mark(d);
-      reported.push_back(d);
-    };
-    dret::rmq::ListDocsRMQScheme(sp, ep_closed + 1, rmq_, get_doc, mr, report);
+    auto is_reported = [&sink](std::size_t /*k*/, std::size_t d) { return sink.Contains(d); };
+    auto report = [&sink](std::size_t /*k*/, std::size_t d) { sink.Position(d); };
+    dret::rmq::ListDocsRMQScheme(sp, ep_closed + 1, rmq_, get_doc, is_reported, report);
     std::sort(reported.begin(), reported.end());
     return reported;
   }

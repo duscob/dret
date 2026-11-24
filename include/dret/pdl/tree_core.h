@@ -87,15 +87,6 @@ class PDLTreeCore {
              t_other.block_size_, t_other.storing_factor_, t_other.policy_);
   }
 
-  // Single-range cover; matches DLSampledTreeScheme::computeCover. Stub
-  // remains for callers that may need the legacy single-range API
-  // alongside the multi-range computeCoverFull below.
-  std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
-      std::size_t t_sp,
-      std::size_t /*t_ep*/) const {
-    return {{t_sp, t_sp}, {}};
-  }
-
   // Multi-range cover. Iterative DFS from the root: a node fully inside
   // [sp, ep) contributes either its codec slot (when selected) or — if
   // it's a leaf — its raw range; navigation-only internal nodes recurse
@@ -103,7 +94,7 @@ class PDLTreeCore {
   // overlap as raw if the node is a leaf).
   //
   // Output `t_nodes` carries codec slots (selected-rank of the node id),
-  // not raw node ids — this matches DLSampledTreeScheme's getDocSet
+  // not raw node ids — this matches the index's forEachInNode
   // contract, which indexes the stored-set codec.
   void computeCoverFull(std::size_t t_sp,
                         std::size_t t_ep,
@@ -139,6 +130,13 @@ class PDLTreeCore {
         stack.push_back(cid);
       }
     }
+  }
+
+  // The documents of a stored set, straight from the codec: ascending for Plain and RP, in no order
+  // and possibly repeated for BC. For a caller that deduplicates (a sink, dret/sink.h).
+  template <typename TReport>
+  void forEachInSet(std::size_t t_codec_slot, TReport&& t_report) const {
+    stored_sets_.Expand(t_codec_slot, n_doc_, std::forward<TReport>(t_report));
   }
 
   std::vector<TDocId> getDocSet(std::size_t t_codec_slot) const {

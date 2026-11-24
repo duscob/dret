@@ -38,6 +38,7 @@
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/rmq/doc_list_rmq_scheme.h"
 #include "dret/index_base.h"
+#include "dret/sink.h"
 #include "dret/size_report.h"
 
 namespace dret {
@@ -221,19 +222,21 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   using Base::load;
 
-  template <typename TReport>
-  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, const TReport& t_report) const {
+  // The documents of [sp, ep) into t_sink (dret/sink.h). The marking stop reads the sink: a document
+  // it holds is reported. Identifiers past n_doc (the text terminator's) count as reported, so they are
+  // neither reported nor descended past.
+  template <typename TSink>
+  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
     if (t_sp >= t_ep || !rmq_)
       return;
 
-    MarkedReported mr(n_doc_);
-    auto report = [&mr, &t_report](std::size_t /*k*/, std::size_t d) {
-      mr.mark(d);
-      t_report(d);
-    };
+    auto is_reported = [this, &t_sink](std::size_t /*k*/, std::size_t d) { return d >= n_doc_ || t_sink.Contains(d); };
+    auto report = [&t_sink](std::size_t /*k*/, std::size_t d) { t_sink.Position(d); };
 
-    ListDocsRMQScheme(t_sp, t_ep, *rmq_, get_doc_, mr, report);
+    ListDocsRMQScheme(t_sp, t_ep, *rmq_, get_doc_, is_reported, report);
   }
+
+  std::size_t n_doc() const { return n_doc_; }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
@@ -319,8 +322,8 @@ class SadaValueCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   using Base::load;
 
-  template <typename TReport>
-  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, const TReport& t_report) const {
+  template <typename TSink>
+  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
     if (t_sp >= t_ep || !rmq_ || !prev_doc_)
       return;
 
@@ -335,15 +338,15 @@ class SadaValueCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     // subrange, which is a weaker statement that does admit repeats. Measured
     // over the differential corpus, the bp form emitted 55480 times for 40295
     // documents; this one emits 40295, one per document per query.
-    auto report = [&t_report](std::size_t /*k*/, std::size_t d) {
-      t_report(d);
-    };
+    auto report = [&t_sink](std::size_t /*k*/, std::size_t d) { t_sink.Position(d); };
     auto stop_pred = [this, t_sp](std::size_t k) {
       return static_cast<std::size_t>((*prev_doc_)[k]) >= t_sp;
     };
 
     ListDocsRMQSchemeDepth(t_sp, t_ep, *rmq_, get_doc_, stop_pred, report);
   }
+
+  std::size_t n_doc() const { return n_doc_; }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
@@ -439,8 +442,8 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   using Base::load;
 
-  template <typename TReport>
-  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, const TReport& t_report) const {
+  template <typename TSink>
+  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
     if (t_sp >= t_ep || !rmq_ || !run_heads_ || !rank_ || !select_)
       return;
 
@@ -465,16 +468,13 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     std::size_t run_sp = t_sp, run_ep = t_ep;
     PreprocessILCP<IlcpState>{state}(run_sp, run_ep);
 
-    MarkedReported mr(n_doc_);
     const auto& select = *select_;
 
-    auto report_dedup = [&mr, &t_report](std::size_t d) {
-      if (!mr(0, d)) {
-        mr.mark(d);
-        t_report(d);
-      }
+    // Identifiers past n_doc (the text terminator's) count as reported, as in SadaCore.
+    auto report_dedup = [this, &t_sink](std::size_t d) {
+      if (d < n_doc_) t_sink.Position(d);
     };
-    auto is_reported = [&mr](std::size_t d) { return mr(0, d); };
+    auto is_reported = [this, &t_sink](std::size_t d) { return d >= n_doc_ || t_sink.Contains(d); };
 
     // Visits run i over its positions inside [sp_orig, ep_orig): the head
     // document first, then -- unless the marker stop fires at the head -- the
@@ -602,6 +602,8 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     return r;
   }
 
+  std::size_t n_doc() const { return n_doc_; }
+
   TGetDoc& get_doc_policy() {
     return get_doc_;
   }
@@ -704,8 +706,8 @@ class IlcpLikeValueCore : public IndexBaseWithExternalStorage<TStorage, t_width>
 
   using Base::load;
 
-  template <typename TReport>
-  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t t_m, const TReport& t_report) const {
+  template <typename TSink>
+  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t t_m, TSink& t_sink) const {
     if (t_sp >= t_ep || !rmq_ || !run_heads_ || !rank_ || !select_ || !run_values_)
       return;
 
@@ -727,20 +729,17 @@ class IlcpLikeValueCore : public IndexBaseWithExternalStorage<TStorage, t_width>
     std::size_t run_sp = t_sp, run_ep = t_ep;
     PreprocessILCP<IlcpState>{state}(run_sp, run_ep);
 
-    MarkedReported mr(n_doc_);
     const auto& select = *select_;
 
     auto stop_pred = [this, t_m](std::size_t k) {
       return static_cast<std::size_t>((*run_values_)[k]) >= t_m;
     };
 
-    auto report_dedup = [&mr, &t_report](std::size_t d) {
-      if (!mr(0, d)) {
-        mr.mark(d);
-        t_report(d);
-      }
+    // Identifiers past n_doc (the text terminator's) count as reported, as in SadaCore.
+    auto report_dedup = [this, &t_sink](std::size_t d) {
+      if (d < n_doc_) t_sink.Position(d);
     };
-    auto is_reported = [&mr](std::size_t d) { return mr(0, d); };
+    auto is_reported = [this, &t_sink](std::size_t d) { return d >= n_doc_ || t_sink.Contains(d); };
 
     // Every visited run is fanned out -- the traversal does not gate on
     // reporting state -- so the head document is de-duplicated here like any
@@ -797,6 +796,8 @@ class IlcpLikeValueCore : public IndexBaseWithExternalStorage<TStorage, t_width>
       append(r, k, v);
     return r;
   }
+
+  std::size_t n_doc() const { return n_doc_; }
 
   TGetDoc& get_doc_policy() {
     return get_doc_;
@@ -893,10 +894,17 @@ class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
   DocListIdxRMQ() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
+    ListSink<std::function<void(TDocId)>> sink(core_.n_doc(), t_report);
+    Query(t_pattern, sink);
+  }
+
+  // The query into any sink (dret/sink.h).
+  template <typename TSink>
+  void Query(const TPattern& t_pattern, TSink& t_sink) const {
     auto [sp, ep] = count_idx_.Count(t_pattern);
     if (sp >= ep)
       return;
-    core_.findDocs(sp, ep, t_pattern.size(), t_report);
+    core_.findDocs(sp, ep, t_pattern.size(), t_sink);
   }
 
   void load(Config t_config) override {

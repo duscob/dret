@@ -1003,7 +1003,7 @@ TYPED_TEST(DifferentialSLPExpandTypedTests, expand_roundtrips_da) {
     EXPECT_EQ(expanded[i], da_vec[i]) << "position " << i;
 }
 
-// ListDocsRMQScheme / MarkedReported unit tests live in
+// ListDocsRMQScheme unit tests live in
 // doc_list_rmq_scheme_test.cpp — they don't depend on Config / Factory and
 // are split out to keep this integration suite focused.
 

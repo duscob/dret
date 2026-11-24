@@ -49,6 +49,7 @@
 #include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/index_base.h"
+#include "dret/sink.h"
 #include "dret/slp/bare_grammar.h"
 #include "dret/slp/differential_slp.h"
 #include "dret/slp/slp_components.h"
@@ -79,16 +80,20 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
   DocListIdxSLP() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
+    ListSink<std::function<void(TDocId)>> sink(n_doc_, t_report);
+    Query(t_pattern, sink);
+  }
+
+  // The query into any sink (dret/sink.h).
+  template <typename TSink>
+  void Query(const TPattern& t_pattern, TSink& t_sink) const {
     auto [sp, ep] = count_idx_.Count(t_pattern);
     if (sp >= ep) return;
 
-    DistinctDocs seen(n_doc_);
-    auto add = [&seen, &t_report](auto v) {
-      if (seen.Insert(static_cast<std::size_t>(v))) t_report(static_cast<TDocId>(v));
-    };
-
     // Plain SLP → span-cover expansion; differential SLP → range decompression;
-    // sampled SLP → expansion through its sampled tree.
+    // sampled SLP → expansion through its sampled tree. SlpNsExpandRange takes its report by value,
+    // so it gets a reference to the sink, not a copy of it.
+    auto add = [&t_sink](auto v) { t_sink.Position(static_cast<std::size_t>(v)); };
     SlpNsExpandRange(*slp_, sp, ep, add);
   }
 

@@ -1,9 +1,8 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 10/19/26.
 //
-// The deduplication shared by the brute-force indexes, which read the document of every position of
-// the suffix-array range from a backend (SA-Phi, the sr-index, the plain DA, the RLCSA, a GCDA
-// grammar) and report each document once.
+// The document bitmap behind ListSink (dret/sink.h), which every listing index reports through: each
+// document reported once, whether it comes from a position of the range, a stored list or an RMQ run.
 //
 // A bitmap over the document identifiers, sized to the number of documents and cleared per query:
 // a document is reported the first time it is seen, so a query costs O(occ + n_doc / 64) and reports
@@ -34,6 +33,12 @@ class DistinctDocs {
     if (words_[w] & bit) return false;
     words_[w] |= bit;
     return true;
+  }
+
+  // Whether t_doc was inserted.
+  bool Contains(std::size_t t_doc) const {
+    const std::size_t w = t_doc >> 6;
+    return w < words_.size() && (words_[w] & (uint64_t{1} << (t_doc & 63)));
   }
 
  private:

@@ -1,0 +1,77 @@
+//
+// Created by Dustin Cobas <dustin.cobas@gmail.com> on 11/24/26.
+//
+// Result sinks: what a search hands its documents to. A core finds the documents of a suffix-array
+// range -- by expanding positions through a backend, by reading the stored list of a sampled node,
+// by visiting the runs of an RMQ partition -- and a sink decides what the query returns. The cores
+// are shared by every task; the sink is the task.
+//
+//   Position(d)  d is the document of one position of the range
+//   Listed(d)    d occurs in the range (a stored list: how often is not known)
+//   Done()       the search may stop (a sink that has its answer, e.g. top-k with a threshold)
+//
+// A sink is also callable as a position report, operator()(d) == Position(d), so it can be handed
+// to a backend's range expansion directly.
+//
+// ListSink is document listing: each document reported once, the first time it is seen. Document
+// frequencies will add Weighted(d, f) (a stored list with counts) and Finish() (the answer, once the
+// search is over) with a frequency sink; an index whose stored lists carry no counts cannot serve
+// it, and will say so at compile time.
+//
+
+#pragma once
+
+#include <concepts>
+#include <cstddef>
+
+#include "dret/doc_list/distinct_docs.h"
+
+namespace dret {
+
+template <typename TSink>
+concept DocSink = requires(TSink& t_sink, std::size_t t_doc) {
+  t_sink.Position(t_doc);
+  t_sink.Listed(t_doc);
+  { t_sink.Done() } -> std::convertible_to<bool>;
+};
+
+// Document listing: reports each document once, to t_report, the first time it is seen, from a
+// position or a list. Contains(d) tells whether d was reported, for the marking stop of the RMQ cores.
+// t_n_doc sizes the bitmap; identifiers past it grow it (distinct_docs.h), so 0 is valid when the
+// number of documents is not at hand.
+template <typename TReport>
+class ListSink {
+ public:
+  ListSink(std::size_t t_n_doc, const TReport& t_report) : seen_(t_n_doc), report_(t_report) {}
+
+  void Position(std::size_t t_doc) {
+    if (seen_.Insert(t_doc)) {
+#ifdef DRET_DOC_LIST_PROFILE
+      ++reported_;
+#endif
+      report_(t_doc);
+    }
+  }
+
+  void Listed(std::size_t t_doc) { Position(t_doc); }
+
+  void operator()(std::size_t t_doc) { Position(t_doc); }
+
+  static constexpr bool Done() { return false; }
+
+  bool Contains(std::size_t t_doc) const { return seen_.Contains(t_doc); }
+
+#ifdef DRET_DOC_LIST_PROFILE
+  // Documents reported, for the query profile (dret/doc_list/search_profile.h).
+  std::size_t Reported() const { return reported_; }
+#endif
+
+ private:
+  DistinctDocs seen_;
+  const TReport& report_;
+#ifdef DRET_DOC_LIST_PROFILE
+  std::size_t reported_ = 0;
+#endif
+};
+
+}  // namespace dret
