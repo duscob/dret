@@ -20,6 +20,7 @@
 
 #include "dret/config.h"
 #include "dret/construct_base.h"
+#include "dret/slp/da_grammar.h"
 #include "dret/slp/differential_slp.h"
 #include "dret/slp/slp_components.h"
 

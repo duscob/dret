@@ -129,40 +129,4 @@ std::vector<Component> CacheComponents(const grammar::CompactLOUDSSLP<Ts...>& t_
                                      conf::kDaSampledLeavesLOUDS);
 }
 
-//~~~~~~~  Shared builds  ~~~~~~~
-
-// The CNF grammar of the DA, from irepair's output for the DA file (running
-// irepair if needed). Cached once per collection as the da_cnf_grammar
-// component in grammar::SLP<>'s encoding, the one every builder starts from:
-// every GCDA representation, GCDA-differential's sampled tree and GCDA-nolists.
-//
-// It is read from irepair's output, never re-encoded in process: the in-process
-// grammar::RePairBasicEncoder degrades pathologically on some document arrays
-// (on concat_1000_001 it ran >45 h without finishing, 80% of samples in
-// grammar::searchHash), where irepair took 479 s. See docs/bug_dgcda_repair_hang.md.
-inline grammar::SLP<> LoadOrBuildDaCnfGrammar(Config& t_config, const std::string& t_datafile) {
-  grammar::SLP<> slp;
-  const auto key = KeyName(t_config.keys, conf::kDaCnfGrammar);
-  if (sdsl::load_from_cache(slp, key, t_config, true))
-    return slp;
-
-  if (!std::filesystem::exists(t_datafile + ".R") && repair::kAvailable) {
-    const auto filename = std::filesystem::path(t_datafile).filename().string();
-    auto event = sdsl::memory_monitor::event("RePair-" + filename);
-    RunRePair(t_datafile, t_config.repair);
-    t_config.file_map[filename + ".R"] = t_datafile + ".R";
-    t_config.file_map[filename + ".C"] = t_datafile + ".C";
-  }
-  CheckRePairGrammar(t_datafile);
-
-  auto event = sdsl::memory_monitor::event(key);
-  {
-    grammar::RePairReader<true> re_pair_reader;
-    auto slp_wrapper = grammar::BuildSLPWrapper(slp);
-    re_pair_reader.Read(t_datafile, slp_wrapper);
-  }
-  sdsl::store_to_cache(slp, key, t_config, true);
-  return slp;
-}
-
 }  // namespace dret

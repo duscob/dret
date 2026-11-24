@@ -7,7 +7,7 @@
 // dret-side `collectSizes` overload so two-phase lookup at
 // `DocListIdxGCDA::GetSizeReport`'s definition point can find it.
 //
-// Must be `#include`-d at the top of `doc_list/doc_list_gcda.h`
+// Must be `#include`-d at the top of `slp/gcda_grammar.h`
 // (before the `DocListIdxGCDA` class body).
 //
 

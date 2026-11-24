@@ -22,13 +22,14 @@
 #include <sdsl/int_vector.hpp>
 #include <sdsl/io.hpp>
 
-#include "dret/config.h"
-#include "dret/doc_list/doc_list_slp.h"
-#include "dret/doc_list/doc_list_gcda.h"
 #include "dret/backend/backend.h"
+#include "dret/config.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"
+#include "dret/slp/bare_grammar.h"
+#include "dret/slp/differential_light_slp.h"
 #include "dret/slp/differential_slp.h"
+#include "dret/slp/gcda_grammar.h"
 #include "dret/slp/slp_tools.h"
 
 namespace dret {

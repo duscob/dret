@@ -65,7 +65,11 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/common/run_length_encode.h
         ${PROJECT_SOURCE_DIR}/include/dret/common/tf.h
 
-        # slp/: SLP variants and helpers.
+        # slp/: SLP variants and helpers, and the builds of the DA's grammars.
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/da_grammar.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/gcda_grammar.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/bare_grammar.h
+        ${PROJECT_SOURCE_DIR}/include/dret/slp/slp_components.h
         ${PROJECT_SOURCE_DIR}/include/dret/slp/slp_tools.h
         ${PROJECT_SOURCE_DIR}/include/dret/slp/basic_slp_span_length.h
         ${PROJECT_SOURCE_DIR}/include/dret/slp/differential_slp.h
