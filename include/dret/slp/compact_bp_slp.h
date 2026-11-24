@@ -2,7 +2,7 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 4/26/26.
 //
 // dret-side shim for grammar::CompactBPSLP. The class itself lives upstream
-// (added in Phase A.0.3); this header only:
+// (in the grammar library); this header only:
 //   - re-exports it as `dret::CompactBPSLP` for downstream wiring,
 //   - declares the dret-side `collectSizes` overload so two-phase lookup at
 //     `DocListIdxGCDA::GetSizeReport`'s definition point can find it.

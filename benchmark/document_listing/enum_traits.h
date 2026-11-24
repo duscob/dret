@@ -1,10 +1,10 @@
 //
 // Generic parse / name helper for the doc-list benchmark axis enums.
 //
-// Each EnumTraits<E> specialisation knows how to convert a comma-separated
-// CLI flag value into a std::vector<E> and how to render an E back to a
-// human-readable string. Replaces the per-axis Parse*/*Name helper pairs
-// that used to live duplicated in bm_query_doc_list.cpp and bm_build_items.cpp.
+// Each EnumTraits<E> specialisation knows how to parse an axis value (one, or a
+// comma-separated list) into E and how to render an E back to a human-readable
+// string. flag_name() names the axis in error messages; it is the name the
+// retired gflags drivers used for it.
 //
 
 #pragma once

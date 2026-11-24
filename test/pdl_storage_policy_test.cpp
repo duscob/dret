@@ -1,15 +1,14 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/13/26.
 //
-// Storage-policy correctness fixture, Task 43 of
-// docs/pdl_indexes_tasks.md. For each PDL storage policy
+// Storage-policy correctness fixture. For each PDL storage policy
 // (OccurrenceWeighted / StoreAllInternal / LeavesOnly):
 //
 //   1. PDL search output equals brute-force output for every pattern.
 //   2. At least one pattern's cover under that policy contains
 //      multiple raw ranges, exercising the
 //      DLSampledTreeScheme::Search → computeCoverFull → multi-getDocs
-//      multi-range path. Without this guard, Task 34 / 42's parity
+//      multi-range path. Without this guard, the parity
 //      tests would still pass on a fixture where every cover happens
 //      to be a single range, leaving the multi-range path untested.
 //

@@ -1,7 +1,7 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/10/26.
 //
-// PDLTreeCore::computeCoverFull behavior tests (Task 12).
+// PDLTreeCore::computeCoverFull behavior tests.
 //
 // Each test builds the canonical post-Task-11 builder fixture (from
 // pdl_tree_builder_test.cpp's BuildCollapseFixture + InsertExplicitLeaves
@@ -52,7 +52,7 @@ using dret::pdl::StoragePolicy;
 //         D[4,6) d=5
 //         leaf(6,7) explicit
 //
-// Post-order ids (Task 11):
+// Post-order ids:
 //   leaf(0,1) = 0
 //   B = 1, leaf(3,4) = 2, C = 3
 //   D = 4, leaf(6,7) = 5, E = 6
@@ -239,7 +239,7 @@ TEST(PDLTreeCoreCover, WholePatternRangeUnderLeavesOnly) {
   EXPECT_EQ(r.nodes.size(), 5u);
 }
 
-// Serialize / load tests (Task 13).
+// Serialize / load tests.
 
 // Run computeCoverFull on a representative set of query ranges and
 // collect the results into a stable representation, suitable for

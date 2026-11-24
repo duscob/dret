@@ -1,7 +1,7 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/14/26.
 //
-// Cache-key collision audit, Task 45 of docs/pdl_indexes_tasks.md.
+// Cache-key collision audit.
 // Regression net for the gotcha documented in
 // `generic_storage_key_collision.md`: when two indexes share a
 // GenericStorage and the same logical key but different TItem types,

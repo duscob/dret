@@ -1,6 +1,6 @@
 //
 // SLP-NS factory header — type aliases + Make() for the non-sampled
-// dret::DocListIdxSLP family (Phase C). Also exposes the BareSLP_* type
+// dret::DocListIdxSLP family (Brute-GCDA). Also exposes the BareSLP_* type
 // aliases that the RMQ-NS path in factories/rmq.h reuses to share cache
 // files via grammar::SLP<TVars, TLens> type-hashing.
 //

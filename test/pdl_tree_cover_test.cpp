@@ -2,7 +2,7 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/13/26.
 //
 // Direct PDLTreeCore::computeCoverFull tests on hand-assembled tiny
-// trees, Task 35 of docs/pdl_indexes_tasks.md. Unlike
+// trees. Unlike
 // pdl_tree_core_test.cpp (which builds the core via the full builder
 // pipeline), these tests bypass the builder and call
 // PDLTreeCore::Assemble directly with hand-coded int/bit vectors so
@@ -10,7 +10,7 @@
 // fixture itself — i.e., cover behavior is validated independently of
 // any tree-builder, codec, or pattern-counting correctness.
 //
-// Acceptance criteria (Task 35): exact interval, partial interval,
+// Acceptance criteria: exact interval, partial interval,
 // leaf-only, and full-range covers match expected outputs.
 //
 

@@ -80,7 +80,7 @@ void construct(grammar::LightSLP<TSLP, TSampledSLP, TChunks>& t_lslp,
                uint32_t t_block_size,
                float t_storing_factor);
 
-// Compact-grammar TSLP variants (added in Phase A.0.3 upstream; the dret-side
+// Compact-grammar TSLP variants (from the grammar library; the dret-side
 // shims at "dret/slp/compact_bp_slp.h" / "dret/slp/compact_louds_slp.h" re-export them as
 // dret::CompactBPSLP / dret::CompactLOUDSSLP). These forward declarations are
 // required so the unqualified `construct(slp, ...)` call inside the
@@ -102,7 +102,7 @@ void construct(grammar::CompactLOUDSSLP<Ts...>& t_compact,
                uint32_t t_block_size,
                float t_storing_factor);
 
-// Phase B: CombinedSLP-with-unit-cover variant. Same signature pattern as
+// CombinedSLP-with-unit-cover variant. Same signature pattern as
 // the compact-grammar variants above; same forward-decl placement reason
 // (visibility for the dispatch template's unqualified `construct(slp, ...)`
 // call below).

@@ -5,8 +5,8 @@
 // representation (per-node intervals + linked-list children encoded as
 // id arrays + selected-node bitvector) and answers multi-range cover
 // queries from DLSampledTreeScheme. Built either from a BuilderNode tree
-// at construction (Task 28's construct() via build_pdl_core.h) or from
-// disk via load() (Task 13).
+// at construction (construct(DocListIdxPDL&) via build_pdl_core.h) or from
+// disk via load().
 //
 
 #pragma once
@@ -35,7 +35,7 @@
 namespace dret::pdl {
 
 // Placeholder codec satisfying the minimum API used by PDLTreeCore. Replaced
-// by Plain / RP / BC codecs (set_codecs.h, Tasks 15–17). Includes a no-op
+// by Plain / RP / BC codecs (set_codecs.h). Includes a no-op
 // Expand so PDLTreeCore::getDocSet still instantiates against this default
 // codec — querying then yields no documents per slot, which matches the
 // "skeleton, no real data" semantics.
@@ -88,7 +88,7 @@ class PDLTreeCore {
   }
 
   // Single-range cover; matches DLSampledTreeScheme::computeCover. Stub
-  // remains for Tasks 23-25 that may need the legacy single-range API
+  // remains for callers that may need the legacy single-range API
   // alongside the multi-range computeCoverFull below.
   std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
       std::size_t t_sp,

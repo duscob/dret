@@ -1,8 +1,8 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/13/26.
 //
-// Index-level template-instantiation tests for the bitvector axis,
-// Task 37 of docs/pdl_indexes_tasks.md. Task 18's pdl_template_test.cpp
+// Index-level template-instantiation tests for the bitvector axis.
+// pdl_template_test.cpp
 // already covers PDLTreeCore<TBitvector> and BCCodec<TBitvector> in
 // isolation with sdsl::sd_vector<> and sdsl::bit_vector. This file
 // extends that coverage to the full DocListIdxPDL{Plain,RP,BC} index

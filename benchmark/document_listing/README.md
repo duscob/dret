@@ -1,14 +1,15 @@
 # Document-listing benchmarks
 
-Three binaries cover the doc-list index family.
+One binary, `bm_doc_list`, benchmarks every document-listing index: query throughput or construction
+time (selected per spec), with the size breakdown each index reports through `GetSizeReport()`. A
+JSON spec (`-spec=path.json`) declares the whole sweep; missing cache artefacts are built on the first
+run. The axis enums (`bench::axes::*`) and their parsers (`bench::axes::EnumTraits<E>`) define the
+names the spec accepts.
 
-| Binary | Measures | Input | When to use |
-|---|---|---|---|
-| **`bm_doc_list`** *(recommended)* | Query throughput **or** construction time (selectable per spec); reports size breakdown via `GetSizeReport()`. Auto-builds missing cache artefacts on first run. | JSON sweep spec (`--spec=path.json`) | Day-to-day runs. One declarative file describes the whole sweep; the same binary handles build + query workflows. |
-| `bm_query_doc_list` | Query throughput, gflags-driven sweep. | gflags (`--gcda_slp_variants=...`, etc.) | Legacy. Still works; kept alongside while migrating to `bm_doc_list`. |
-| `bm_build_items`    | Construction time, gflags-driven sweep. Emits `construction-*.{html,json}` sdsl memory logs and `sizes-*.json` size breakdowns. | gflags (same as above) | Legacy. Use when you specifically want construction-time **memory traces** (which `bm_doc_list` doesn't emit yet). |
-
-All three binaries share the same axis enums (`bench::axes::*`) and parse/name helpers (`bench::axes::EnumTraits<E>` and `bench::axes::ParseCSV<E>`), so axis names behave the same across the JSON spec and the legacy gflags.
+Compiled with `-DDRET_DOC_LIST_PROFILE` (the `cmake-build-profile` tree), query mode also reports the
+phase profile of the sampled-tree indexes (GCDA, GCDA over a backend, PDL) as counters per query:
+`prof_count_ns_x_q`, `prof_cover_ns_x_q`, `prof_expand_ns_x_q`, `prof_combine_ns_x_q`,
+`prof_nodes_x_q`, `prof_rawpos_x_q`, `prof_docs_x_q` (see `dret/doc_list/search_profile.h`).
 
 ## `bm_doc_list` — JSON-driven sweep
 
@@ -67,46 +68,7 @@ Set `"memory_trace": true` in the workload block to make `bm_doc_list` emit, for
 - `construction-<bench>.html` and `construction-<bench>.json` — the sdsl memory-monitor traces (an event-by-event log of allocations during `construct()`).
 - `sizes-<bench>.json` — the per-component size breakdown produced by `GetSizeReport()` (also available as inline GBenchmark counters, but the JSON sidecar is convenient for post-processing).
 
-Files land in the working directory keyed by the GBenchmark cell name (e.g. `DocListGCDA-CompactBP-bs1024-sf4`). This is the same artefact set `bm_build_items` emits unconditionally, gated here on the spec flag so a large sweep doesn't litter the working directory. Default is `false`.
-
-## Legacy: `bm_query_doc_list` / `bm_build_items`
-
-These older binaries take gflags directly (one comma-separated list per axis). They predate the JSON spec; kept alongside for one cycle.
-
-```bash
-# One-shot query benchmark (builds caches inline if missing):
-./bm_query_doc_list \
-  --data_dir=/path/to/data --data_name=wiki \
-  --patterns=/path/to/queries.txt \
-  --gcda_slp_variants=light,compact_bp \
-  --min_block_size=256 --max_block_size=1024 \
-  --min_storing_factor=2 --max_storing_factor=8 \
-  --benchmark_out_format=csv --benchmark_out=results.csv
-```
-
-```bash
-# If you want construction-time + memory logs as well:
-./bm_build_items \
-  --data=/path/to/data/wiki \
-  --gcda_slp_variants=light,compact_bp \
-  --min_block_size=256 --max_block_size=1024 \
-  --min_storing_factor=2 --max_storing_factor=8 \
-  --benchmark_out_format=json --benchmark_out=build.json
-```
-
-### CLI axes (legacy binaries; same values appear in the `bm_doc_list` JSON spec)
-
-| Flag | Values | Meaning |
-|---|---|---|
-| `--rmq_get_doc_variants` | `da`, `slp`, `slp_ns`, `dslp` | RMQ family's raw-range doc lookup. |
-| `--gcda_slp_variants`    | `light`, `compact_bp`, `compact_louds`, `combined` | GCDA's TSLP choice (also reused by RMQ-SLP for cache sharing). `light` = `grammar::LightSLP<...>` (the family default). |
-| `--bare_slp_variants`    | `iv`, `raw`, `dv`, `vv` | Non-sampled `grammar::SLP<>` container variants. `iv` = `int_vector` (the family default), `raw` = `std::vector<uint32_t>`, `dv` = `dac_vector`, `vv` = `vlc_vector`. |
-| `--dgcda_slp_variants`   | `default`, `otf`, `crl`, `ev`, `dv`, `vv` | DGCDA's TSLP choice (DifferentialLightSLP span-length and inner-container variants). |
-| `--pdl_variants`         | `plain`, `rp`, `bc` (or empty) | PDL stored-set codec. Empty disables PDL. |
-| `--pdl_get_doc_variants` | `da`, `slp`, `dslp` | PDL raw-range get-doc backing. (`slp_ns` is rejected.) |
-| `--pdl_storage_policy`   | `occurrence_weighted`, `all_internal`, `leaves_only`, `list_weighted` | PDL tree-construction storage policy. |
-| `--min_block_size` / `--max_block_size` | powers of 2 | Block-size sweep for the GCDA / DGCDA / PDL families. |
-| `--min_storing_factor` / `--max_storing_factor` | powers of 2 | Storing-factor sweep, same families. |
+Files land in the working directory keyed by the GBenchmark cell name. Gated on the spec flag so a large sweep doesn't litter the working directory. Default is `false`.
 
 ## Output formats (Google Benchmark native)
 
@@ -118,7 +80,6 @@ These older binaries take gflags directly (one comma-separated list per axis). T
 
 Each output row carries the per-component size breakdown emitted by `GetSizeReport()` as named counters (e.g. `slp_basic_slp`, `slp_sets_objs`, `count_idx`), plus the totals `Size(bytes)`, `Bits_x_Symbol`, `Time_x_Pattern`, etc.
 
-`bm_build_items` additionally writes a `sizes-<bench-name>.json` and a memory-monitor `construction-<bench-name>.{html,json}` next to the working directory for each benchmark cell.
 
 ## Where the code lives
 
@@ -129,10 +90,8 @@ benchmark/document_listing/
 ├── spec.h                 — JSON spec types + parser for bm_doc_list
 ├── factory.h              — Factory<>: builds + caches index instances; auto-builds missing cache artefacts
 ├── factories/             — one header per family (brute, gcda, dgcda, slp_ns, rmq, pdl)
-├── bm_doc_list.cpp            — JSON-spec-driven benchmark binary (recommended entry point)
-├── bm_query_doc_list.cpp  — legacy gflags-driven query binary
-├── bm_build_items.cpp     — legacy gflags-driven construction binary (kept for memory-monitor traces)
+├── bm_doc_list.cpp        — the JSON-spec-driven benchmark binary
 └── example_sweep.json     — annotated example spec for bm_doc_list
 ```
 
-To add a new axis value (e.g. a new TSLP variant): one line in `axes.h`, one arm in `enum_traits.h`'s `EnumTraits<>` specialisation, one alias + one Make() arm in the relevant `factories/<family>.h`, and one register-block in each binary that participates in the sweep.
+To add a new axis value (e.g. a new TSLP variant): one line in `axes.h`, one arm in `enum_traits.h`'s `EnumTraits<>` specialisation, one alias + one Make() arm in the relevant `factories/<family>.h`, and the register-block in `bm_doc_list.cpp`.

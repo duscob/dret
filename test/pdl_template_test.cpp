@@ -1,7 +1,7 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/11/26.
 //
-// Task 18: template-instantiation tests for the bitvector axis. Each
+// Template-instantiation tests for the bitvector axis. Each
 // typed test parameterises a class (PDLTreeCore or BCCodec) on
 // TBitvector ∈ {sdsl::sd_vector<>, sdsl::bit_vector} and asserts that
 // the configured instantiation compiles AND produces identical query

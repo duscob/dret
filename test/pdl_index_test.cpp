@@ -1,7 +1,7 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/12/26.
 //
-// DocListIdxPDLPlain smoke tests (Task 23 acceptance: class compiles,
+// DocListIdxPDLPlain smoke tests (class compiles,
 // serializes/loads, and passes basic DA-backed search tests). Full
 // typed parity vs brute force across all PDL variants lands in Tasks
 // 33-34, which add the index to test/doc_list_test.cpp's existing
@@ -80,7 +80,7 @@ TEST_F(DocListIdxPDLPlainSmokeTest, SearchMatchesExpected) {
   }
 }
 
-// Task 23 "serializes, loads" acceptance: construct once (which writes
+// Serializes and loads: construct once (which writes
 // the PDLTreeCore + count_idx + DA caches), then build a fresh Index
 // instance against an empty GenericStorage and call load() — that
 // exercises the disk round-trip via PDLTreeCore::load,
@@ -137,7 +137,7 @@ TEST_F(DocListIdxPDLPlainSmokeTest, MatchesBruteForce) {
   }
 }
 
-// Task 24 acceptance: same fixture and patterns, but the RPCodec
+// Same fixture and patterns, but the RPCodec
 // (RePair-compressed slots) variant must produce identical output.
 class DocListIdxPDLRPSmokeTest : public DocListIdxPDLPlainSmokeTest {};
 
@@ -200,7 +200,7 @@ TEST_F(DocListIdxPDLRPSmokeTest, MatchesBruteForce) {
   }
 }
 
-// Task 25 acceptance: same fixture and patterns, but the BCCodec
+// Same fixture and patterns, but the BCCodec
 // (biClique-coded slots via vnmextract) variant must produce identical
 // output. On a fixture this small vnmextract typically finds no
 // bicliques, so the codec falls back to verbatim-doc emission — which
@@ -266,7 +266,7 @@ TEST_F(DocListIdxPDLBCSmokeTest, MatchesBruteForce) {
   }
 }
 
-// Task 28 acceptance: construct() must skip cache items that already
+// construct() must skip cache items that already
 // exist. The first construct() build populates everything; a second
 // construct() into a fresh Index instance against the same Config must
 // reuse the on-disk caches (so cache_file_exists checks short-circuit

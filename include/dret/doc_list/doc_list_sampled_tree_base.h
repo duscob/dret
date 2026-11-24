@@ -104,7 +104,7 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
   // equivalent to the previous Search shape, so GCDA/DGCDA keep working
   // unchanged. PDL indexes override this to return interleaved raw gaps
   // when their storage policy leaves leaves unselected (see
-  // PDLTreeCore::computeCoverFull, Task 12).
+  // PDLTreeCore::computeCoverFull).
   virtual void computeCoverFull(std::size_t t_sp,
                                 std::size_t t_ep,
                                 std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,

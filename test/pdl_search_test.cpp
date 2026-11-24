@@ -3,8 +3,7 @@
 //
 // Search-correctness tests for every PDL variant (Plain / RP / BC)
 // crossed with every storage policy
-// (OccurrenceWeighted / StoreAllInternal / LeavesOnly), Task 34 of
-// docs/pdl_indexes_tasks.md.
+// (OccurrenceWeighted / StoreAllInternal / LeavesOnly).
 //
 // Each typed case builds the PDL index AND a brute-force baseline on
 // the same fixture, then asserts identical sorted/deduplicated zero-
