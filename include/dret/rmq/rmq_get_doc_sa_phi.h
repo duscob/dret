@@ -1,0 +1,347 @@
+//
+// SA-Phi document-array lookup policy — the RLCSA-style backing for the PDL
+// paper baseline (Cobas/Mäkinen/Rossi SPIRE 2020). Computes
+//
+//     DA[i] = rank1(doc_ends, SA[i])
+//
+// where SA[i] is recovered via Phi-walks from r-index run-end samples (or
+// sr-index subsampled run-end samples when TLocateIdx is an SrIndex
+// specialisation — deferred; see docs/pdl_rlcsa_baseline_plan.md).
+//
+// Same interface as the rest of the rmq::GetDoc* family
+// (rmq_get_doc_policies.h) so both PDL (via PDLRawRangePolicy) and the RMQ
+// cores can consume it through their existing TGetDoc template parameter.
+//
+// The class is templated on TLocateIdx so the same implementation serves
+// both backings:
+//   - sri::RIndex            — dense run-end samples (the RLCSA-analogue).
+//   - sri::SrIndexValidArea  — subsampled (subsample_rate runtime knob);
+//                              currently treated as RIndex; see plan §B.2.
+//
+// SA[i] algorithm (single-position path, sa_at_):
+//   1. Find the BWT run r containing position i  →  bwt_rle.run_of_position(i).
+//   2. Look up the run-end position             →  [_, run_end] = run_range(r).
+//   3. Read the run-end SA sample                →  samples[r] + 1  =  SA[run_end].
+//      (The +1 mirrors the convention used by sri::RIndex's toehold; see
+//      r_index.h:304.)
+//   4. Walk Phi backward (run_end - i) times:
+//        sa = SA[run_end];  for k in (run_end..=i+1): sa = phi(sa).first;
+//      yields SA[i].
+//
+// Range-expansion path (range_get_doc_, operator()(b, e, report)):
+//   Iterate runs (not positions) via RLEStringS::splitInRuns(b, e, ...).
+//   For each run intersecting [b, e), seed sa = SA[run_end - 1] from the
+//   run-end sample, then walk Phi backward through the run *once*, reusing
+//   every intermediate SA value to report doc_at_(sa) for the positions
+//   that fall in [b, e). This drops the per-run cost from Θ((e-b)·L) (the
+//   trivial "call sa_at_(i) for each i in [b, e)") to Θ(L + (e-b)).
+//
+// All loaded items are shared (via the typed-cache + std::any storage map)
+// with `BruteRI` / `BruteSRI` / `GetDocBv` — no extra files on disk.
+//
+
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <vector>
+#include <string>
+#include <utility>
+
+#include <sdsl/int_vector.hpp>
+#include <sdsl/io.hpp>
+#include <sdsl/sd_vector.hpp>
+
+#include "sr-index/construct.h"           // sri::construct for r-index
+#include "sr-index/construct_base.h"      // sri::conf::KEY_BWT_*
+#include "sr-index/phi.h"                 // sri::buildPhiBackward
+#include "sr-index/r_index.h"             // sri::RIndex (default TLocateIdx)
+#include "sr-index/rle_string.hpp"        // sri::RLEStringS
+#include "sr-index/sampling.h"            // sri::SampleValidatorDefault
+#include "sr-index/sequence_ops.h"        // sri::CircularPredecessor, RandomAccessFor*
+
+#include "dret/config.h"
+#include "dret/construct_base.h"
+#include "dret/index_base.h"
+#include "dret/size_report.h"
+
+namespace dret::rmq {
+
+// Document-array lookup over SA[i] + doc-ends bitvector. Templated on
+// TLocateIdx so the same class serves both r-index and sr-index backings —
+// matching the BruteRI / BruteSRI split, reused here as a TGetDoc policy for
+// both RMQ cores and PDL.
+template <typename TStorage = GenericStorage,
+          uint8_t t_width = 8,
+          typename TLocateIdx = sri::RIndex<TStorage, dret::Alphabet<t_width>>,
+          typename TBvDocEnds = sdsl::sd_vector<>>
+class GetDocSAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
+ public:
+  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using typename Base::size_type;
+
+  // For TLocateIdx = SrIndex variants, t_sa_sampling is the subsample rate;
+  // for TLocateIdx = RIndex it is ignored (r-index has no sampling knob).
+  // SR support is currently deferred; treat as RIndex.
+  explicit GetDocSAPhi(const TStorage& t_storage, std::size_t t_sa_sampling = 0)
+      : Base(t_storage), sa_sampling_(t_sa_sampling) {}
+
+  GetDocSAPhi() = default;
+
+  std::size_t sa_sampling() const { return sa_sampling_; }
+
+  // Single-position lookup. Returns DA[i] = rank1(doc_ends, SA[i]).
+  std::size_t operator()(std::size_t t_i) const {
+    return doc_at_(sa_at_(t_i));
+  }
+
+  // Range expansion [b, e). Mirrors the existing rmq::GetDoc* API so PDL's
+  // PDLRawRangePolicy can wrap this verbatim.
+  //
+  // Delegates to range_get_doc_, which iterates BWT runs and reuses the
+  // intermediate SA values from a single per-run Phi-walk to emit doc ids
+  // for every position in [b, e). Order across positions is not guaranteed
+  // (per-run high-to-low, runs left-to-right); the sole consumer
+  // (DLSampledTreeScheme::Search) sort+uniques before emitting.
+  template <typename TReport>
+  void operator()(std::size_t t_b, std::size_t t_e, TReport& t_report) const {
+    std::function<void(std::size_t)> report = [&t_report](std::size_t d) {
+      t_report(d);
+    };
+    range_get_doc_(t_b, t_e, report);
+  }
+
+  // In-order expansion of [b, e) that stops once f returns false (see
+  // ExpandSLPUntil in slp_tools.h for why the RMQ cores need it). Each BWT run
+  // is walked once from its end, as in range_get_doc_; its documents come out
+  // high to low, so they are collected and replayed low to high. The first run
+  // is walked from its end down to b, which is exactly the walk a single lookup
+  // at b makes, so an RMQ run's head and its fan-out share that walk.
+  template <typename F>
+  void ExpandUntil(std::size_t t_b, std::size_t t_e, F&& f) const {
+    const std::function<bool(std::size_t)> until = [&f](std::size_t d) { return f(d); };
+    range_until_(t_b, t_e, until);
+  }
+
+  // The structures this backend reads are shared in storage with BruteRI and GetDocBv, but an
+  // index over it needs them all the same, so they are serialized and reported here: the run-end
+  // samples, the run-start marks (+ rank/select), the mark-to-sample map and the document ends
+  // (+ rank). The run-length BWT is not: it is the count index every document-listing index
+  // already holds and reports as count_idx.
+  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
+    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    size_type written_bytes = 0;
+    written_bytes += sdsl::write_member(sa_sampling_, out, child, "sa_sampling");
+    written_bytes += SerializeOrEmpty(samples_, out, child, "samples");
+    written_bytes += SerializeOrEmpty(marks_, out, child, "marks");
+    written_bytes += SerializeOrEmpty(marks_rank_, out, child, "marks_rank");
+    written_bytes += SerializeOrEmpty(marks_select_, out, child, "marks_select");
+    written_bytes += SerializeOrEmpty(mark_to_sample_, out, child, "mark_to_sample");
+    written_bytes += SerializeOrEmpty(doc_ends_, out, child, "doc_ends");
+    written_bytes += SerializeOrEmpty(doc_ends_rank_, out, child, "doc_ends_rank");
+    return written_bytes;
+  }
+
+  SizeReport GetSizeReport() const {
+    SizeReport r;
+    if (samples_) append(r, "samples", sdsl::size_in_bytes(*samples_));
+    if (marks_) append(r, "marks", sdsl::size_in_bytes(*marks_) + sdsl::size_in_bytes(*marks_rank_)
+                                       + sdsl::size_in_bytes(*marks_select_));
+    if (mark_to_sample_) append(r, "mark_to_sample", sdsl::size_in_bytes(*mark_to_sample_));
+    if (doc_ends_) append(r, "doc_ends", sdsl::size_in_bytes(*doc_ends_) + sdsl::size_in_bytes(*doc_ends_rank_));
+    return r;
+  }
+
+ protected:
+  using typename Base::TSource;
+  using TBwtRLE = sri::RLEStringS<t_width>;
+
+  void loadInner(TSource& t_source, const JSON& t_keys) override {
+    using namespace sri::conf;
+
+    // r-index data structures, the ones the r-index (count_idx, Brute-RI) loads too. Their files are
+    // the standard sr-index ones (no type hash in the name); loadSriItem keys them in storage as
+    // sr-index does, so they are held once, not once per convention.
+    auto cref_bwt        = this->template loadSriItem<TBwtRLE>(KEY_BWT_RLE, t_source);
+    auto cref_samples    = this->template loadSriItem<sdsl::int_vector<>>(KEY_BWT_RUN_LAST_TEXT_POS, t_source);
+    auto cref_m2s        = this->template loadSriItem<sdsl::int_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS_SORTED_TO_LAST_IDX, t_source);
+
+    // Marks bitvector + rank/select supports (use loadItemPtr-backed BVRank/Select
+    // to guarantee stable pointers across std::any reallocations).
+    auto cref_marks      = this->template loadItem<sdsl::sd_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS, t_source, true);
+    auto bv_marks_rank   = this->template loadBVRank<sdsl::sd_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS, t_source, true);
+    auto bv_marks_select = this->template loadBVSelect<sdsl::sd_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS, t_source, true);
+    samples_ = &cref_samples.get();
+    mark_to_sample_ = &cref_m2s.get();
+    marks_ = &cref_marks.get();
+    marks_rank_ = &bv_marks_rank.get();
+    marks_select_ = &bv_marks_select.get();
+
+    const std::size_t n = cref_bwt.get().size();
+
+    // Build the Phi-backward callable using the same pieces RIndex builds
+    // internally (r_index.h:316-332).
+    auto predecessor      = sri::CircularPredecessor(bv_marks_rank, bv_marks_select, n);
+    auto get_sample_idx   = sri::RandomAccessForTwoContainersDefault(cref_m2s, /*default_validity=*/true);
+    auto get_sample       = sri::RandomAccessForCRefContainer(cref_samples);
+    auto sample_validator = sri::SampleValidatorDefault();
+    auto phi              = sri::buildPhiBackward(predecessor, get_sample_idx, get_sample, sample_validator, n);
+
+    // SA[i] = walk Phi from the run-end sample down to position i.
+    // The public RLEString::rank(i, report) reports
+    //   (rnk_in_bwt, c, run_rnk, run_start, run_end, symbol_run_rnk)
+    // where run_end is exclusive (the position after the last position of
+    // the run). The run-end sample at index run_rnk corresponds to
+    // position run_end - 1.
+    sa_at_ = [cref_bwt, cref_samples, phi, n](std::size_t i) -> std::size_t {
+      std::size_t run_rnk = 0;
+      std::size_t run_end_excl = 0;
+      cref_bwt.get().rank(i, [&run_rnk, &run_end_excl](
+          auto /*rnk*/, auto /*c*/, auto rr, auto /*rs*/, auto re, auto /*srr*/) {
+        run_rnk = rr;
+        run_end_excl = re;
+      });
+      std::size_t sa = (cref_samples.get()[run_rnk] + 1) % n;  // SA[run_end_excl - 1]
+      std::size_t pos = run_end_excl - 1;
+      while (pos > i) {
+        sa = phi(sa).first;
+        --pos;
+      }
+      return sa;
+    };
+
+    // doc_at_(sa) = rank1(doc_ends, sa). Same construction as GetDocBv
+    // (doc_list_brute.h:124-132); shares the doc_ends cache via typed-cache.
+    // The logical key kDocEnds maps to the actual cache file key
+    // ("doc_end") via the JSON keys mapping.
+    const auto key_doc_ends = t_keys[dret::conf::kDocEnds].template get<std::string>();
+    auto cref_doc_ends = this->template loadItem<TBvDocEnds>(key_doc_ends, t_source, true);
+    auto doc_ends_rank = this->template loadBVRank<TBvDocEnds>(key_doc_ends, t_source, true);
+    doc_ends_ = &cref_doc_ends.get();
+    doc_ends_rank_ = &doc_ends_rank.get();
+    doc_at_ = [doc_ends_rank](std::size_t pos) -> std::size_t {
+      return doc_ends_rank.get()(pos);
+    };
+
+    // Range expansion: iterate runs (not positions). For each BWT run
+    // intersecting [b, e), seed sa from samples[run_rnk] (= SA[run_end - 1]),
+    // walk Phi backward through the run once, and report doc_at_(sa) for
+    // every position landing in [b, e). Phi-walk steps stay un-erased
+    // (phi captured by value); only the user report callback crosses the
+    // std::function<void(std::size_t)> boundary, once per emitted doc.
+    range_get_doc_ = [cref_bwt, cref_samples, phi, doc_at = doc_at_, n](
+        std::size_t b, std::size_t e,
+        const std::function<void(std::size_t)>& report) {
+      if (b >= e) return;
+      cref_bwt.get().splitInRuns(b, e, [&](auto run_rnk, auto /*c*/,
+                                            auto run_start, auto run_end_excl) {
+        std::size_t sa = (cref_samples.get()[run_rnk] + 1) % n;
+        std::size_t pos = run_end_excl - 1;
+        // Skip positions in [e, run_end_excl) — outside the query range.
+        while (pos >= e) {
+          sa = phi(sa).first;
+          --pos;
+        }
+        // Report positions in [max(b, run_start), min(e, run_end_excl)).
+        // splitInRuns guarantees the run intersects [b, e), so the report
+        // window is non-empty and pos starts inside it.
+        const std::size_t stop = b > run_start ? b : run_start;
+        while (true) {
+          report(doc_at(sa));
+          if (pos == stop) break;
+          sa = phi(sa).first;
+          --pos;
+        }
+      });
+    };
+
+    // The in-order, early-stopping variant of range_get_doc_: the same walk per
+    // BWT run, replayed low to high, and no further runs once f has stopped.
+    range_until_ = [cref_bwt, cref_samples, phi, doc_at = doc_at_, n](
+        std::size_t b, std::size_t e,
+        const std::function<bool(std::size_t)>& f) {
+      if (b >= e) return;
+      thread_local std::vector<std::size_t> docs;
+      bool going = true;
+      cref_bwt.get().splitInRuns(b, e, [&](auto run_rnk, auto /*c*/,
+                                            auto run_start, auto run_end_excl) {
+        if (!going) return;
+        std::size_t sa = (cref_samples.get()[run_rnk] + 1) % n;
+        std::size_t pos = run_end_excl - 1;
+        while (pos >= e) {
+          sa = phi(sa).first;
+          --pos;
+        }
+        const std::size_t stop = b > run_start ? b : run_start;
+        docs.clear();
+        while (true) {
+          docs.push_back(doc_at(sa));
+          if (pos == stop) break;
+          sa = phi(sa).first;
+          --pos;
+        }
+        for (auto it = docs.rbegin(); it != docs.rend(); ++it) {
+          if (!f(*it)) {
+            going = false;
+            return;
+          }
+        }
+      });
+    };
+  }
+
+  // (b, e, f) -> calls f(doc_at_(SA[i])) for i = b, b + 1, ... until f returns false.
+  std::function<void(std::size_t, std::size_t, const std::function<bool(std::size_t)>&)> range_until_;
+  std::function<std::size_t(std::size_t)> sa_at_;   // i   -> SA[i]
+  std::function<std::size_t(std::size_t)> doc_at_;  // pos -> rank1(doc_ends, pos)
+  // (b, e, report) -> reports doc_at_(SA[i]) for each i in [b, e), using a
+  // single Phi-walk per BWT run intersecting the range.
+  std::function<void(std::size_t, std::size_t,
+                     const std::function<void(std::size_t)>&)>
+      range_get_doc_;
+  std::size_t sa_sampling_ = 0;
+
+  // The shared structures read above (owned by the storage), for serialize() and GetSizeReport().
+  template <typename TItem>
+  static size_type SerializeOrEmpty(const TItem* t_item, std::ostream& out, sdsl::structure_tree_node* v,
+                                    const std::string& name) {
+    return t_item ? sdsl::serialize(*t_item, out, v, name) : sdsl::serialize_empty_object<TItem>(out, v, name);
+  }
+  const sdsl::int_vector<>* samples_ = nullptr;
+  const sdsl::int_vector<>* mark_to_sample_ = nullptr;
+  const sdsl::sd_vector<>* marks_ = nullptr;
+  const typename sdsl::sd_vector<>::rank_1_type* marks_rank_ = nullptr;
+  const typename sdsl::sd_vector<>::select_1_type* marks_select_ = nullptr;
+  const TBvDocEnds* doc_ends_ = nullptr;
+  const typename TBvDocEnds::rank_1_type* doc_ends_rank_ = nullptr;
+};
+
+// Free-function construct() — same shape as the other rmq::GetDoc* construct
+// overloads in rmq_get_doc_policies.h. Builds (or short-circuits when warm)
+// the underlying r-index cache + the doc-ends bitvector.
+template <typename TStorage, uint8_t t_width, typename TLocateIdx, typename TBvDocEnds>
+void construct(GetDocSAPhi<TStorage, t_width, TLocateIdx, TBvDocEnds>& t_get_doc, Config& t_config) {
+  using namespace dret::conf;
+
+  // Text + doc-ends caches (shared with GetDocBv / brute / etc.). Built once
+  // per collection; cheap no-op when already present.
+  if (!cache_file_exists(t_config.keys[kText].get<std::string>(), t_config)) {
+    auto event = sdsl::memory_monitor::event("Text");
+    ConstructText<t_width>(t_config);
+  }
+  if (!sdsl::cache_file_exists<TBvDocEnds>(t_config.keys[kDocEnds].get<std::string>(), t_config)) {
+    auto event = sdsl::memory_monitor::event("DocEnds");
+    ConstructDocEnd<t_width, TBvDocEnds>(t_config);
+  }
+
+  // r-index cache (shared with BruteRI). The sri::construct overload builds
+  // the bwt_rle, samples (KEY_BWT_RUN_LAST_TEXT_POS), marks
+  // (KEY_BWT_RUN_FIRST_TEXT_POS), and mark_to_sample
+  // (KEY_BWT_RUN_FIRST_TEXT_POS_SORTED_TO_LAST_IDX) sidecar files. Idempotent
+  // when the caches already exist — cheap when warm.
+  TLocateIdx tmp_idx(t_get_doc.storage());
+  sri::construct(tmp_idx, t_config.data_path.string(), t_config);
+}
+
+}  // namespace dret::rmq

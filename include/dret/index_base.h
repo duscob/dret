@@ -1,0 +1,225 @@
+//
+// Created by Dustin Cobas <dustin.cobas@gmail.com> on 7/26/25.
+//
+
+#pragma once
+
+#include <any>
+#include <functional>
+#include <map>
+#include <string>
+#include <type_traits>
+#include <variant>
+#include <vector>
+
+#include <sdsl/io.hpp>
+
+#include "dret/cache_components.h"
+#include "dret/config.h"
+
+namespace dret {
+
+//~~~~~~~
+
+
+template <typename TStorage = GenericStorage, uint8_t t_width = Alphabet<>::int_width>
+class IndexBaseWithExternalStorage {
+ public:
+  typedef std::size_t size_type;
+
+  explicit IndexBaseWithExternalStorage(const TStorage& t_storage) : storage_{t_storage} {}
+
+  IndexBaseWithExternalStorage() = default;
+  virtual ~IndexBaseWithExternalStorage() = default;
+
+  auto sizeSequence() const {
+    return n_;
+  }
+
+  virtual void load(Config t_config) {
+    TSource source(std::ref(t_config));
+    loadInner(source, t_config.keys);
+  }
+
+  virtual void load(std::istream& in, const JSON& t_keys) {
+    TSource source(std::ref(in));
+    loadInner(source, t_keys);
+  }
+
+  virtual void load(std::istream& in) {
+    load(in, createDefaultKeys<t_width>());
+  }
+
+  virtual size_type serialize(std::ostream& out) const {
+    return serialize(out, nullptr, "");
+  }
+
+  virtual size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const = 0;
+
+  TStorage& storage() {
+    return storage_;
+  }
+
+ protected:
+  using TSource = std::variant<std::reference_wrapper<Config>, std::reference_wrapper<std::istream>>;
+
+  virtual void loadInner(TSource& t_source, const JSON& t_keys) {}
+
+  template <typename TItem>
+  auto loadItemPtr(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
+    // When add_type_hash is true, the on-disk filename is disambiguated by type; the
+    // in-memory storage key must match, otherwise two variants sharing t_key collide —
+    // get<TItem> returns null on type mismatch, set/emplace refuses to replace the
+    // existing entry, and the subsequent load dereferences a null pointer.
+    const auto storage_key =
+        t_add_type_hash ? (t_key + "_" + sdsl::util::class_to_hash(TItem{})) : t_key;
+    auto item = get<TItem>(storage_, storage_key);
+    if (!item) {
+      // Store a default-constructed item first, then load into it in place.
+      // Loading then moving/copying into storage would break SDSL rank/select support
+      // pointers (e.g. rank_support_sd::m_v) that are set during deserialization.
+      auto* mutable_item = const_cast<TItem*>(set(storage_, storage_key, TItem{}));
+      load(*mutable_item, t_source, t_key, t_add_type_hash);
+      item = mutable_item;
+    }
+    return item;
+  }
+
+  // Like loadItemPtr, for an item cached as components (see cache_components.h).
+  // From a stream the item is read whole, as serialize() wrote it.
+  template <typename TItem>
+  auto loadComponentsPtr(const std::vector<Component>& t_components, TSource& t_source) {
+    std::string storage_key = TypeHash<TItem>();
+    for (const auto& c : t_components) storage_key += "|" + c.key + "_" + c.type;
+    auto item = get<TItem>(storage_, storage_key);
+    if (!item) {
+      // Load in place, as loadItemPtr does, so SDSL support pointers stay valid.
+      auto* mutable_item = const_cast<TItem*>(set(storage_, storage_key, TItem{}));
+      std::visit(
+          [&](auto&& tt_source) {
+            using TS = std::decay_t<decltype(tt_source.get())>;
+            if constexpr (std::is_base_of_v<std::istream, TS>) {
+              sdsl::load(*mutable_item, tt_source.get());
+            } else if (!LoadComponents(*mutable_item, t_components, tt_source.get())) {
+              throw std::invalid_argument("Cache components not found (Key: '" + t_components.front().key + "')");
+            }
+          },
+          t_source);
+      item = mutable_item;
+    }
+    return item;
+  }
+
+  template <typename TItem>
+  auto load(TItem& t_item, TSource t_source, const std::string& t_key, bool t_add_type_hash) {
+    std::visit(
+        [&t_item, &t_key, &t_add_type_hash, this](auto&& tt_source) {
+          return this->load(t_item, tt_source.get(), t_key, t_add_type_hash);
+        },
+        t_source);
+  }
+
+  template <typename TItem>
+  auto load(TItem& t_item, const sdsl::cache_config& t_config, const std::string& t_key, bool t_add_type_hash) {
+    if (!sdsl::load_from_cache(t_item, t_key, t_config, t_add_type_hash))
+      throw std::invalid_argument("File not found (Key: '" + t_key + "')");
+  }
+
+  template <typename TItem>
+  auto load(TItem& t_item, std::istream& t_in, const std::string& t_key, bool) {
+    sdsl::load(t_item, t_in);
+  }
+
+  template <typename TItem>
+  auto loadItem(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
+    auto item = loadItemPtr<TItem>(t_key, t_source, t_add_type_hash);
+    return std::cref(*item);
+  }
+
+  // Like loadItem, for an item an sr-index structure in the same storage also loads (e.g. the r-index's
+  // BWT, samples, mark-to-sample map). sr-index always keys its storage entries by type
+  // (sri::storageKey), whatever the file name, so keying them here the same way holds one copy instead
+  // of two. The file name is t_key as is.
+  template <typename TItem>
+  auto loadSriItem(const std::string& t_key, TSource& t_source) {
+    const auto storage_key = sri::storageKey<TItem>(t_key);
+    auto item = get<TItem>(storage_, storage_key);
+    if (!item) {
+      auto* mutable_item = const_cast<TItem*>(set(storage_, storage_key, TItem{}));
+      load(*mutable_item, t_source, t_key, false);
+      item = mutable_item;
+    }
+    return std::cref(*item);
+  }
+
+  template <typename TBv, typename TBvRank = typename TBv::rank_1_type>
+  auto loadBVRank(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
+    auto key_rank = t_key + "_rank";
+    auto item_rank = get<TBvRank>(storage_, key_rank);
+    if (!item_rank) {
+      auto item_bv = loadItemPtr<TBv>(t_key, t_source, t_add_type_hash);
+
+      TBvRank rank;
+      load(rank, t_source, t_key, t_add_type_hash);
+      rank.set_vector(item_bv);
+
+      item_rank = set(storage_, key_rank, std::move(rank));
+    }
+
+    return std::cref(*item_rank);
+  }
+
+  template <typename TBv, typename TBvSelect = typename TBv::select_1_type>
+  auto loadBVSelect(const std::string& t_key, TSource& t_source, bool t_add_type_hash = false) {
+    auto key_select = t_key + "_select";
+    auto item_select = get<TBvSelect>(storage_, key_select);
+    if (!item_select) {
+      auto item_bv = loadItemPtr<TBv>(t_key, t_source, t_add_type_hash);
+
+      TBvSelect select;
+      load(select, t_source, t_key, t_add_type_hash);
+      select.set_vector(item_bv);
+
+      item_select = set(storage_, key_select, std::move(select));
+    }
+
+    return std::cref(*item_select);
+  }
+
+  template <typename TItem>
+  std::size_t serializeItem(const std::string& t_key,
+                            std::ostream& out,
+                            sdsl::structure_tree_node* v,
+                            const std::string& name) const {
+    auto item = get<TItem>(storage_, t_key);
+    if (item) {
+      return sdsl::serialize(*item, out, v, name);
+    }
+    return sdsl::serialize_empty_object<TItem>(out, v, name);
+  }
+
+  template <typename TItem, typename TItemRank = typename TItem::rank_1_type>
+  std::size_t serializeRank(const std::string& t_key,
+                            std::ostream& out,
+                            sdsl::structure_tree_node* v,
+                            const std::string& name) const {
+    return serializeItem<TItemRank>(t_key + "_rank", out, v, name);
+  }
+
+  template <typename TItem, typename TItemSelect = typename TItem::select_1_type>
+  std::size_t serializeSelect(const std::string& t_key,
+                              std::ostream& out,
+                              sdsl::structure_tree_node* v,
+                              const std::string& name) const {
+    return serializeItem<TItemSelect>(t_key + "_select", out, v, name);
+  }
+
+  //********************
+  //********************
+  //********************
+
+  std::size_t n_ = 0;
+  TStorage storage_;
+};
+
+}  // namespace dret

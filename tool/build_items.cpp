@@ -12,16 +12,18 @@
 #include <sdsl/construct.hpp>
 #include <sdsl/csa_wt.hpp>
 #include <sdsl/rmq_succinct_sada.hpp>
+#include <sdsl/wavelet_trees.hpp>
+#include <sdsl/hyb_vector.hpp>
 
-#include <rindex/r_index.hpp>
+#include <r_index.hpp>
 
 #include <grammar/re_pair.h>
 #include <grammar/slp.h>
 #include <grammar/slp_helper.h>
 
 //#include <dret/diff_slp.h>
-#include <dret/doc_freq_index_sada.h>
-#include <dret/run_length_encode.h>
+#include <dret/doc_freq/doc_freq_sada.h>
+#include <dret/common/run_length_encode.h>
 
 #include "definitions.h"
 
@@ -279,7 +281,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  construct_config::byte_algo_sa = FLAGS_sais ? SE_SAIS
+  construct_config().byte_algo_sa = FLAGS_sais ? SE_SAIS
                                               : LIBDIVSUFSORT; // or LIBDIVSUFSORT for less space-efficient but faster construction
 
   string data_path = FLAGS_data;

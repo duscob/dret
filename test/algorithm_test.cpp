@@ -5,7 +5,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
-#include "dret/algorithm.h"
+#include "dret/common/algorithm.h"
 
 
 using Seq = std::vector<std::size_t>;

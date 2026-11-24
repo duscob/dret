@@ -1,0 +1,362 @@
+//
+// Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/16/26.
+//
+// DocListIdxPDL: PDL document-listing index parameterised on the stored-set
+// codec. Composes a count sub-index (default: sri::RIndexCount), a raw-range
+// get-doc policy (default: PDLGetDocsDA), and a PDLTreeCore<..., TStoredSetCodec>
+// for the sparse suffix-tree navigation + per-slot stored-set expansion.
+//
+// The three PlainCodec / RPCodec / BCCodec variants are exposed as alias
+// templates DocListIdxPDLPlain / DocListIdxPDLRP / DocListIdxPDLBC that lock
+// in the codec while leaving the remaining seven template parameters defaulted.
+// Each codec names its lists component through a static constexpr kListsKey;
+// the core is cached as components (see CacheComponents in pdl/tree_core.h).
+//
+// Search() is inherited from DLSampledTreeScheme — the index just overrides
+// the four virtual hooks: count, computeCover[Full], getDocs, getDocSet.
+// computeCover stays a stub since PDL only needs the multi-range
+// computeCoverFull; the base's default cover machinery won't be exercised by
+// Search after the Task 12 rewrite.
+//
+
+#pragma once
+
+#include <type_traits>
+#include <cstddef>
+#include <cstdint>
+#include <format>
+#include <functional>
+#include <ostream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <sdsl/construct_isa.hpp>
+#include <sdsl/construct_lcp.hpp>
+#include <sdsl/construct_sa.hpp>
+#include <sdsl/int_vector.hpp>
+#include <sdsl/io.hpp>
+#include <sdsl/sd_vector.hpp>
+#include <sdsl/util.hpp>
+
+#include "sr-index/r_index.h"
+
+#include "dret/config.h"
+#include "dret/construct_base.h"
+#include "dret/doc_list/doc_list_sampled_tree_base.h"
+#include "dret/doc_list/doc_list_gcda.h"
+#include "dret/index_base.h"
+#include "dret/size_report.h"
+#include "dret/pdl/build_pdl_core.h"
+#include "dret/pdl/get_docs.h"
+#include "dret/pdl/set_codecs.h"
+#include "dret/pdl/storage_policy.h"
+#include "dret/pdl/tree_builder.h"
+#include "dret/pdl/tree_core.h"
+
+namespace dret::pdl {
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TStoredSetCodec = PlainCodec<>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+class DocListIdxPDL
+    : public DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>,
+      public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
+ public:
+  using SchemeBase = DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>;
+  using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
+  using TCore = PDLTreeCore<TBitvector,
+                            typename TBitvector::rank_1_type,
+                            typename TBitvector::select_1_type,
+                            TIntVector,
+                            TStoredSetCodec>;
+  using typename SchemeBase::size_type;
+
+  // A backend that finds the suffix-array range itself (RLCSA, as in the original PDL) replaces the
+  // r-index: count_idx is then neither loaded, serialized nor counted in the size.
+  static constexpr bool kBackendCounts =
+      requires(const typename TGetDocs::Inner& g, const typename TAlphabet::string_type& p) { g.Count(p); };
+
+  DocListIdxPDL() = default;
+
+  explicit DocListIdxPDL(const TStorage& t_storage,
+                         uint32_t t_block_size = 512,
+                         float t_storing_factor = 4.0f,
+                         StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
+      : SchemeBase(TMergeSets()),
+        StorageBase(t_storage),
+        count_idx_(t_storage),
+        get_docs_(typename TGetDocs::Inner{t_storage}),
+        block_size_(t_block_size),
+        storing_factor_(t_storing_factor),
+        policy_(t_policy) {}
+
+  // Externally-supplied count_idx variant, mirroring the GCDA pattern at
+  // doc_list/doc_list_gcda.h:54. Useful when the count sub-index is
+  // shared across multiple indexes pointing at the same storage.
+  DocListIdxPDL(const TStorage& t_storage,
+                const TCountIdx& t_count_idx,
+                uint32_t t_block_size = 512,
+                float t_storing_factor = 4.0f,
+                StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
+      : SchemeBase(TMergeSets()),
+        StorageBase(t_storage),
+        count_idx_(t_count_idx),
+        get_docs_(typename TGetDocs::Inner{t_storage}),
+        block_size_(t_block_size),
+        storing_factor_(t_storing_factor),
+        policy_(t_policy) {}
+
+  // Externally-supplied get_docs variant. Used by the benchmark factory to pin
+  // the raw-range get-doc backing's parameters (e.g. the GCDA-light SLP's own
+  // block_size / storing_factor) to a chosen operating point — independently
+  // of PDL's own (block_size, storing_factor) above. The default ctor builds
+  // get_docs_ from {t_storage} only, which leaves the inner GCDA SLP at its
+  // default (512, 4); this ctor lets the caller pass a pre-built TGetDocs with
+  // the desired inner configuration.
+  DocListIdxPDL(const TStorage& t_storage,
+                const TGetDocs& t_get_docs,
+                uint32_t t_block_size = 512,
+                float t_storing_factor = 4.0f,
+                StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
+      : SchemeBase(TMergeSets()),
+        StorageBase(t_storage),
+        count_idx_(t_storage),
+        get_docs_(t_get_docs),
+        block_size_(t_block_size),
+        storing_factor_(t_storing_factor),
+        policy_(t_policy) {}
+
+  size_type serialize(std::ostream& out,
+                      sdsl::structure_tree_node* v,
+                      const std::string& name) const override {
+    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    std::size_t bytes = 0;
+    if constexpr (!kBackendCounts) bytes += count_idx_.serialize(out, child, "count_idx");
+    bytes += get_docs_.inner().serialize(out, child, "get_docs");
+    if (core_) bytes += core_->serialize(out, child, "core");
+    return bytes;
+  }
+
+  SizeReport GetSizeReport() const override {
+    SizeReport r;
+    if constexpr (!kBackendCounts) append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
+    auto gd = get_docs_.inner().GetSizeReport();
+    for (const auto& f : gd) append(r, "get_docs_" + f.name, f.bytes);
+    if (core_) {
+      auto core_r = core_->GetSizeReport();
+      for (const auto& f : core_r) append(r, "core_" + f.name, f.bytes);
+    }
+    return r;
+  }
+
+  const TCountIdx& count_idx() const { return count_idx_; }
+  const TGetDocs& get_docs() const { return get_docs_; }
+  uint32_t block_size() const { return block_size_; }
+  float storing_factor() const { return storing_factor_; }
+  StoragePolicy policy() const { return policy_; }
+
+ protected:
+  std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const override {
+    if constexpr (kBackendCounts) return get_docs_.inner().Count(t_pattern);
+    else return count_idx_.Count(t_pattern);
+  }
+
+  // Single-range computeCover: PDL's multi-range covers are produced by
+  // computeCoverFull below; the base's Search() does not call this hook
+  // after Task 12. Provide an empty cover so the pure virtual is
+  // satisfied and the base's default computeCoverFull (which delegates
+  // to computeCover) is harmless.
+  std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
+      std::size_t t_sp,
+      std::size_t /*t_ep*/) const override {
+    return {{t_sp, t_sp}, {}};
+  }
+
+  void computeCoverFull(std::size_t t_sp,
+                        std::size_t t_ep,
+                        std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,
+                        std::vector<std::size_t>& t_nodes) const override {
+    if (core_) core_->computeCoverFull(t_sp, t_ep, t_raw_ranges, t_nodes);
+  }
+
+  void getDocs(std::size_t t_sp,
+               std::size_t t_ep,
+               const std::function<void(typename SchemeBase::TDocId)>& t_report) const override {
+    auto wrapper = [&t_report](std::size_t d) { t_report(d); };
+    get_docs_.getDocs(t_sp, t_ep, wrapper);
+  }
+
+  std::vector<typename SchemeBase::TDocId> getDocSet(std::size_t t_codec_slot) const override {
+    if (!core_) return {};
+    return core_->getDocSet(t_codec_slot);
+  }
+
+  void loadInner(typename StorageBase::TSource& t_source, const JSON& t_keys) override {
+    using namespace conf;
+
+    std::visit(
+        [this](auto&& tt_source) {
+          if constexpr (!kBackendCounts) count_idx_.load(tt_source.get());
+          get_docs_.inner().load(tt_source.get());
+        },
+        t_source);
+
+    core_ = this->template loadComponentsPtr<TCore>(
+        CacheComponents(TCore{}, t_keys, block_size_, storing_factor_, policy_), t_source);
+  }
+
+  TCountIdx count_idx_;
+  TGetDocs get_docs_;
+  const TCore* core_ = nullptr;
+  uint32_t block_size_ = 512;
+  float storing_factor_ = 4.0f;
+  StoragePolicy policy_ = StoragePolicy::OccurrenceWeighted;
+};
+
+// Backward-compatible aliases. Each locks the 5th template parameter
+// (TStoredSetCodec) to the matching codec while keeping every other parameter
+// default identical to the unified template. Existing consumers that wrote
+// DocListIdxPDLPlain<...>, DocListIdxPDLRP<...>, DocListIdxPDLBC<...> keep
+// working without changes — alias templates expand to the underlying class
+// template at the point of instantiation.
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxPDLPlain = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+                                          PlainCodec<>, TBitvector, TIntVector, TMergeSets>;
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxPDLRP = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+                                       RPCodec<>, TBitvector, TIntVector, TMergeSets>;
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TGetDocs = PDLGetDocsDA<TStorage, TAlphabet::int_width>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxPDLBC = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+                                       BCCodec<>, TBitvector, TIntVector, TMergeSets>;
+
+template <typename TStorage,
+          typename TAlphabet,
+          typename TCountIdx,
+          typename TGetDocs,
+          typename TStoredSetCodec,
+          typename TBitvector,
+          typename TIntVector,
+          typename TMergeSets>
+void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TGetDocs,
+                              TStoredSetCodec, TBitvector, TIntVector, TMergeSets>& t_index,
+               Config& t_config) {
+  using namespace conf;
+  using Index = std::remove_reference_t<decltype(t_index)>;
+  using TCore = typename Index::TCore;
+  constexpr uint8_t t_width = TAlphabet::int_width;
+
+  // Preliminaries — same shape as GCDA's construct(DocListIdxGCDA&, Config&).
+  if (!cache_file_exists(t_config.keys[kText].get<std::string>(), t_config)) {
+    auto event = sdsl::memory_monitor::event("Text");
+    ConstructText<t_width>(t_config);
+  }
+  if (const auto key = t_config.keys[kSA].get<std::string>(); !cache_file_exists(key, t_config)) {
+    auto event = sdsl::memory_monitor::event(key);
+    sdsl::construct_sa<t_width>(t_config);
+  }
+  if (const auto key = t_config.keys[kDocEnds].get<std::string>(); !cache_file_exists(key, t_config)) {
+    auto event = sdsl::memory_monitor::event(key);
+    ConstructDocEnd<t_width, sdsl::sd_vector<>>(t_config);
+  }
+  if (const auto key = t_config.keys[kDA].get<std::string>();
+      !sdsl::cache_file_exists<sdsl::int_vector<>>(key, t_config)) {
+    auto event = sdsl::memory_monitor::event(key);
+    ConstructDocArray(t_config);
+  }
+  // LCP is PDL-specific (the sparse suffix tree is built from it).
+  if (!cache_file_exists(sdsl::conf::KEY_LCP, t_config)) {
+    auto event = sdsl::memory_monitor::event(std::string(sdsl::conf::KEY_LCP));
+    if (!cache_file_exists(sdsl::conf::KEY_ISA, t_config)) {
+      sdsl::construct_isa(t_config);
+    }
+    sdsl::construct_lcp_kasai<t_width>(t_config);
+  }
+
+  // PDLTreeCore as components: the tree under the block size, the selected
+  // nodes and their lists under the block size, the policy and, for a policy
+  // that reads it, the storing factor.
+  const auto components =
+      CacheComponents(TCore{}, t_config.keys, t_index.block_size(), t_index.storing_factor(), t_index.policy());
+
+  if (!ComponentsExist(components, t_config)) {
+    auto event = sdsl::memory_monitor::event(components.back().key);
+    sdsl::int_vector<> da;
+    sdsl::load_from_cache(da, t_config.keys[kDA].get<std::string>(), t_config, true);
+    sdsl::int_vector<> lcp;
+    sdsl::load_from_cache(lcp, sdsl::conf::KEY_LCP, t_config);
+
+    const std::size_t n = da.size();
+    const std::size_t n_doc = ReadNDocFromText(t_config);
+
+    // PDL construction pipeline (Tasks 6-11) plus the bridge into the
+    // compact PDLTreeCore (Task 12 via build_pdl_core.h).
+    BuilderPool pool;
+    // BuildSparseSuffixTree iterates i in [1, n] and reads lcp(n) as a
+    // flush sentinel; sdsl::construct_lcp_kasai writes only n entries, so
+    // wrap with a bounds-safe accessor returning 0 past the end.
+    auto lcp_fn = [&lcp](std::size_t i) -> std::size_t {
+      return i < lcp.size() ? static_cast<std::size_t>(lcp[i]) : 0;
+    };
+    auto* root = BuildSparseSuffixTree(pool, lcp_fn, n);
+    CollapseSubtreesByBlockSize(root, t_index.block_size());
+    // Reclaim the interval nodes just detached by the collapse before the
+    // memory-heavy doc-set phase (the arena keeps all nodes alive otherwise).
+    pool.retain(root);
+    InsertExplicitLeaves(pool, root);
+    ComputeDocSetsBottomUp(
+        root, n_doc, [&da](std::size_t i) { return static_cast<std::size_t>(da[i]); });
+    ApplyStoragePolicy(root, t_index.policy(), t_index.storing_factor(), n_doc);
+    const std::size_t n_nodes = AssignNodeIds(root);
+
+    TCore core;
+    BuildPDLTreeCoreFromBuilder(core, root, n_nodes, n_doc,
+                                t_index.block_size(), t_index.storing_factor(),
+                                t_index.policy());
+    StoreComponents(core, CacheComponents(core, t_config.keys, t_index.block_size(), t_index.storing_factor(),
+                                          t_index.policy()),
+                    t_config);
+  }
+
+  // Raw get-doc backing cache. DA-backed is a no-op (DA was built above);
+  // SLP / DSLP variants build their own LightSLP / DSLP cache entries via
+  // construct() in rmq_get_doc_policies.h. Copy the index's get_docs so we
+  // don't need a default-constructible TGetDocs (which would be ill-formed
+  // when TStorage is std::reference_wrapper).
+  auto get_docs = t_index.get_docs();
+  construct(get_docs, t_config);
+
+  // Count sub-index — same delegation pattern as GCDA.
+  auto count_idx = t_index.count_idx();
+  construct(count_idx, t_config.data_path, t_config);
+
+  t_index.load(t_config);
+}
+
+}  // namespace dret::pdl

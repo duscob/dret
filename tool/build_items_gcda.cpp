@@ -15,7 +15,7 @@
 #include <grammar/slp_helper.h>
 #include <grammar/sampled_slp.h>
 
-#include <dret/tf.h>
+#include <dret/common/tf.h>
 
 #include "definitions.h"
 

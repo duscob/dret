@@ -11,7 +11,7 @@
 
 #include <grammar/slp.h>
 
-#include "dret/tf.h"
+#include "dret/common/tf.h"
 
 
 using RightHand = std::pair<std::size_t, std::size_t>;

@@ -91,6 +91,12 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 
+# The vendored dsextract sources ship a hand-written Makefile, which the
+# CMake-template `Makefile` rule above would otherwise exclude. Without it a
+# fresh clone builds vnmextract via make's builtin rule and fails with
+# undefined references to AdjacencyMatrix/Shingles, leaving PDL-BC unbuildable.
+!external/dsextract/Makefile
+
 ### C++ template
 # Prerequisites
 *.d
