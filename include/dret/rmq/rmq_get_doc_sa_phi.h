@@ -61,6 +61,7 @@
 #include "sr-index/sampling.h"            // sri::SampleValidatorDefault
 #include "sr-index/sequence_ops.h"        // sri::CircularPredecessor, RandomAccessFor*
 
+#include "dret/collection.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/index_base.h"
@@ -324,16 +325,8 @@ template <typename TStorage, uint8_t t_width, typename TLocateIdx, typename TBvD
 void construct(GetDocSAPhi<TStorage, t_width, TLocateIdx, TBvDocEnds>& t_get_doc, Config& t_config) {
   using namespace dret::conf;
 
-  // Text + doc-ends caches (shared with GetDocBv / brute / etc.). Built once
-  // per collection; cheap no-op when already present.
-  if (!cache_file_exists(t_config.keys[kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<t_width>(t_config);
-  }
-  if (!sdsl::cache_file_exists<TBvDocEnds>(t_config.keys[kDocEnds].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("DocEnds");
-    ConstructDocEnd<t_width, TBvDocEnds>(t_config);
-  }
+  // Text + doc-ends caches (shared with GetDocBv / brute / etc.).
+  EnsureDocEnds<t_width, TBvDocEnds>(t_config);
 
   // r-index cache (shared with BruteRI). The sri::construct overload builds
   // the bwt_rle, samples (KEY_BWT_RUN_LAST_TEXT_POS), marks

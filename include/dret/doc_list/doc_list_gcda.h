@@ -16,6 +16,7 @@
 
 #include "sr-index/r_index.h"
 
+#include "dret/collection.h"
 #include "dret/slp/combined_slp_with_unit_cover.h"
 #include "dret/slp/compact_bp_slp.h"
 #include "dret/slp/compact_louds_slp.h"
@@ -276,28 +277,7 @@ void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TM
   using namespace conf;
   using Traits = GCDAVariantTraits<TSLP>;
 
-  if (!cache_file_exists(t_config.keys[kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<TAlphabet::int_width>(t_config);
-  }
-
-  if (const auto key = t_config.keys[kSA].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    sdsl::construct_sa<TAlphabet::int_width>(t_config);
-  }
-
-  if (const auto key = t_config.keys[kDocEnds].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocEnd<TAlphabet::int_width, sdsl::sd_vector<>>(t_config);
-  }
-
-  // ConstructDocArray writes DA only with type-hash; the no-hash check would never
-  // see it, causing DA to be rebuilt on every construct() call. Match the storage.
-  if (const auto key = t_config.keys[kDA].get<std::string>();
-      !sdsl::cache_file_exists<sdsl::int_vector<>>(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocArray(t_config);
-  }
+  EnsureDA<TAlphabet::int_width>(t_config);
 
   const SampledTreeCell cell{t_index.block_size(), t_index.storing_factor()};
 

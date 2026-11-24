@@ -44,6 +44,7 @@
 #include "sr-index/r_index.h"
 #include "sr-index/sr_index.h"
 
+#include "dret/collection.h"
 #include "dret/construct_base.h"
 #include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_base.h"
@@ -220,9 +221,7 @@ class DocListIdxSLP : public DocListIndexExtStorage<TStorage, TAlphabet> {
     slp_ = this->template loadComponentsPtr<TSLP>(SlpNsTraits<TSLP>::components(t_keys, spacing_, storing_factor_),
                                                   t_source);
 
-    const auto* n_doc_vec =
-        this->template loadItemPtr<sdsl::int_vector<64>>(t_keys[kRmqNDoc].get<std::string>(), t_source, true);
-    n_doc_ = static_cast<std::size_t>((*n_doc_vec)[0]);
+    n_doc_ = this->loadNDoc(t_keys, t_source);
   }
 
   TCountIdx count_idx_;
@@ -243,40 +242,18 @@ void construct(grammar::SLP<TVarsContainer, TLengthsContainer>& t_slp,
                const std::string& t_datafile);
 
 
-// Top-level construct for the non-sampled SLP index. Same boilerplate as
-// `construct(DocListIdxGCDA&, Config&)` for kText/kSA/kDocEnds/kDA, but
-// builds the grammar alone instead of the sampled tree.
+// Top-level construct for the non-sampled SLP index: the collection's structures, as for
+// `construct(DocListIdxGCDA&, Config&)`, then the grammar alone instead of the sampled tree.
 template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TSLP>
 void construct(DocListIdxSLP<TStorage, TAlphabet, TCountIdx, TSLP>& t_index, Config& t_config) {
   using namespace conf;
 
-  if (!cache_file_exists(t_config.keys[kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<TAlphabet::int_width>(t_config);
-  }
-
-  if (const auto key = t_config.keys[kSA].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    sdsl::construct_sa<TAlphabet::int_width>(t_config);
-  }
-
-  if (const auto key = t_config.keys[kDocEnds].get<std::string>(); !cache_file_exists(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocEnd<TAlphabet::int_width, sdsl::sd_vector<>>(t_config);
-  }
-
-  // Match GCDA's cache-existence check: ConstructDocArray writes DA with a
-  // type hash, so a no-hash check would never see it.
-  if (const auto key = t_config.keys[kDA].get<std::string>();
-      !sdsl::cache_file_exists<sdsl::int_vector<>>(key, t_config)) {
-    auto event = sdsl::memory_monitor::event(key);
-    ConstructDocArray(t_config);
-  }
+  EnsureDA<TAlphabet::int_width>(t_config);
 
   // Build the grammar's components — the plain CNF grammar, the base
   // differential SLP (bare-diff), or a sampled GCDA grammar — dispatched by TSLP.
   SlpNsTraits<TSLP>::build(t_config, t_index.spacing(), t_index.storing_factor());
-  ConstructNDoc(t_config);
+  EnsureNDoc<TAlphabet::int_width>(t_config);
 
   auto count_idx = t_index.count_idx();
   construct(count_idx, t_config.data_path, t_config);

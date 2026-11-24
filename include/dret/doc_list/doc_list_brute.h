@@ -10,6 +10,7 @@
 #include "sr-index/sr_idx_generic.h"
 #include "sr-index/sr_index.h"
 
+#include "dret/collection.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/doc_list/distinct_docs.h"
@@ -84,10 +85,7 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, TAlphabet> {
 
 template <typename TStorage, typename TAlphabet, typename TLocateIdx, typename TGetDoc>
 void construct(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_index, Config& t_config) {
-  if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<TAlphabet::int_width>(t_config);
-  }
+  EnsureText<TAlphabet::int_width>(t_config);
 
   TLocateIdx locate_index(t_index.storage());
   construct(locate_index, t_config.data_path, t_config);
@@ -116,10 +114,7 @@ template <typename TStorage, typename TAlphabet, typename TLocateIdx, typename T
 void construct(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_index,
                Config& t_config,
                std::size_t t_subsample_rate) {
-  if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<TAlphabet::int_width>(t_config);
-  }
+  EnsureText<TAlphabet::int_width>(t_config);
 
   TLocateIdx locate_index(t_index.storage(), t_subsample_rate);
   construct(locate_index, t_config.data_path, t_config);
@@ -191,15 +186,7 @@ class GetDocBv : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
 template <typename TStorage, typename TBvDocEnds, uint8_t t_width>
 void construct(GetDocBv<TStorage, TBvDocEnds, t_width>& t_index, Config& t_config) {
-  if (!cache_file_exists(t_config.keys[conf::kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<t_width>(t_config);
-  }
-
-  if (!sdsl::cache_file_exists<TBvDocEnds>(t_config.keys[conf::kDocEnds].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("DocEnds");
-    ConstructDocEnd<t_width, TBvDocEnds>(t_config);
-  }
+  EnsureDocEnds<t_width, TBvDocEnds>(t_config);
 
   t_index.load(t_config);
 }

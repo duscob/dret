@@ -11,21 +11,14 @@
 // instead costs O(occ log occ), which is what the many occurrences per document of the repetitive
 // collections make expensive. Identifiers past n_doc grow the bitmap rather than being dropped.
 //
-// The number of documents is cached at conf::kRmqNDoc, the entry the RMQ cores read.
+// The number of documents comes from dret/collection.h (EnsureNDoc).
 //
 
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <vector>
-
-#include <sdsl/int_vector.hpp>
-#include <sdsl/int_vector_buffer.hpp>
-#include <sdsl/io.hpp>
-
-#include "dret/config.h"
 
 namespace dret {
 
@@ -46,20 +39,5 @@ class DistinctDocs {
  private:
   std::vector<uint64_t> words_;
 };
-
-// Caches the number of documents (the kInternalDocDelim bytes of the text) at conf::kRmqNDoc, unless
-// it is there already.
-inline void ConstructNDoc(Config& t_config) {
-  const auto key = t_config.keys[conf::kRmqNDoc].get<std::string>();
-  if (sdsl::cache_file_exists<sdsl::int_vector<64>>(key, t_config)) return;
-
-  sdsl::int_vector_buffer<8> text_buf(sdsl::cache_file_name(t_config.keys[conf::kText].get<std::string>(), t_config));
-  std::size_t n_doc = 0;
-  for (std::size_t i = 0; i < text_buf.size(); ++i) {
-    if (text_buf[i] == 1) ++n_doc;
-  }
-  sdsl::int_vector<64> n_doc_vec(1, n_doc);
-  sdsl::store_to_cache(n_doc_vec, key, t_config, true);
-}
 
 }  // namespace dret

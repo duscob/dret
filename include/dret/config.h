@@ -84,7 +84,9 @@ constexpr std::string_view kRmq = "rmq";
 constexpr std::string_view kRunHeads = "runHeads";
 constexpr std::string_view kRunValues = "runValues";
 constexpr std::string_view kPrevDoc = "prevDoc";
-constexpr std::string_view kRmqNDoc = "rmq_n_doc";
+// The number of documents (dret/collection.h). Collection-level and read by every index that needs it;
+// the key and the file keep the name of the RMQ cores, which cached it first, so existing caches load.
+constexpr std::string_view kNDoc = "rmq_n_doc";
 // Backward interleaved-LCP array (ComputeIlcpBackward). Collection-level and
 // shared by every ILCP-family core (ILCP / CILCP and their -L variants), so it
 // is cached once instead of recomputed per core.
@@ -174,7 +176,7 @@ struct Keys {
             },
         },
         {conf::kRLCSA, "rlcsa"},
-        {conf::kRmqNDoc, "rmq_n_doc"},
+        {conf::kNDoc, "rmq_n_doc"},
         {conf::kIlcpArray, "ilcp_array"},
     });
   }

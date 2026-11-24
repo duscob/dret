@@ -40,6 +40,7 @@
 
 #include <rlcsa.h>
 
+#include "dret/collection.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/index_base.h"
@@ -148,10 +149,7 @@ template <typename TStorage, uint8_t t_width>
 void construct(GetDocRLCSA<TStorage, t_width>&, Config& t_config) {
   using namespace dret::conf;
 
-  if (!cache_file_exists(t_config.keys[kText].get<std::string>(), t_config)) {
-    auto event = sdsl::memory_monitor::event("Text");
-    ConstructText<t_width>(t_config);
-  }
+  EnsureText<t_width>(t_config);
 
   const auto base = sdsl::cache_file_name(
       t_config.keys[kRLCSA].get<std::string>(), t_config);
