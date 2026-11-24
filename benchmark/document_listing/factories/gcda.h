@@ -2,9 +2,9 @@
 // GCDA factory header — type aliases + Make() for the
 // dret::gcda::DocListIdxGCDA family.
 //
-// Storage-parametric type aliases let bm_query_doc_list (via the
-// Factory<>'s shared ExternalGenericStorage) and bm_build_items (per-bench
-// dret::GenericStorage) reuse one definition of the typed index. The Make()
+// Storage-parametric type aliases let query mode (via the Factory<>'s shared
+// ExternalGenericStorage) and construct mode (per-bench dret::GenericStorage)
+// reuse one definition of the typed index. The Make()
 // function dispatches the GCDASLPVariant axis to the right TSLP at compile
 // time using the type-tag-lambda pattern, and runs construct() + load() so
 // missing cache artefacts get built inline.

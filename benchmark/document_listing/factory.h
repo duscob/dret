@@ -43,9 +43,8 @@ using ExternalGenericStorage = std::reference_wrapper<sri::GenericStorage>;
 template <uint8_t t_width = 8>
 class Factory {
  public:
-  // Axis enums are defined at bench::axes scope (axes.h) so bm_query_doc_list
-  // and bm_build_items can share the same types. Aliases below preserve every
-  // existing Factory<>::IndexEnum / Factory<>::GetDocEnum / ... reference.
+  // Axis enums are defined at bench::axes scope (axes.h). Aliases below keep
+  // every Factory<>::IndexEnum / Factory<>::GetDocEnum / ... reference.
   using IndexEnum        = bench::axes::IndexEnum;
   using PDLVariant       = bench::axes::PDLVariant;
   using PDLStoragePolicy = bench::axes::PDLStoragePolicy;
@@ -168,13 +167,12 @@ class Factory {
       seq_size_ = bits / stored_width;
     }
 
-    // r_index_ / sr_index_ are NOT loaded eagerly: they back only the
-    // BRUTE_R_INDEX / BRUTE_SR_INDEX paths in MakeInner and require
-    // the full sr-index sample / mark cache files (typed
-    // bwt_run_first_text_pos_<HASH> etc.). Loading them in the ctor
-    // would force every Factory user — including PDL-only or
-    // GCDA-only benchmark runs that never touch the r-index — to
-    // pre-build those artifacts. Deferred to rIndex() / srIndex().
+    // r_index_ is NOT loaded eagerly: it backs only CountOccurrences (the
+    // per-pattern occurrence counts) and requires the full r-index sample /
+    // mark cache files (typed bwt_run_first_text_pos_<HASH> etc.). Loading it
+    // in the ctor would force every Factory user -- including PDL-only or
+    // GCDA-only benchmark runs that never touch the r-index -- to pre-build
+    // those artifacts. Deferred to rIndex().
 
     load(doc_endings_);
     load(doc_endings_rank_, [this]() {
@@ -192,23 +190,14 @@ class Factory {
   }
 
  private:
-  // Lazy accessors for the brute baselines' shared r-index / sr-index
-  // instances. First call constructs + loads from the cache; later
-  // calls return the cached shared_ptr.
+  // Lazy accessor for the r-index CountOccurrences reads. First call
+  // constructs + loads from the cache; later calls return the cached one.
   sri::RIndex<ExternalGenericStorage>& rIndex() {
     if (!r_index_) {
       r_index_ = std::make_shared<sri::RIndex<ExternalGenericStorage>>(std::ref(storage_));
       r_index_->load(config_);
     }
     return *r_index_;
-  }
-
-  sri::SrIndexValidArea<ExternalGenericStorage>& srIndex() {
-    if (!sr_index_) {
-      sr_index_ = std::make_shared<sri::SrIndexValidArea<ExternalGenericStorage>>(std::ref(storage_), 8);
-      sr_index_->load(config_);
-    }
-    return *sr_index_;
   }
 
  public:
@@ -233,7 +222,7 @@ class Factory {
 
   // Map the factory-side PDLStoragePolicy enum to the library-side
   // dret::pdl::StoragePolicy. Kept as a static so callers (e.g. CLI
-  // parsing in Task 30) can use the same mapping.
+  // parsing) can use the same mapping.
   static dret::pdl::StoragePolicy toPDLStoragePolicy(PDLStoragePolicy t_p) {
     switch (t_p) {
       case PDLStoragePolicy::StoreAllInternal:
@@ -258,9 +247,8 @@ class Factory {
     switch (t_config.index_t) {
       case IndexEnum::BRUTE_R_INDEX: {
         // Brute baselines bypass auto-build: the underlying sri::RIndex /
-        // sri::SrIndexValidArea caches are managed externally via the
-        // factory's lazy rIndex() / srIndex(), and DocListIdxBrute's own
-        // construct() would try to rebuild them from scratch.
+        // sri::SrIndexValidArea caches come from a construct run, and
+        // DocListIdxBrute's own construct() would rebuild them from scratch.
         auto idx = std::make_shared<bench::factories::brute::IdxR<ExternalGenericStorage>>(
             std::ref(storage_));
         idx->load(config_);
@@ -460,37 +448,6 @@ class Factory {
     t_item.size_in_bytes = sdsl::size_in_bytes(t_item.item);
   }
 
-  std::pair<dret::DocListIndex<>*, std::size_t> MakeInner(const Config& t_config) {
-    dret::DocListIndex<>* index = nullptr;
-    std::size_t index_size = 0;
-
-    switch (t_config.index_t) {
-      case IndexEnum::BRUTE_R_INDEX: {
-        rIndex();  // trigger lazy load of r_index_ before capturing this.
-        auto locate = [this](const auto& tt_pattern) {
-          return this->r_index_->Locate(tt_pattern);
-        };
-
-        index = new dret::DocListIndexBrute(locate, doc_endings_rank_.item);
-        index_size = sdsl::size_in_bytes(*r_index_) + doc_endings_rank_.size_in_bytes;
-        break;
-      }
-
-      case IndexEnum::BRUTE_SR_INDEX: {
-        srIndex();  // trigger lazy load of sr_index_ before capturing this.
-        auto locate = [this](const auto& tt_pattern) {
-          return this->sr_index_->Locate(tt_pattern);
-        };
-
-        index = new dret::DocListIndexBrute(locate, doc_endings_rank_.item);
-        index_size = sdsl::size_in_bytes(*sr_index_) + doc_endings_rank_.size_in_bytes;
-        break;
-      }
-    }
-
-    return std::make_pair(index, index_size);
-  }
-
   dret::Config config_;
 
   std::size_t seq_size_;
@@ -500,7 +457,6 @@ class Factory {
   std::map<Config, Index> indexes_;
 
   std::shared_ptr<sri::RIndex<ExternalGenericStorage>> r_index_;
-  std::shared_ptr<sri::SrIndexValidArea<ExternalGenericStorage>> sr_index_;
 
   // Document endings marks
   using TDocEndings = sdsl::sd_vector<>;

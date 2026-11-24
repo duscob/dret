@@ -101,13 +101,14 @@ struct Workload {
   // before each timed construct() iteration. The shared cache artefacts
   // (Text, SA, DocEnds, DA, LCP) are kept. Supported for GCDA, DGCDA,
   // SLP-NS, PDL — see bm_doc_list.cpp for the per-family glob patterns.
-  // Default false (warm-cache fast-path, identical to bm_build_items.cpp).
+  // Default false (warm-cache fast path).
   bool rebuild = false;
   // Construct mode only: write construction-<bench>.{html,json} memory-monitor
   // traces and sizes-<bench>.json size sidecars next to the working directory
-  // for every benchmark cell — matches bm_build_items' always-on behaviour.
+  // for every benchmark cell.
   bool memory_trace = false;
-  // Pattern coding for query mode: "PLAIN" | "BASE64".
+  // Pattern coding for query mode: "PLAIN" | "BASE64". Parsed but not yet read:
+  // bm_doc_list reads patterns as PLAIN lines.
   std::string pattern_code = "PLAIN";
   int pattern_delim = '\n';
 };

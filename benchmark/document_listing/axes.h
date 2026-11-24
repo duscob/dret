@@ -1,12 +1,10 @@
 //
-// Shared axis enums for the doc-list benchmark binaries.
+// Axis enums of the doc-list benchmark (bm_doc_list).
 //
 // These enums identify the variation axes across the doc-list index family
 // (which family / which SLP / which GetDoc policy / which PDL codec / which
-// PDL storage policy). They live at namespace scope so both bm_query_doc_list
-// and bm_build_items can use the same types instead of redeclaring locally.
-// Factory<>::GetDocEnum etc. are re-exported as type aliases for source
-// compatibility with existing call sites.
+// PDL storage policy), shared by the spec parser, the factories and the
+// driver. Factory<>::GetDocEnum etc. are re-exported as type aliases.
 //
 
 #pragma once
@@ -35,7 +33,7 @@ enum class IndexEnum {
   SADA,     // -> SadaCore:  RMinQ on prev_doc, marker-based stop
   ILCP,     // -> IlcpCore:  RMinQ on backward-ILCP runs, marker-based stop
   CILCP,    // -> CilcpCore: CMR20's document-aware merged runs, marker-based stop
-  SLP_NS,   // Phase C: dret::DocListIdxSLP — non-sampled grammar::SLP<>
+  SLP_NS,   // dret::DocListIdxSLP (Brute-GCDA) — brute force over a GCDA grammar
   PDL,      // Precomputed Document Listing — variant axis selects Plain/RP/BC
   // dret's value-rule variants: same runs as the cores above, plus the stored
   // array their value-based recursion stop consults.
@@ -101,7 +99,7 @@ enum class GCDASLPVariant {
   Light,         // grammar::LightSLP<...> — canonical GCDA TSLP; the family default
   CompactBP,     // grammar::CompactBPSLP<>
   CompactLOUDS,  // grammar::CompactLOUDSSLP<>
-  Combined,          // grammar::CombinedSLPWithUnitCover<> — Phase B
+  Combined,          // grammar::CombinedSLPWithUnitCover<> (sampled-ondemand)
 };
 
 // Bare-SLP container choice for the SLP-NS family. enc_vector<> is excluded:

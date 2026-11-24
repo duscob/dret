@@ -67,6 +67,10 @@
 #include "factory.h"
 #include "spec.h"
 
+#ifdef DRET_DOC_LIST_PROFILE
+#include "dret/doc_list/search_profile.h"
+#endif
+
 DEFINE_string(spec, "", "Path to the JSON sweep spec (MANDATORY).");
 DEFINE_string(print_results_dir, "",
               "If set, write each query index's per-pattern sorted doc-id lists to "
@@ -232,8 +236,7 @@ void WarnIfWarm(const benchmark::State& t_state,
             << "Set workload.rebuild=true in the spec for clean timing.\n";
 }
 
-// Memory-monitor trace + size sidecar emit. Mirrors bm_build_items.cpp's
-// always-on behaviour, but gated on workload.memory_trace in bm_doc_list.
+// Memory-monitor trace + size sidecar emit, gated on workload.memory_trace.
 // Files land in the working directory keyed by the GBenchmark cell name.
 void WriteMemoryTrace(const benchmark::State& t_state) {
   const std::string name = std::string(t_state.name());
@@ -376,7 +379,7 @@ void Report(benchmark::State& t_state,
 
 }  // namespace per_pattern_timing
 
-//~~~~~~~  Counter helpers (inlined to avoid pulling in bm_query.h's BM_WarmUp) ~~~~~~~
+//~~~~~~~  Counter helpers  ~~~~~~~
 
 void SetupQueryCounters(benchmark::State& t_state) {
   t_state.counters["Size(bytes)"] = 0;
@@ -405,6 +408,12 @@ auto BM_Query = [](benchmark::State& t_state,
     pattern_ndocs.assign(t_patterns->size(), 0);
   }
 
+#ifdef DRET_DOC_LIST_PROFILE
+  // Phase profile of the sampled-tree indexes (dret/doc_list/search_profile.h), over the timed loop
+  // only: read before the untimed passes below, which also search.
+  dret::search_profile().reset();
+#endif
+
   if (!per_pattern) {
     for (auto _ : t_state) {
       for (const auto& pattern : *t_patterns) {
@@ -430,6 +439,20 @@ auto BM_Query = [](benchmark::State& t_state,
       }
     }
   }
+
+#ifdef DRET_DOC_LIST_PROFILE
+  {
+    const auto& pr = dret::search_profile();
+    const double q = pr.n_queries ? static_cast<double>(pr.n_queries) : 1.0;
+    t_state.counters["prof_count_ns_x_q"] = pr.ns_count / q;
+    t_state.counters["prof_cover_ns_x_q"] = pr.ns_cover / q;
+    t_state.counters["prof_expand_ns_x_q"] = pr.ns_expand / q;
+    t_state.counters["prof_combine_ns_x_q"] = pr.ns_combine / q;
+    t_state.counters["prof_nodes_x_q"] = pr.n_nodes / q;
+    t_state.counters["prof_rawpos_x_q"] = pr.n_raw_positions / q;
+    t_state.counters["prof_docs_x_q"] = pr.n_docs / q;
+  }
+#endif
 
   // Optional correctness dump: each index's per-pattern doc set, one line per
   // pattern, in canonical (sorted) order so identical answer sets compare equal

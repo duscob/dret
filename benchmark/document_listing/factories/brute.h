@@ -5,11 +5,9 @@
 // Brute baselines bypass the construct-then-load auto-build pattern: their
 // underlying sri::RIndex / sri::SrIndexValidArea caches are managed
 // externally (in the query factory: via the lazy rIndex() / srIndex()
-// accessors; in bm_build_items: via DocListIdxBrute::construct() which
-// builds the locate-index from the raw data file). The factory.h facade
-// special-cases brute and does not call construct() on the index itself —
-// only load(). bm_build_items uses DocListIdxBrute<> directly with
-// BM_ConstructBruteIdx<> which exercises construct(idx, config).
+// accessors; in construct mode: via DocListIdxBrute::construct(), which builds
+// the locate index from the raw data file). The factory.h facade special-cases
+// brute and does not call construct() on the index itself — only load().
 //
 // Brute force over a raw-range backend (dret::DocListIdxBruteBackend: the
 // plain DA or the RLCSA) does follow construct-then-load, as the RMQ cores do.

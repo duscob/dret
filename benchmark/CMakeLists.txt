@@ -12,8 +12,6 @@ list(APPEND benchmark_LIBS ${CMAKE_THREAD_LIBS_INIT})
 #    cxx_executable_with_flags(query_doc_freq_index_bm "" "${benchmark_LIBS}" query_doc_freq_index_bm.cpp)
 cxx_executable_with_flags(bm_query_doc_freq_index "" "${benchmark_LIBS}" document_frequencies/bm_query_doc_freq_index.cpp)
 
-cxx_executable_with_flags(bm_build_items "" "${benchmark_LIBS}" document_listing/bm_build_items.cpp)
-cxx_executable_with_flags(bm_query_doc_list "" "${benchmark_LIBS}" document_listing/bm_query_doc_list.cpp)
 cxx_executable_with_flags(bm_doc_list "" "${benchmark_LIBS}" document_listing/bm_doc_list.cpp)
 cxx_executable_with_flags(migrate_cache_components "" "${benchmark_LIBS}" document_listing/migrate_cache_components.cpp)
 
@@ -31,7 +29,7 @@ cxx_executable_with_flags(migrate_cache_components "" "${benchmark_LIBS}" docume
 # long misdiagnosis in 2026-08. The test targets already declared this
 # dependency, which is exactly why the tests passed while the benchmarks were
 # quietly broken.
-foreach (_dret_bm bm_query_doc_freq_index bm_build_items bm_query_doc_list bm_doc_list)
+foreach (_dret_bm bm_query_doc_freq_index bm_doc_list)
     if (TARGET ${_dret_bm})
         add_dependencies(${_dret_bm} dsextract repair)
     endif ()
