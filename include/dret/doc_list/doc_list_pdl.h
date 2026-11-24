@@ -17,7 +17,7 @@
 // the four virtual hooks: count, computeCover[Full], getDocs, getDocSet.
 // computeCover stays a stub since PDL only needs the multi-range
 // computeCoverFull; the base's default cover machinery won't be exercised by
-// Search after the Task 12 rewrite.
+// Search.
 //
 
 #pragma once
@@ -169,7 +169,7 @@ class DocListIdxPDL
 
   // Single-range computeCover: PDL's multi-range covers are produced by
   // computeCoverFull below; the base's Search() does not call this hook
-  // after Task 12. Provide an empty cover so the pure virtual is
+  // at all. Provide an empty cover so the pure virtual is
   // satisfied and the base's default computeCoverFull (which delegates
   // to computeCover) is harmless.
   std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
@@ -292,8 +292,8 @@ void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend,
     const std::size_t n = da.size();
     const std::size_t n_doc = ReadNDoc<t_width>(t_config);
 
-    // PDL construction pipeline (Tasks 6-11) plus the bridge into the
-    // compact PDLTreeCore (Task 12 via build_pdl_core.h).
+    // PDL construction pipeline (pdl/tree_builder.h) plus the bridge into the
+    // compact PDLTreeCore (build_pdl_core.h).
     BuilderPool pool;
     // BuildSparseSuffixTree iterates i in [1, n] and reads lcp(n) as a
     // flush sentinel; sdsl::construct_lcp_kasai writes only n entries, so

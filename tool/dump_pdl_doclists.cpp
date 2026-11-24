@@ -1,7 +1,7 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/14/26.
 //
-// Standalone harness for Task 44 (drl parity smoke). Builds dret
+// Standalone harness for the drl parity smoke test. Builds dret
 // PDL Plain (DA backing) over a collection and dumps per-pattern
 // document sets to stdout in the same format as drl's
 // `build_docs_list` (RLCSA brute-force):

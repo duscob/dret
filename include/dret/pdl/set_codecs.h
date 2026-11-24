@@ -1,14 +1,14 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/10/26.
 //
-// Common API for PDL stored-set codecs (Tasks 14-17). Every codec
+// Common API for PDL stored-set codecs. Every codec
 // stores one document set per selected node, indexed by codec slot
 // (the rank-1 of the node's id in PDLTreeCore::selected_marker_).
 //
 // Concrete codecs land in later tasks:
-//   - PlainCodec  (Task 15) — sorted doc-id payload per slot.
-//   - RPCodec     (Task 16) — RePair-compressed payload, recursively expanded.
-//   - BCCodec     (Task 17) — dictionary-coded blocks; design fresh.
+//   - PlainCodec  — sorted doc-id payload per slot.
+//   - RPCodec     — RePair-compressed payload, recursively expanded.
+//   - BCCodec     — dictionary-coded blocks (web-graph bicliques, vnmextract).
 //
 // All three carry the all-doc sentinel: at build time a node whose
 // docs.size() reached n_doc is recorded as contains_all=true with no
@@ -77,7 +77,7 @@ void ExpandAllDoc(std::size_t t_n_doc, TReport&& t_report) {
 
 // Codec interface. The Build method's signature varies per codec
 // (different internal containers), so it's documented here rather than
-// concept-enforced; Tasks 15-17 each accept a (n_slots, get_set_at)
+// concept-enforced; the three codecs each accept a (n_slots, get_set_at)
 // pair, where get_set_at(slot) returns a StoredSet by const reference
 // or by value.
 //
@@ -125,11 +125,11 @@ class DummyCodec {
 };
 
 static_assert(SetCodec<DummyCodec>,
-              "DummyCodec must satisfy the SetCodec concept (Task 14 acceptance)");
+              "DummyCodec must satisfy the SetCodec concept");
 
 // PlainCodec — sorted-doc-id payload per slot, backed by grammar::Chunks
 // (a flat objects vector + per-chunk start positions). Templated on the
-// object and position container types so Task 18 can swap them for
+// object and position container types so they can be swapped for
 // compressed alternatives.
 //
 // All-doc sentinel: stored as a single-element chunk holding the value
@@ -234,7 +234,7 @@ static_assert(SetCodec<PlainCodec<>>,
 // might compress runs of n_doc into rules, but each slot's chunk
 // expansion still yields a single n_doc per all-doc slot.
 //
-// Templated on the underlying SLP and per-slot Chunks types so Task 18
+// Templated on the underlying SLP and per-slot Chunks types so they
 // can swap them; defaults match GCDA's chunk grammar setup so the same
 // type-hashed cache entries can be shared if needed.
 // TSLP defaults to grammar::BasicSLP<sdsl::int_vector<>>: the rules alone,

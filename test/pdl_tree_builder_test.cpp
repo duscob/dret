@@ -1,7 +1,7 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/10/26.
 //
-// Acceptance tests for Task 6 (LCP-based sparse suffix-tree construction)
+// Acceptance tests for BuildSparseSuffixTree (LCP-based sparse suffix-tree construction)
 // from docs/pdl_indexes_tasks.md. The hand-traced expected trees below
 // match what the classical stack/LCP algorithm produces on the listed
 // LCP arrays; trace them again before changing any expected value.
@@ -219,7 +219,7 @@ std::vector<std::pair<std::size_t, std::size_t>> CoverableRanges(const BuilderNo
   return ranges;
 }
 
-// Acceptance criterion (Task 8): every SA position belongs to a leaf-like
+// Acceptance criterion: every SA position belongs to a leaf-like
 // coverable unit. Verified by asserting CoverableRanges partitions [0, n).
 TEST(PDLTreeBuilder, InsertLeavesNullRootIsNoop) {
   BuilderPool pool;

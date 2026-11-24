@@ -2,10 +2,10 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 4/26/26.
 //
 // dret-side shim for grammar::CompactLOUDSSLP. The class itself lives
-// upstream (added in Phase A.0.3); this header only:
+// upstream (in the grammar library); this header only:
 //   - re-exports it as `dret::CompactLOUDSSLP` for downstream wiring,
-//   - declares the dret-side `collectSizes` overload (Task 7),
-//   - declares a dedicated `dret::ExpandSLP` overload (Task 6) that
+//   - declares the dret-side `collectSizes` overload,
+//   - declares a dedicated `dret::ExpandSLP` overload that
 //     bypasses the default recursive-descent path (which would walk
 //     LOUDS' O(left subtree) `operator[]` for every internal node) and
 //     instead delegates to `grammar::ExpandCompactSLPForward`, which

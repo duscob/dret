@@ -1,8 +1,8 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/10/26.
 //
-// PDL stored-set codec tests. Task 14 lands the SetCodec concept and a
-// DummyCodec reference impl; Tasks 15-17 extend this file with the real
+// PDL stored-set codec tests. Covers the SetCodec concept with a
+// DummyCodec reference impl, and the real
 // Plain / RP / BC codecs. The include below forces the in-header
 // static_assert(SetCodec<DummyCodec>) to fire — that's the compile-only
 // acceptance check from the task description.
@@ -80,7 +80,7 @@ TEST(PDLExpandAllDoc, EmitsRange) {
   EXPECT_THAT(seen, testing::ElementsAre(0u, 1u, 2u, 3u, 4u));
 }
 
-// PlainCodec tests (Task 15). Acceptance criterion: codec expansion
+// PlainCodec tests. Acceptance criterion: codec expansion
 // returns exact input sets and expands all-doc sentinel to 0..n_doc-1.
 
 static_assert(SetCodec<PlainCodec<>>);
@@ -196,7 +196,7 @@ TEST(PDLPlainCodec, GetSizeReportNonzero) {
   }
 }
 
-// RPCodec tests (Task 16). Acceptance: expansion matches PlainCodec for
+// RPCodec tests. Acceptance: expansion matches PlainCodec for
 // the same selected sets, including nested rules and the all-doc
 // sentinel.
 
@@ -305,7 +305,7 @@ TEST(PDLRPCodec, GetSizeReportNonzero) {
   }
 }
 
-// BCCodec tests (Tasks 17.B, 17.C, 17a). Acceptance: expansion matches
+// BCCodec tests. Acceptance: expansion matches
 // PlainCodec for the same selected sets, including the all-doc sentinel
 // and inputs where vnmextract finds bicliques to compress.
 
@@ -423,7 +423,7 @@ TEST(PDLBCCodec, GetSizeReportNonzero) {
   ASSERT_FALSE(report.empty());
 }
 
-// Task 36 additions — fill the empty/repeated/large gaps and pin the
+// Additions — fill the empty/repeated/large gaps and pin the
 // "expand never reports sentinel n_doc" invariant for every codec.
 
 // --- expansion invariants helper ---
@@ -431,7 +431,7 @@ TEST(PDLBCCodec, GetSizeReportNonzero) {
 // Calls Expand(slot) directly (no sort/dedup) so we observe the raw
 // stream the codec produces, then asserts every emitted value is
 // strictly less than n_doc. This is the load-bearing acceptance
-// criterion of Task 36: the all-doc sentinel must be expanded into
+// criterion: the all-doc sentinel must be expanded into
 // 0..n_doc-1, never leaked verbatim.
 template <typename TCodec>
 void ExpectNoSentinelEverEmitted(const TCodec& codec, std::size_t n_slots,

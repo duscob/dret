@@ -2,15 +2,15 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/10/26.
 //
 // Throwaway construction data for the PDL sparse suffix tree. These structs
-// only exist while the tree is being built (Tasks 6-11); after that the
+// only exist while the tree is being built (the stages below); after that the
 // tree is compacted into PDLTreeCore's serialized form and the builder is
 // discarded. They must not appear in query-time headers.
 //
 // The linked-list shape (first_child / next_sibling) mirrors drl's
 // PDLTreeNode (drl/include/drl/pdltree.h:192-238) so the stack/LCP port in
-// Task 6 stays close to the reference implementation. Differences from drl:
+// BuildSparseSuffixTree stays close to the reference implementation. Differences from drl:
 // SA ranges are half-open [sp, ep) (drl uses inclusive); the explicit
-// `selected` flag captures the storage-policy decision from Task 10.
+// `selected` flag captures the storage-policy decision of ApplyStoragePolicy.
 //
 
 #pragma once
@@ -36,7 +36,7 @@ struct BuilderNode {
   std::size_t ep = 0;
 
   // String depth (LCP value at the open of this interval). Leaves keep the
-  // depth of the deepest internal ancestor; the algorithm in Task 6 sets it
+  // depth of the deepest internal ancestor; BuildSparseSuffixTree sets it
   // when the leaf is created.
   std::size_t depth = 0;
 
@@ -47,26 +47,27 @@ struct BuilderNode {
   BuilderNode* first_child = nullptr;
   BuilderNode* next_sibling = nullptr;
 
-  // Document set computed bottom-up in Task 9. Empty when contains_all is
-  // true; Task 9 also collapses full sets into the all-doc sentinel.
+  // Document set computed bottom-up by ComputeDocSetsBottomUp. Empty when
+  // contains_all is true; it also collapses full sets into the all-doc sentinel.
   std::vector<std::size_t> docs;
   bool contains_all = false;
 
-  // Set by the storage policy in Task 10. Selected nodes get a stable
-  // node_id (Task 11) and end up in PDLTreeCore's stored-set codec.
+  // Set by the storage policy (ApplyStoragePolicy). Selected nodes get a stable
+  // node_id (AssignNodeIds) and end up in PDLTreeCore's stored-set codec.
   bool selected = false;
 
-  // Explicit leaves added by Task 8 to cover SA positions not represented
+  // Explicit leaves added by InsertExplicitLeaves to cover SA positions not represented
   // by internal LCP nodes after collapse. Distinguishing leaves from
   // single-position internals matters for some storage policies and for
   // navigation later on.
   bool is_explicit_leaf = false;
 
-  // Weighted size used by the OccurrenceWeighted selection rule in Task 10:
-  // sum of stored-set sizes from the subtree rooted here. 0 until Task 10.
+  // Weighted size used by the OccurrenceWeighted selection rule of
+  // ApplyStoragePolicy: sum of stored-set sizes from the subtree rooted here.
+  // 0 until then.
   std::size_t stored_documents = 0;
 
-  // Final id assigned in Task 11. kInvalidId until then.
+  // Final id assigned by AssignNodeIds. kInvalidId until then.
   std::size_t node_id = kInvalidId;
 
   BuilderNode() = default;
@@ -155,7 +156,7 @@ inline void appendChild(BuilderNode* parent, BuilderNode* child) {
 //
 // Returns the root node (depth 0, covering [0, t_n)) allocated from
 // t_pool. Internal nodes are added below the root. Block-size collapse
-// (Task 7) and explicit-leaf insertion (Task 8) are NOT part of this
+// (CollapseSubtreesByBlockSize) and explicit-leaf insertion (InsertExplicitLeaves) are NOT part of this
 // function — they are applied after construction. Returns nullptr for
 // t_n == 0.
 template <typename TLCPFn>
@@ -205,7 +206,7 @@ BuilderNode* BuildSparseSuffixTree(BuilderPool& t_pool, TLCPFn&& t_lcp, std::siz
 // sorted-unique. Full sets (size >= t_n_doc) are collapsed to the
 // all-doc sentinel: contains_all = true, docs cleared. The
 // stored_documents counter holds the pre-dedup occurrence weight used
-// by the OccurrenceWeighted selection rule in Task 10.
+// by the OccurrenceWeighted selection rule of ApplyStoragePolicy.
 //
 // The all-doc short-circuit at internal nodes (drop the partially-built
 // docs accumulator and copy the all-doc child's stored_documents) ports
@@ -215,7 +216,7 @@ BuilderNode* BuildSparseSuffixTree(BuilderPool& t_pool, TLCPFn&& t_lcp, std::siz
 // is harmless.
 //
 // t_get_doc must be callable as t_get_doc(i) returning the document id
-// at SA position i. Task 28 wires DA / GCDA / DGCDA in via construct();
+// at SA position i. construct(DocListIdxPDL&) wires the DA in;
 // for unit testing pass any std::function-like that maps a position to
 // a doc id.
 template <typename TGetDocAt>
@@ -278,7 +279,7 @@ void ComputeDocSetsBottomUp(BuilderNode* t_root, std::size_t t_n_doc, TGetDocAt&
 }
 
 // Set t_root and every descendant's `selected` flag according to t_policy.
-// Tasks 11-12 then assign stable ids and the compact navigation
+// AssignNodeIds and build_pdl_core.h then assign stable ids and the compact navigation
 // representation only over selected nodes.
 //
 // - StoragePolicy::OccurrenceWeighted: drl/src/pdltree.cpp:390 verbatim.
@@ -292,7 +293,7 @@ void ComputeDocSetsBottomUp(BuilderNode* t_root, std::size_t t_n_doc, TGetDocAt&
 //   leaf) nodes selected. Internal nodes stay in the tree for navigation
 //   but contribute no stored set.
 //
-// Requires Task 9 to have populated stored_documents, docs, and
+// Requires ComputeDocSetsBottomUp to have populated stored_documents, docs, and
 // contains_all on every node.
 inline void ApplyStoragePolicy(BuilderNode* t_root,
                                StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted,

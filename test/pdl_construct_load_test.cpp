@@ -3,8 +3,7 @@
 //
 // Typed construct/load round-trip tests for every PDL index variant
 // (Plain / RP / BC) crossed with every storage policy
-// (OccurrenceWeighted / StoreAllInternal / LeavesOnly), Task 33 of
-// docs/pdl_indexes_tasks.md. The codec is the type-list axis; the
+// (OccurrenceWeighted / StoreAllInternal / LeavesOnly). The codec is the type-list axis; the
 // policy is varied at runtime inside each typed test because
 // StoragePolicy is a constructor argument, not a template parameter.
 //

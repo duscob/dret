@@ -1,8 +1,7 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/13/26.
 //
-// PDL vs brute-force parity on a richer sample dataset, Task 42 of
-// docs/pdl_indexes_tasks.md. Task 34's pdl_search_test.cpp validates
+// PDL vs brute-force parity on a richer sample dataset. pdl_search_test.cpp validates
 // each variant on a five-doc unit fixture; this test moves to a
 // twenty-doc English-text fixture so the search path is exercised
 // with realistic suffix-tree topology and a wider mix of pattern

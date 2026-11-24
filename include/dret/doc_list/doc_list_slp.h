@@ -1,7 +1,7 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 4/26/26.
 //
-// Phase C: non-sampled GCDA index. Drives an SA-range search through a
+// Brute-GCDA: non-sampled GCDA index. Drives an SA-range search through a
 // bare `grammar::SLP<>` (no sampled tree, no precomputed covers, no
 // `GCChunks` doc-set storage), expanding the matched range and de-duping
 // the resulting doc-id stream. It also takes a sampled GCDA grammar (cached,

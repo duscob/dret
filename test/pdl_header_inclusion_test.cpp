@@ -1,25 +1,24 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/14/26.
 //
-// Header inclusion / two-phase lookup canary, Task 46 of
-// docs/pdl_indexes_tasks.md.
+// Header inclusion / two-phase lookup canary.
 //
 // Includes ONLY the public PDL Plain header — no extra transitive
 // helpers — and forces compile-time resolution of the call sites
 // that depend on declarations being visible at template-definition
 // point:
 //
-//   - PDLTreeCore<>::computeCoverFull        (Task 12 protected virtual,
+//   - PDLTreeCore<>::computeCoverFull        (protected virtual,
 //                                              called unqualified from
 //                                              DLSampledTreeScheme::Search)
 //   - dret::pdl::collectSizes(SizeReport&,
 //                              PlainCodec<>&,
-//                              prefix)         (Task 32 free-function
+//                              prefix)         (free-function
 //                                              overload, ADL on the codec
 //                                              type)
 //   - dret::pdl::collectSizes(SizeReport&,
 //                              PDLTreeCore<>&,
-//                              prefix)         (Task 32 free-function
+//                              prefix)         (free-function
 //                                              overload, ADL on the core
 //                                              type)
 //
