@@ -15,9 +15,13 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <map>
 #include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
+
+#include <sdsl/sd_vector.hpp>
 
 #include "dret/pdl/build_pdl_core.h"
 #include "dret/pdl/storage_policy.h"
@@ -349,8 +353,18 @@ TEST(PDLTreeCoreSerialize, SizeReportHasNonzeroCounters) {
   EXPECT_GT(total, 0u) << "report total bytes should be > 0";
 
   // Every navigation array entry should contribute nonzero bytes (the
-  // 9-node fixture populates each).
+  // 9-node fixture populates each). The rank and select supports of the
+  // default sd_vector marker are the exception: they hold only a pointer to
+  // the vector and serialize to 0 bytes, so they are checked against that.
+  using Marker = sdsl::sd_vector<>;
+  const std::map<std::string, std::size_t> kSupports = {
+      {"selected_marker_rank", sdsl::size_in_bytes(Marker::rank_1_type{})},
+      {"selected_marker_select", sdsl::size_in_bytes(Marker::select_1_type{})}};
   for (const auto& field : report) {
+    if (auto it = kSupports.find(field.name); it != kSupports.end()) {
+      EXPECT_EQ(field.bytes, it->second) << "field " << field.name;
+      continue;
+    }
     EXPECT_GT(field.bytes, 0u) << "field " << field.name << " is unexpectedly 0";
   }
 }
