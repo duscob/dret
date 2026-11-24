@@ -147,6 +147,8 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(doc_list_rmq_scheme_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_rmq_scheme_test.cpp)
     cxx_test_with_flags_and_args(cilcp_fanout_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/cilcp_fanout_test.cpp)
     cxx_test_with_flags_and_args(cilcp_random_diff_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/cilcp_random_diff_test.cpp)
+    # Standalone (its own main, no gtest): links only dret, for the sdsl headers.
+    cxx_test_with_flags(cmr20_traversal_diff_test "" "dret" ${PROJECT_SOURCE_DIR}/test/cmr20_traversal_diff_test.cpp)
     cxx_test_with_flags_and_args(pdl_tree_builder_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_tree_builder_test.cpp)
     cxx_test_with_flags_and_args(pdl_tree_core_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_tree_core_test.cpp)
     cxx_test_with_flags_and_args(pdl_set_codecs_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_set_codecs_test.cpp)
