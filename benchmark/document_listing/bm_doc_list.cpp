@@ -190,32 +190,32 @@ std::string PDLKeyPrefix(std::uint32_t bs, float sf, PDLStoragePolicy policy) {
 // GCDA / DGCDA / brute paths and are intentionally NOT deleted; what we wipe
 // is only the RMQ-core-specific data. rmq_n_doc is a one-element int_vector
 // that every RMQ build trivially regenerates, so we include it for cleanliness.
-std::vector<std::string> SadaLKeyPrefixes() {
+std::vector<std::string> SadaKeyPrefixes() {
   return {"sada_rmq_", "rmq_n_doc_"};
 }
-std::vector<std::string> IlcpLKeyPrefixes() {
+std::vector<std::string> IlcpKeyPrefixes() {
   return {"ilcp_rmq_", "ilcp_run_heads_", "rmq_n_doc_"};
 }
-std::vector<std::string> CilcpLKeyPrefixes() {
+std::vector<std::string> CilcpKeyPrefixes() {
   return {"cilcp_rmq_", "cilcp_run_heads_", "rmq_n_doc_"};
 }
 
-// Ownership runs the other way round from what the -L suffix suggests: the -L
-// cores OWN the shared structures, and each published core reuses them and wipes
-// only the extra array it adds. SADA reuses sada_rmq_ and owns sada_prev_doc_;
-// ILCP reuses ilcp_rmq_ + ilcp_run_heads_ and owns ilcp_run_values_; CILCP
-// reuses cilcp_rmq_ + cilcp_run_heads_ and owns cilcp_run_values_, since CILCP
-// and CILCP-L build the same CMR20 partition and share one cache for it.
+// The published (marking) cores OWN the shared structures, and each -V core
+// reuses them and wipes only the extra array it adds. SADA-V reuses sada_rmq_
+// and owns sada_prev_doc_; ILCP-V reuses ilcp_rmq_ + ilcp_run_heads_ and owns
+// ilcp_run_values_; CILCP-V reuses cilcp_rmq_ + cilcp_run_heads_ and owns
+// cilcp_run_values_, since CILCP-V and CILCP build the same CMR20 partition and
+// share one cache for it.
 //
-// A --rebuild of a published cell therefore does NOT rebuild the shared
-// partition. To force that, rebuild CILCP-L / ILCP-L / SADA-L too.
-std::vector<std::string> SadaKeyPrefixes() {
+// A --rebuild of a -V cell therefore does NOT rebuild the shared partition. To
+// force that, rebuild CILCP / ILCP / SADA too.
+std::vector<std::string> SadaValueKeyPrefixes() {
   return {"sada_prev_doc_", "rmq_n_doc_"};
 }
-std::vector<std::string> IlcpKeyPrefixes() {
+std::vector<std::string> IlcpValueKeyPrefixes() {
   return {"ilcp_run_values_", "rmq_n_doc_"};
 }
-std::vector<std::string> CilcpKeyPrefixes() {
+std::vector<std::string> CilcpValueKeyPrefixes() {
   return {"cilcp_run_values_", "rmq_n_doc_"};
 }
 
@@ -818,12 +818,12 @@ std::string NameSuffix(BareSLPVariant v) {
 
 const char* CoreName(fac::rmq::CoreKind c) {
   switch (c) {
-    case fac::rmq::CoreKind::SADA_L:  return "SADA-L";
-    case fac::rmq::CoreKind::ILCP_L:  return "ILCP-L";
-    case fac::rmq::CoreKind::CILCP_L: return "CILCP-L";
     case fac::rmq::CoreKind::SADA:    return "SADA";
     case fac::rmq::CoreKind::ILCP:    return "ILCP";
     case fac::rmq::CoreKind::CILCP:   return "CILCP";
+    case fac::rmq::CoreKind::SADA_V:  return "SADA-V";
+    case fac::rmq::CoreKind::ILCP_V:  return "ILCP-V";
+    case fac::rmq::CoreKind::CILCP_V: return "CILCP-V";
   }
   return "UNKNOWN";
 }
@@ -1109,12 +1109,12 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
   for (auto core : sw.core) {
     Factory<>::IndexEnum core_idx{};
     switch (core) {
-      case fac::rmq::CoreKind::SADA_L:    core_idx = Factory<>::IndexEnum::SADA_L;    break;
-      case fac::rmq::CoreKind::ILCP_L:    core_idx = Factory<>::IndexEnum::ILCP_L;    break;
-      case fac::rmq::CoreKind::CILCP_L:   core_idx = Factory<>::IndexEnum::CILCP_L;   break;
-      case fac::rmq::CoreKind::SADA:  core_idx = Factory<>::IndexEnum::SADA;  break;
-      case fac::rmq::CoreKind::ILCP:  core_idx = Factory<>::IndexEnum::ILCP;  break;
-      case fac::rmq::CoreKind::CILCP: core_idx = Factory<>::IndexEnum::CILCP; break;
+      case fac::rmq::CoreKind::SADA:    core_idx = Factory<>::IndexEnum::SADA;    break;
+      case fac::rmq::CoreKind::ILCP:    core_idx = Factory<>::IndexEnum::ILCP;    break;
+      case fac::rmq::CoreKind::CILCP:   core_idx = Factory<>::IndexEnum::CILCP;   break;
+      case fac::rmq::CoreKind::SADA_V:  core_idx = Factory<>::IndexEnum::SADA_V;  break;
+      case fac::rmq::CoreKind::ILCP_V:  core_idx = Factory<>::IndexEnum::ILCP_V;  break;
+      case fac::rmq::CoreKind::CILCP_V: core_idx = Factory<>::IndexEnum::CILCP_V; break;
     }
     for (auto gd : sw.get_doc) {
       const bool needs_bs_sf = (gd == GetDocEnum::SLP) || (gd == GetDocEnum::DSLP);
@@ -1144,13 +1144,13 @@ void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
           return {sw.dgcda_slp.begin(), sw.dgcda_slp.end()};
         return {bench::axes::DGCDASLPVariant::Default};
       }();
-      // ILCP / CILCP fan out across TRunValues; SADA fans across
-      // TPrevDoc; non-S cores ignore both axes. Use single-element default
+      // ILCP-V / CILCP-V fan out across TRunValues; SADA-V fans across
+      // TPrevDoc; the published cores ignore both axes. Use single-element default
       // lists for irrelevant axes so the inner loop doesn't duplicate
       // registrations.
-      const bool ilcp_s_like = (core == fac::rmq::CoreKind::ILCP ||
-                                core == fac::rmq::CoreKind::CILCP);
-      const bool sada_s = (core == fac::rmq::CoreKind::SADA);
+      const bool ilcp_s_like = (core == fac::rmq::CoreKind::ILCP_V ||
+                                core == fac::rmq::CoreKind::CILCP_V);
+      const bool sada_s = (core == fac::rmq::CoreKind::SADA_V);
       const auto& rv_list = ilcp_s_like
           ? sw.run_values
           : std::vector<bench::axes::RunValuesVariant>{bench::axes::RunValuesVariant::DV};
@@ -1605,21 +1605,6 @@ void RegisterConstructRMQ(const bench::spec::RMQSweep& sw, dret::Config& config,
   using namespace fac::rmq;
   for (auto core : sw.core) {
     switch (core) {
-      case CoreKind::SADA_L: {
-        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SadaLKeyPrefixes());
-        RegisterRMQOneCore<SadaLCore>("SADA-L", sw, config, cc.memory_trace, hook);
-        break;
-      }
-      case CoreKind::ILCP_L: {
-        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, IlcpLKeyPrefixes());
-        RegisterRMQOneCore<IlcpLCore>("ILCP-L", sw, config, cc.memory_trace, hook);
-        break;
-      }
-      case CoreKind::CILCP_L: {
-        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, CilcpLKeyPrefixes());
-        RegisterRMQOneCore<CilcpLCore>("CILCP-L", sw, config, cc.memory_trace, hook);
-        break;
-      }
       case CoreKind::SADA: {
         auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SadaKeyPrefixes());
         RegisterRMQOneCore<SadaCore>("SADA", sw, config, cc.memory_trace, hook);
@@ -1633,6 +1618,21 @@ void RegisterConstructRMQ(const bench::spec::RMQSweep& sw, dret::Config& config,
       case CoreKind::CILCP: {
         auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, CilcpKeyPrefixes());
         RegisterRMQOneCore<CilcpCore>("CILCP", sw, config, cc.memory_trace, hook);
+        break;
+      }
+      case CoreKind::SADA_V: {
+        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SadaValueKeyPrefixes());
+        RegisterRMQOneCore<SadaValueCore>("SADA-V", sw, config, cc.memory_trace, hook);
+        break;
+      }
+      case CoreKind::ILCP_V: {
+        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, IlcpValueKeyPrefixes());
+        RegisterRMQOneCore<IlcpValueCore>("ILCP-V", sw, config, cc.memory_trace, hook);
+        break;
+      }
+      case CoreKind::CILCP_V: {
+        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, CilcpValueKeyPrefixes());
+        RegisterRMQOneCore<CilcpValueCore>("CILCP-V", sw, config, cc.memory_trace, hook);
         break;
       }
     }
@@ -1855,7 +1855,7 @@ int main(int argc, char** argv) {
   // refuses a file without it, and migrate_result_names.py skips a file that
   // has it -- which is what stops the migrator renaming an already-correct
   // fresh run (its rewrite is not idempotent: SADA would become SADA-L).
-  benchmark::AddCustomContext("core_naming", "2026-09");
+  benchmark::AddCustomContext("core_naming", "2026-11");
 
   gflags::AllowCommandLineReparsing();
   gflags::ParseCommandLineFlags(&argc, &argv, false);

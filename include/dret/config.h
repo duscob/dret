@@ -88,7 +88,7 @@ constexpr std::string_view kPrevDoc = "prevDoc";
 // the key and the file keep the name of the RMQ cores, which cached it first, so existing caches load.
 constexpr std::string_view kNDoc = "rmq_n_doc";
 // Backward interleaved-LCP array (ComputeIlcpBackward). Collection-level and
-// shared by every ILCP-family core (ILCP / CILCP and their -L variants), so it
+// shared by every ILCP-family core (ILCP / CILCP and their -V variants), so it
 // is cached once instead of recomputed per core.
 constexpr std::string_view kIlcpArray = "ilcp_array";
 
@@ -147,11 +147,11 @@ struct Keys {
             },
         },
         // One namespace per RMQ family, holding every artefact that family can
-        // need. Each core takes the subset it uses: the -L cores stop at the
-        // partition (rmq, run_heads), the published cores additionally read the
-        // value array (prev_doc / run_values) that their value-based stop
-        // consults. There is no separate namespace for the published cores --
-        // they are the base case, not a variant of it.
+        // need. Each core takes the subset it uses: the published cores (SADA,
+        // ILCP, CILCP) stop by marking and read only the partition (rmq,
+        // run_heads); the -V variants additionally read the value array
+        // (prev_doc / run_values) that their value-based stop consults. The
+        // variants share the family's namespace and partition files.
         {
             conf::kSADA,
             {

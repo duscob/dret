@@ -75,11 +75,11 @@ class Factory {
     // initialisers in the benchmark binaries keep landing in the correct
     // fields. New code should prefer designated init.
     DGCDASLPVariant dgcda_slp = DGCDASLPVariant::Default;
-    // TRunValues axis for the published ILCP / CILCP cores. Ignored by
-    // every other index family. Default DV matches IlcpLikeFullCore's default.
+    // TRunValues axis for the value-rule ILCP-V / CILCP-V cores. Ignored by
+    // every other index family. Default DV matches IlcpLikeValueCore's default.
     RunValuesVariant run_values = RunValuesVariant::DV;
-    // TPrevDoc axis for the published SADA core. Ignored by every other family.
-    // Default IV matches SadaCore's default (prev_doc values are random
+    // TPrevDoc axis for the value-rule SADA-V core. Ignored by every other family.
+    // Default IV matches SadaValueCore's default (prev_doc values are random
     // SA positions; int_vector with bit_compress is the natural choice).
     PrevDocVariant prev_doc = PrevDocVariant::IV;
     // SA-Phi sampling rate for get_doc=sa_phi_sr (PDL/RMQ × SR-index
@@ -322,11 +322,11 @@ class Factory {
         break;
       }
 
-      case IndexEnum::SADA_L: {
+      case IndexEnum::SADA: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::SADA_L,
+            bench::factories::rmq::CoreKind::SADA,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
             bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
             t_config.sa_sampling);
@@ -334,11 +334,11 @@ class Factory {
         break;
       }
 
-      case IndexEnum::ILCP_L: {
+      case IndexEnum::ILCP: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::ILCP_L,
+            bench::factories::rmq::CoreKind::ILCP,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
             bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
             t_config.sa_sampling);
@@ -366,11 +366,11 @@ class Factory {
         break;
       }
 
-      case IndexEnum::CILCP_L: {
+      case IndexEnum::CILCP: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::CILCP_L,
+            bench::factories::rmq::CoreKind::CILCP,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
             bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
             t_config.sa_sampling);
@@ -378,11 +378,11 @@ class Factory {
         break;
       }
 
-      case IndexEnum::SADA: {
+      case IndexEnum::SADA_V: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::SADA,
+            bench::factories::rmq::CoreKind::SADA_V,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
             t_config.dgcda_slp, t_config.run_values, t_config.prev_doc,
             t_config.sa_sampling);
@@ -390,11 +390,11 @@ class Factory {
         break;
       }
 
-      case IndexEnum::ILCP: {
+      case IndexEnum::ILCP_V: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::ILCP,
+            bench::factories::rmq::CoreKind::ILCP_V,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
             t_config.dgcda_slp, t_config.run_values,
             bench::axes::PrevDocVariant::IV, t_config.sa_sampling);
@@ -402,11 +402,11 @@ class Factory {
         break;
       }
 
-      case IndexEnum::CILCP: {
+      case IndexEnum::CILCP_V: {
         auto [idx, size] = bench::factories::rmq::Make(
             std::ref(storage_), config_,
             t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::CILCP,
+            bench::factories::rmq::CoreKind::CILCP_V,
             t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
             t_config.dgcda_slp, t_config.run_values,
             bench::axes::PrevDocVariant::IV, t_config.sa_sampling);

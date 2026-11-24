@@ -35,24 +35,24 @@ namespace dret::rmq {
 // caller hands us, not about this function: the stop is licensed exactly when
 // an already-reported head implies the run's stored value is at least the
 // pattern length, so that the whole subrange is free of first occurrences.
-// That holds for SADA-L (one position per RMQ entry) and for ILCP-L (runs are
+// That holds for SADA (one position per RMQ entry) and for ILCP (runs are
 // ilcp-constant, so a run's value cannot be borrowed from outside the query
 // range). It holds for a document-aware merge only at runs CONTAINED in the
 // range; a run straddling an endpoint can hold a minimum attained outside it,
 // win the RMQ, report a repeat occurrence and stop the recursion with pending
-// documents still in the subrange. CILCP-L therefore does not weaken this
+// documents still in the subrange. CILCP therefore does not weaken this
 // stop — it restricts the range it recurses over to the contained runs and
-// expands the two boundary runs itself. See IlcpLikeLeanCore::findDocs.
+// expands the two boundary runs itself. See IlcpLikeCore::findDocs.
 //
 // The marker test IS the stop, so a run that fails it is neither reported nor
-// descended into. For SADA-L that loses nothing: one RMQ position carries one
+// descended into. For SADA that loses nothing: one RMQ position carries one
 // document. For the ILCP family a position stands for a whole RUN and report()
 // is also what fans the run out, so skipping it would drop any first occurrence
 // deeper in the run -- but a run cannot both fail the test and hold one. An
 // already-reported head forces the run's stored value to at least the pattern
 // length, and every position of such a run is then a repeat. That argument needs
 // the value to be a minimum over positions of the query range, which is why
-// CILCP-L hands us only the contained runs.
+// CILCP hands us only the contained runs.
 template <typename TRMQ, typename TGetDoc, typename TIsReported, typename TReport>
 void ListDocsRMQScheme(std::size_t bp,
                        std::size_t ep,
@@ -86,20 +86,22 @@ void ListDocsRMQSchemeVisit(std::size_t bp, std::size_t ep, const TRMQ& rmq, con
   ListDocsRMQSchemeVisit(k + 1, ep, rmq, visit);
 }
 
-// Canonical Sadakane-style LEFTMOST RMQ traversal: recursion stops by an
-// explicit value-based predicate, not by marker state. This is the algorithm
-// used by the SADA, ILCP and CILCP★ papers (Sadakane 2007; Gagie, Navarro,
-// Puglisi 2014; Cobas, Mäkinen, Rossi SPIRE 2020).
+// LEFTMOST RMQ traversal whose recursion stops by an explicit value-based
+// predicate, not by marker state: Muthukrishnan's rule (2002), with the array the
+// RMQ is built over stored. dret's -V variants (SADA-V, ILCP-V, CILCP-V) use it.
+// The published SADA, ILCP and CILCP (Sadakane 2007; Gagie et al. 2017; Cobas,
+// Makinen and Rossi, SPIRE 2020) stop by marking instead and store no values:
+// ListDocsRMQScheme above.
 //
 // stop_pred(k) -> bool returns true when the RMQ-min over the current subrange
 // cannot contribute any new leftmost-doc occurrence. Every predicate is a
 // question about k alone, against the ORIGINAL query range -- none of them
 // needs the current subrange start, which is why none is passed:
-//   - SADA:     prev_doc[k] >= sp (no position in the subrange has its previous
+//   - SADA-V:   prev_doc[k] >= sp (no position in the subrange has its previous
 //               occurrence before sp, so none is a first occurrence).
-//   - ILCP / CILCP: run_values[k] >= m (no position in the subrange has
+//   - ILCP-V / CILCP-V: run_values[k] >= m (no position in the subrange has
 //               ILCP < m, so Lemma 1 / Lemma 2 give no leftmost-doc here).
-// Testing SADA against the subrange start instead would still be sound but
+// Testing SADA-V against the subrange start instead would still be sound but
 // prunes less, and would let the traversal report a position that is first in
 // its subrange without being first in the range -- that is, a duplicate.
 //
@@ -114,8 +116,8 @@ void ListDocsRMQSchemeVisit(std::size_t bp, std::size_t ep, const TRMQ& rmq, con
 // De-duplicating the emission is therefore the caller's business, and every
 // core's report() does it. Measured over the differential corpus: an
 // is_reported gate here would have fired 0 times in 31059 reported runs for
-// ILCP, and 166 times in 31229 for CILCP, of which 5 carried a document that
-// nothing else would have listed. SADA would have fired 15185 times in 55480,
+// ILCP-V, and 166 times in 31229 for CILCP-V, of which 5 carried a document that
+// nothing else would have listed. SADA-V would have fired 15185 times in 55480,
 // all of them redundant emissions its report() now absorbs.
 template <typename TRMQ, typename TGetDoc, typename TStopPred, typename TReport>
 void ListDocsRMQSchemeDepth(std::size_t bp,

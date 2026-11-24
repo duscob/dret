@@ -81,8 +81,9 @@ def make_data(args):
     print(f"{dest / 'data'}: {len(out)} documents, {total} bytes, sha256 {sha256(dest / 'data')}")
 
 
-def write_spec(path, mode, dataset, sweep, reps):
+def write_spec(path, mode, dataset, sweep, reps, version):
     spec = {
+        "spec_version": version,
         "mode": mode,
         "dataset": dataset,
         "workload": {"reps": reps, "min_time": 0.0},
@@ -103,7 +104,8 @@ def build_manifest(args):
     binary = Path(args.bin).resolve()
     data = Path(args.data).resolve()
     patterns = Path(args.patterns).resolve()
-    sweep = json.loads(Path(args.sweep).read_text())["sweep"]
+    sweep_spec = json.loads(Path(args.sweep).read_text())
+    sweep, version = sweep_spec["sweep"], sweep_spec.get("spec_version", 1)
 
     work = Path(args.work).resolve() if args.work else Path(tempfile.mkdtemp(prefix="dret-regression-"))
     if work.exists() and any(work.iterdir()):
@@ -118,12 +120,12 @@ def build_manifest(args):
 
     dataset = {"dir": str(data.parent), "name": data.name, "data_width": 8}
     if not args.reuse:
-        write_spec(work / "construct.json", "construct", dataset, sweep, 1)
+        write_spec(work / "construct.json", "construct", dataset, sweep, 1, version)
         print(f"construct -> {index_dir} (log {work / 'construct.log'})", flush=True)
         run_bm(binary, work / "construct.json", index_dir, [], work / "construct.log")
 
     dataset = {"dir": str(index_dir), "name": data.name, "data_width": 8, "patterns": str(patterns)}
-    write_spec(work / "query.json", "query", dataset, sweep, args.reps)
+    write_spec(work / "query.json", "query", dataset, sweep, args.reps, version)
     print(f"query -> {work / 'query.out.json'} (log {work / 'query.log'})", flush=True)
     run_bm(binary, work / "query.json", index_dir,
            ["-print_results_dir", str(results_dir),

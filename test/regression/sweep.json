@@ -1,5 +1,6 @@
 {
   "comment": "One cell of every family, representation, backend, codec and policy bm_doc_list can build. The regression harness (regression.py) runs it on small collections and compares answers and sizes with a recorded baseline. Small parameters keep it fast; storing factor inf covers the leaves-only rule.",
+  "spec_version": 2,
   "sweep": [
     { "family": "brute", "kind": ["r-index", "sr-index", "da", "rlcsa", "count"], "sampling_size": [16] },
 
@@ -13,11 +14,11 @@
     { "family": "slp_ns", "tslp": ["iv", "raw", "dv", "vv", "diff", "diff-ev", "diff-dv", "diff-vv"], "block_size": [256] },
     { "family": "slp_ns", "tslp": [], "gcda_slp": ["light", "compact_louds"], "block_size": [256], "storing_factor": [32] },
 
-    { "family": "rmq", "core": ["sada-l", "ilcp-l", "cilcp-l", "sada", "ilcp", "cilcp"],
+    { "family": "rmq", "core": ["sada", "ilcp", "cilcp", "sada-v", "ilcp-v", "cilcp-v"],
       "get_doc": ["da", "slp", "slp_ns", "dslp", "sa_phi_r", "sa_phi_sr"], "sa_sampling": [8],
       "block_size": [256], "storing_factor": [4] },
-    { "family": "rmq", "core": ["ilcp", "cilcp"], "get_doc": ["da"], "run_values": ["iv", "vv"] },
-    { "family": "rmq", "core": ["sada"], "get_doc": ["da"], "prev_doc": ["dv", "vv"] },
+    { "family": "rmq", "core": ["ilcp-v", "cilcp-v"], "get_doc": ["da"], "run_values": ["iv", "vv"] },
+    { "family": "rmq", "core": ["sada-v"], "get_doc": ["da"], "prev_doc": ["dv", "vv"] },
 
     { "family": "pdl", "codec": ["plain", "rp", "bc"], "get_doc": ["da"],
       "policy": ["occurrence_weighted", "list_weighted", "leaves_only", "all_internal"],
