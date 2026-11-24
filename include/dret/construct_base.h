@@ -12,27 +12,11 @@
 #include <string>
 #include <system_error>
 
-// For decoding the std::system() wait status below. This pipeline is Linux-only
-// (irepair ships as a gcc Makefile), so the POSIX macros are always available.
-#include <sys/wait.h>
-
 #include <sdsl/bit_vectors.hpp>
 #include <sdsl/config.hpp>
 #include <sdsl/int_vector_buffer.hpp>
 
 #include "dret/config.h"
-#include "dret/repair.h"
-
-// The two balanced irepair builds, named for the width of a sequence position:
-// REPAIR_EXE_BAL32 is upstream's `bal/irepair`, REPAIR_EXE_BAL64 its
-// `large/bal/irepair`. RunRePair chooses between them per document array.
-#ifndef REPAIR_EXE_BAL32
-#define REPAIR_EXE_BAL32 nullptr
-#endif
-
-#ifndef REPAIR_EXE_BAL64
-#define REPAIR_EXE_BAL64 nullptr
-#endif
 
 namespace dret {
 
@@ -64,99 +48,6 @@ inline void CheckNonEmptyCacheFile(std::size_t t_size, const std::string& t_path
         "'. A cached artifact of size zero usually means an earlier construct was "
         "killed while writing it, leaving real data behind an unpatched header. "
         "Delete it and rebuild -- do not trust the rest of this cache.");
-  }
-}
-
-// RePair runs as an external process, and its exit status used to be discarded
-// at every call site. Check the input, the status, and the outputs here instead.
-// Precedent for the rc check: pdl/set_codecs.h, for vnmextract.
-namespace repair {
-
-// Whether this build can run RePair at all. The call sites skip grammar
-// construction when it cannot, so they ask this rather than testing one
-// particular binary -- which was the old `&& REPAIR_EXE` guard, and would now
-// silently mean "is the 32-bit one configured".
-inline constexpr bool kAvailable = (REPAIR_EXE_BAL32 != nullptr) && (REPAIR_EXE_BAL64 != nullptr);
-
-}  // namespace repair
-
-inline void RunRePair(const std::string& t_datafile, const repair::Options& t_options = {}) {
-  std::error_code ec;
-  const auto in_size = std::filesystem::file_size(t_datafile, ec);
-  if (ec || in_size == 0) {
-    throw std::runtime_error(
-        "RePair: refusing to compress '" + t_datafile +
-        "': " + (ec ? ec.message() : std::string("the file is empty")) +
-        ". An empty document array is the signature of a poisoned suffix-array cache.");
-  }
-
-  // Which binary, and with what <MB>, is decided from the size of *this* array.
-  // The policy itself lives in PlanRePair so it can be tested directly.
-  const auto elems = static_cast<std::uintmax_t>(in_size) / sizeof(int);
-  const auto plan = repair::PlanRePair(elems, t_options);
-
-  const char* exe = plan.use_64bit ? REPAIR_EXE_BAL64 : REPAIR_EXE_BAL32;
-  if (exe == nullptr) {
-    throw std::runtime_error(std::string("RePair: the ") + (plan.use_64bit ? "bal64" : "bal32") +
-                             " binary is not configured in this build (REPAIR_EXE_" +
-                             (plan.use_64bit ? "BAL64" : "BAL32") + " is unset).");
-  }
-
-  if (plan.lean_path) {
-    // Below the fast-path threshold irepair emits a different grammar. It stays
-    // valid and is reproducible, but it will not match the rest of a cache built
-    // at the derived value, so this must never pass unremarked.
-    std::cerr << "RePair: running with " << *plan.mb << " MB, below the "
-              << repair::FastPathMB(elems) << " MB this array needs for the fast path (peak RSS "
-              << "would be about " << repair::FastPathPeakMB(elems) << " MB). The memory-lean "
-              << "pass produces a different grammar from one built at the derived value: "
-              << t_datafile << std::endl;
-  }
-
-  std::string cmd = exe + (" " + t_datafile);
-  if (plan.mb.has_value()) {
-    cmd += " " + std::to_string(*plan.mb);
-  }
-
-  const int rc = std::system(cmd.c_str());
-  if (rc != 0) {
-    // std::system yields a wait status, not an exit code -- report the decoded
-    // form, because "killed by signal 9" (the OOM killer, the likely fate of
-    // irepair on the largest document arrays) and "exited 1" need different fixes.
-    std::string how;
-    if (rc == -1) {
-      how = "could not be started";
-    } else if (WIFSIGNALED(rc)) {
-      how = "was killed by signal " + std::to_string(WTERMSIG(rc));
-    } else if (WIFEXITED(rc)) {
-      how = "exited with code " + std::to_string(WEXITSTATUS(rc));
-    } else {
-      how = "returned wait status " + std::to_string(rc);
-    }
-    throw std::runtime_error("RePair: '" + cmd + "' " + how + ".");
-  }
-}
-
-// Validate the .R/.C pair whether it was just built or picked up from cache --
-// a poisoned grammar is otherwise reused forever, since the call sites skip
-// RePair whenever .R merely exists.
-//
-// Size is only decisive for .C: irepair emits a 4-byte .R even for empty input,
-// so an empty grammar is recognised by its 0-byte sequence file, not its rules.
-inline void CheckRePairGrammar(const std::string& t_datafile) {
-  std::error_code ec;
-  for (const auto* ext : {".R", ".C"}) {
-    const auto path = t_datafile + ext;
-    const auto size = std::filesystem::file_size(path, ec);
-    if (ec) {
-      throw std::runtime_error("RePair: cannot stat '" + path + "': " + ec.message() +
-                               ". The grammar for this document array is missing or unreadable.");
-    }
-    if (size == 0) {
-      throw std::runtime_error("RePair: '" + path +
-                               "' is empty, so the grammar encodes nothing. Delete the .R/.C pair "
-                               "for this document array and rebuild it.");
-    }
   }
 }
 

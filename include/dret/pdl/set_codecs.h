@@ -285,7 +285,7 @@ class RPCodec {
     // necessary because grammar/slp_metadata.h:202 does
     // back_inserter(objs_) unqualified — ADL finds std::back_inserter only
     // when objs_ lives in std (i.e., std::vector). Mirrors the staged
-    // construct() path GCDA uses (doc_list/doc_list_gcda.h:474-516).
+    // construct() path GCDA uses (construct(GCChunks...) in slp/gcda_grammar.h).
     // The intermediate is a full grammar::SLP<>: the encoder fills it through
     // the SLP wrapper, as GCDA's set construction does; the stored TSLP may
     // keep only the rules.
