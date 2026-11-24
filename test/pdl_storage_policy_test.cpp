@@ -45,7 +45,7 @@ struct PDLPlainInspector : PDLPlain {
   using PDLPlain::PDLPlain;
   using PDLPlain::computeCoverFull;
   using PDLPlain::count;
-  using PDLPlain::get_docs;
+  using PDLPlain::backend;
 };
 
 class DocListResultVector : public std::vector<std::size_t> {
@@ -144,7 +144,7 @@ TEST_F(PDLStoragePolicyCorrectnessTest, EachPolicyMatchesBruteAndExercisesMultiR
     // to produce single-range covers on a small fixture); probing the
     // SA directly removes that dependency. This pins the multi-range
     // path is reachable under each storage policy on this fixture.
-    const std::size_t n = pdl.get_docs().inner().size();
+    const std::size_t n = pdl.backend().size();
     ASSERT_GT(n, 0u);
 
     std::size_t max_raw_ranges_for_policy = 0;

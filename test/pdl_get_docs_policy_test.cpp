@@ -1,11 +1,10 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/13/26.
 //
-// DA / GCDA / DGCDA raw-range policy parity tests, Task 38 of
-// docs/pdl_indexes_tasks.md. The three PDLRawRangePolicy backings —
-// PDLGetDocsDA (plain int_vector), PDLGetDocsSLP (LightSLP-compressed),
-// PDLGetDocsDSLP (DifferentialLightSLP-compressed) — all expose the
-// same getDocs(sp, ep, report) contract. This test asserts they
+// Document-array backend parity tests (backend/backend.h). The backends
+// backend::PlainDA (plain int_vector), backend::GCDAGrammar (LightSLP),
+// backend::DiffGCDAGrammar (DifferentialLightSLP) and backend::SAPhi all expose
+// the same operator()(sp, ep, report) contract. This test asserts they
 // produce identical document-id sequences for every probed [sp, ep)
 // range against a small real dataset.
 //
@@ -25,16 +24,28 @@
 
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_pdl.h"
-#include "dret/pdl/get_docs.h"
-#include "dret/rmq/rmq_get_doc_policies.h"
+#include "dret/backend/da.h"
+#include "dret/backend/grammar.h"
+#include "dret/backend/rlcsa.h"
+#include "dret/backend/sa_phi.h"
 
 #include "base_test.h"
 
 namespace {
 
+// Every backend satisfies the contract (the compile-time half of these tests).
+static_assert(dret::backend::DocArrayBackend<dret::backend::PlainDA<>>);
+static_assert(dret::backend::DocArrayBackend<dret::backend::GCDAGrammar<>>);
+static_assert(dret::backend::DocArrayBackend<dret::backend::BareGrammar<>>);
+static_assert(dret::backend::DocArrayBackend<dret::backend::DiffGCDAGrammar<>>);
+static_assert(dret::backend::DocArrayBackend<dret::backend::SAPhi<>>);
+static_assert(dret::backend::DocArrayBackend<dret::backend::RLCSA<>>);
+static_assert(dret::backend::CountsPattern<dret::backend::RLCSA<>, dret::Alphabet<>::string_type>);
+static_assert(!dret::backend::CountsPattern<dret::backend::PlainDA<>, dret::Alphabet<>::string_type>);
+
 using ExternalGenericStorage = std::reference_wrapper<dret::GenericStorage>;
 
-class PDLGetDocsPolicyParityTest : public BaseConfigTests<8> {
+class BackendParityTest : public BaseConfigTests<8> {
  protected:
   void SetUp() override {
     Init(data_);
@@ -67,7 +78,7 @@ std::vector<std::size_t> CollectGetDocsSorted(const TPolicy& policy,
                                               std::size_t ep) {
   std::vector<std::size_t> out;
   auto report = [&out](std::size_t d) { out.push_back(d); };
-  policy.getDocs(sp, ep, report);
+  policy(sp, ep, report);
   std::sort(out.begin(), out.end());
   return out;
 }
@@ -76,12 +87,12 @@ std::vector<std::size_t> CollectGetDocsSorted(const TPolicy& policy,
 // the same multiset of doc ids as DA (the canonical reference) for every
 // probed [sp, ep). Also exercises the single-position path so a regression
 // in either path against the other is caught.
-TEST_F(PDLGetDocsPolicyParityTest, SAPhi_RangeMatchesDA_AndMatchesSinglePos) {
-  using DAPolicy    = dret::pdl::PDLGetDocsDA<ExternalGenericStorage>;
-  using SAPhiPolicy = dret::pdl::PDLGetDocsSAPhi_R<ExternalGenericStorage>;
+TEST_F(BackendParityTest, SAPhi_RangeMatchesDA_AndMatchesSinglePos) {
+  using DAPolicy    = dret::backend::PlainDA<ExternalGenericStorage>;
+  using SAPhiPolicy = dret::backend::SAPhi<ExternalGenericStorage>;
 
-  DAPolicy    da{    typename DAPolicy::Inner   {std::ref(storage_)} };
-  SAPhiPolicy saphi{ typename SAPhiPolicy::Inner{std::ref(storage_)} };
+  DAPolicy    da{    std::ref(storage_) };
+  SAPhiPolicy saphi{ std::ref(storage_) };
 
   // DA is a no-op (cache built by the bootstrap above). SAPhi builds the
   // r-index sidecar files (bwt_rle, samples, marks, mark_to_sample) the
@@ -89,10 +100,10 @@ TEST_F(PDLGetDocsPolicyParityTest, SAPhi_RangeMatchesDA_AndMatchesSinglePos) {
   construct(da,    config_);
   construct(saphi, config_);
 
-  da.inner().load(config_);
-  saphi.inner().load(config_);
+  da.load(config_);
+  saphi.load(config_);
 
-  const std::size_t n = da.inner().size();
+  const std::size_t n = da.size();
   ASSERT_GT(n, 0u);
 
   const std::vector<std::pair<std::size_t, std::size_t>> ranges = {
@@ -123,7 +134,7 @@ TEST_F(PDLGetDocsPolicyParityTest, SAPhi_RangeMatchesDA_AndMatchesSinglePos) {
     std::vector<std::size_t> per_pos;
     per_pos.reserve(ep - sp);
     for (std::size_t i = sp; i < ep; ++i) {
-      per_pos.push_back(saphi.getDoc(i));
+      per_pos.push_back(saphi(i));
     }
     std::sort(per_pos.begin(), per_pos.end());
     EXPECT_EQ(saphi_out, per_pos)
@@ -131,18 +142,18 @@ TEST_F(PDLGetDocsPolicyParityTest, SAPhi_RangeMatchesDA_AndMatchesSinglePos) {
   }
 }
 
-TEST_F(PDLGetDocsPolicyParityTest, DA_SLP_DSLP_ReportIdenticalDocsAcrossRanges) {
-  using DAPolicy   = dret::pdl::PDLGetDocsDA<ExternalGenericStorage>;
-  using SLPPolicy  = dret::pdl::PDLGetDocsSLP<ExternalGenericStorage>;
-  using DSLPPolicy = dret::pdl::PDLGetDocsDSLP<ExternalGenericStorage>;
+TEST_F(BackendParityTest, DA_SLP_DSLP_ReportIdenticalDocsAcrossRanges) {
+  using DAPolicy   = dret::backend::PlainDA<ExternalGenericStorage>;
+  using SLPPolicy  = dret::backend::GCDAGrammar<ExternalGenericStorage>;
+  using DSLPPolicy = dret::backend::DiffGCDAGrammar<ExternalGenericStorage>;
 
   // Build each policy with the same external storage. The PDL adapter
   // has no ctor accepting storage directly, so wrap an explicitly-
   // constructed inner. SLP/DSLP take (storage, block_size,
   // storing_factor); their defaults (512, 4) match the bootstrap's.
-  DAPolicy   da{   typename DAPolicy::Inner  {std::ref(storage_)} };
-  SLPPolicy  slp{  typename SLPPolicy::Inner {std::ref(storage_), 512, 4.0f} };
-  DSLPPolicy dslp{ typename DSLPPolicy::Inner{std::ref(storage_), 512, 4.0f} };
+  DAPolicy   da{   std::ref(storage_) };
+  SLPPolicy  slp{  std::ref(storage_), 512, 4.0f };
+  DSLPPolicy dslp{ std::ref(storage_), 512, 4.0f };
 
   // Construct: DA is a no-op (DA cache already exists). SLP/DSLP build
   // their LightSLP / DifferentialLightSLP cache entries from the DA.
@@ -151,11 +162,11 @@ TEST_F(PDLGetDocsPolicyParityTest, DA_SLP_DSLP_ReportIdenticalDocsAcrossRanges) 
   construct(dslp, config_);
 
   // Load each policy's inner so it sees the cached structure.
-  da.inner().load(config_);
-  slp.inner().load(config_);
-  dslp.inner().load(config_);
+  da.load(config_);
+  slp.load(config_);
+  dslp.load(config_);
 
-  const std::size_t n = da.inner().size();
+  const std::size_t n = da.size();
   ASSERT_GT(n, 0u);
 
   // Probe ranges: empty, full, prefix, suffix, mid-slice, single

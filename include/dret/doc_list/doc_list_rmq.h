@@ -31,13 +31,13 @@
 #include "sr-index/sr_index.h"
 
 #include "dret/collection.h"
+#include "dret/backend/da.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/rmq/doc_index_rmq_common.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/rmq/doc_list_rmq_scheme.h"
 #include "dret/index_base.h"
-#include "dret/rmq/rmq_get_doc_policies.h"
 #include "dret/size_report.h"
 
 namespace dret {
@@ -196,7 +196,7 @@ template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
-          typename TGetDoc = GetDocDA<TStorage, t_width>>
+          typename TGetDoc = backend::PlainDA<TStorage, t_width>>
 class SadaLCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
@@ -292,7 +292,7 @@ template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
-          typename TGetDoc = GetDocDA<TStorage, t_width>,
+          typename TGetDoc = backend::PlainDA<TStorage, t_width>,
           typename TPrevDoc = sdsl::int_vector<>>
 class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
@@ -409,7 +409,7 @@ template <IlcpLeanVariant kVariant,
           typename TBvRunHeads,
           typename TRMQ,
           typename TBvDocEnds,
-          typename TGetDoc = GetDocDA<TStorage, t_width>>
+          typename TGetDoc = backend::PlainDA<TStorage, t_width>>
 class IlcpLikeLeanCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
   using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
@@ -642,7 +642,7 @@ template <typename TStorage = GenericStorage,
           typename TBvRunHeads = sdsl::sd_vector<>,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
-          typename TGetDoc = GetDocDA<TStorage, t_width>>
+          typename TGetDoc = backend::PlainDA<TStorage, t_width>>
 using IlcpLCore = IlcpLikeLeanCore<IlcpLeanVariant::ILCP_L, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>;
 
 template <typename TStorage = GenericStorage,
@@ -650,7 +650,7 @@ template <typename TStorage = GenericStorage,
           typename TBvRunHeads = sdsl::sd_vector<>,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
-          typename TGetDoc = GetDocDA<TStorage, t_width>>
+          typename TGetDoc = backend::PlainDA<TStorage, t_width>>
 using CilcpLCore = IlcpLikeLeanCore<IlcpLeanVariant::CILCP_L, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>;
 
 //~~~~~~~
@@ -677,7 +677,7 @@ template <IlcpFullVariant kVariantS,
           typename TBvRunHeads,
           typename TRMQ,
           typename TBvDocEnds,
-          typename TGetDoc = GetDocDA<TStorage, t_width>,
+          typename TGetDoc = backend::PlainDA<TStorage, t_width>,
           typename TRunValues = sdsl::dac_vector<>>
 class IlcpLikeFullCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
@@ -849,7 +849,7 @@ template <typename TStorage = GenericStorage,
           typename TBvRunHeads = sdsl::sd_vector<>,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
-          typename TGetDoc = GetDocDA<TStorage, t_width>,
+          typename TGetDoc = backend::PlainDA<TStorage, t_width>,
           typename TRunValues = sdsl::dac_vector<>>
 using IlcpCore = IlcpLikeFullCore<IlcpFullVariant::ILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>;
 
@@ -858,7 +858,7 @@ template <typename TStorage = GenericStorage,
           typename TBvRunHeads = sdsl::sd_vector<>,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
-          typename TGetDoc = GetDocDA<TStorage, t_width>,
+          typename TGetDoc = backend::PlainDA<TStorage, t_width>,
           typename TRunValues = sdsl::dac_vector<>>
 using CilcpCore = IlcpLikeFullCore<IlcpFullVariant::CILCP, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>;
 

@@ -31,7 +31,10 @@
 #include "dret/doc_list/doc_list_pdl.h"
 #include "dret/doc_list/doc_list_pdl.h"
 #include "dret/doc_list/doc_list_pdl.h"
-#include "dret/pdl/get_docs.h"
+#include "dret/backend/da.h"
+#include "dret/backend/grammar.h"
+#include "dret/backend/rlcsa.h"
+#include "dret/backend/sa_phi.h"
 #include "dret/pdl/set_codecs.h"
 #include "sr-index/r_index.h"
 
@@ -42,7 +45,7 @@ namespace {
 using ExternalGenericStorage = std::reference_wrapper<dret::GenericStorage>;
 using DefaultAlphabet = dret::Alphabet<>;
 using DefaultCount = sri::RIndexCount<ExternalGenericStorage, DefaultAlphabet>;
-using DefaultGetDocs = dret::pdl::PDLGetDocsDA<ExternalGenericStorage,
+using DefaultGetDocs = dret::backend::PlainDA<ExternalGenericStorage,
                                                DefaultAlphabet::int_width>;
 
 class DocListResultVector : public std::vector<std::size_t> {

@@ -31,7 +31,10 @@
 #include "dret/doc_list/doc_list_brute.h"
 #include "dret/doc_list/doc_list_pdl.h"
 #include "dret/doc_list/doc_list_pdl.h"
-#include "dret/pdl/get_docs.h"
+#include "dret/backend/da.h"
+#include "dret/backend/grammar.h"
+#include "dret/backend/rlcsa.h"
+#include "dret/backend/sa_phi.h"
 #include "dret/pdl/storage_policy.h"
 
 #include "base_test.h"
@@ -51,7 +54,7 @@ using PlainSLP = dret::pdl::DocListIdxPDLPlain<
     ExternalGenericStorage,
     DefaultAlphabet,
     DefaultCount,
-    dret::pdl::PDLGetDocsSLP<ExternalGenericStorage, DefaultAlphabet::int_width>>;
+    dret::backend::GCDAGrammar<ExternalGenericStorage, DefaultAlphabet::int_width>>;
 
 class DocListResultVector : public std::vector<std::size_t> {
  public:

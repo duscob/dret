@@ -30,8 +30,10 @@
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/doc_list/doc_list_rmq.h"
-#include "dret/rmq/rmq_get_doc_policies.h"
-#include "dret/rmq/rmq_get_doc_rlcsa.h"
+#include "dret/backend/da.h"
+#include "dret/backend/grammar.h"
+#include "dret/backend/rlcsa.h"
+#include "dret/backend/sa_phi.h"
 
 #include "../axes.h"
 #include "dgcda.h"
@@ -62,32 +64,32 @@ using slp_ns::BareSLP_DiffVV;
 // matches gcda::SLP_Light, and GetDocDSLP's TSLP default matches the DGCDA
 // default — cache sharing depends on the exact template match.
 template <typename TStorage>
-using GetDocDA = dret::rmq::GetDocDA<TStorage, kWidth>;
+using GetDocDA = dret::backend::PlainDA<TStorage, kWidth>;
 
 template <typename TStorage, typename TSLP = SLP_Light>
-using GetDocSLP = dret::rmq::GetDocSLP<TStorage, kWidth, TSLP>;
+using GetDocSLP = dret::backend::GCDAGrammar<TStorage, kWidth, TSLP>;
 
 template <typename TStorage, typename TSLP = BareSLP_IV>
-using GetDocSLP_NS = dret::rmq::GetDocSLP_NS<TStorage, kWidth, TSLP>;
+using GetDocSLP_NS = dret::backend::BareGrammar<TStorage, kWidth, TSLP>;
 
 // TDSLP defaults to the DGCDA default so the kDSLP cache is shared with the
 // DGCDA build; other DGCDA variants (OTF/CRL/EV/DV/VV) select their own cache.
 template <typename TStorage, typename TDSLP = dgcda::SLP_Default>
-using GetDocDSLP = dret::rmq::GetDocDSLP<TStorage, kWidth, TDSLP>;
+using GetDocDSLP = dret::backend::DiffGCDAGrammar<TStorage, kWidth, TDSLP>;
 
-// SA-Phi backings — RLCSA-style baseline. The dret::rmq::GetDocSAPhi class is
+// SA-Phi backings — RLCSA-style baseline. The dret::backend::SAPhi class is
 // templated on the locate-index type so the same implementation serves both
 // r-index (dense, no sampling) and sr-index (subsampled, runtime sa_sampling).
 template <typename TStorage>
-using GetDocSAPhi_R  = dret::rmq::GetDocSAPhi<
+using GetDocSAPhi_R  = dret::backend::SAPhi<
     TStorage, kWidth, sri::RIndex<TStorage, dret::Alphabet<>>>;
 template <typename TStorage>
-using GetDocSAPhi_SR = dret::rmq::GetDocSAPhi<
+using GetDocSAPhi_SR = dret::backend::SAPhi<
     TStorage, kWidth, sri::SrIndexValidArea<TStorage, dret::Alphabet<>>>;
 
 // RLCSA backing — paper-faithful batched locate(range) + getSequenceForPosition.
 template <typename TStorage>
-using GetDocRLCSA = dret::rmq::GetDocRLCSA<TStorage, kWidth>;
+using GetDocRLCSA = dret::backend::RLCSA<TStorage, kWidth>;
 
 // Core template aliases. TGetDoc defaults to the DA backing.
 template <typename TStorage, typename TGetDoc = GetDocDA<TStorage>>

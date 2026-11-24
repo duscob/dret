@@ -84,7 +84,7 @@ TEST_F(DocListIdxPDLPlainSmokeTest, SearchMatchesExpected) {
 // the PDLTreeCore + count_idx + DA caches), then build a fresh Index
 // instance against an empty GenericStorage and call load() — that
 // exercises the disk round-trip via PDLTreeCore::load,
-// RIndexCount::load, and GetDocDA::load. Cannot use
+// RIndexCount::load, and backend::PlainDA::load. Cannot use
 // sdsl::store_to_cache(index, ...) here because the index's type-hash
 // path constructs Index{}, which is ill-formed when TStorage is
 // std::reference_wrapper.
