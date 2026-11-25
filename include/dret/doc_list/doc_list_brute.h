@@ -15,6 +15,7 @@
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/doc_list/doc_list_index.h"
+#include "dret/fields.h"
 #include "dret/index_base.h"
 
 namespace dret {
@@ -31,9 +32,10 @@ class GetDocBv;
 // the locate index, then the document ends; no size report (the benchmark falls back to the serialized
 // size).
 template <typename TStorage, typename TAlphabet, typename TLocateIdx, typename TGetDoc>
-class LocateCore : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
+class LocateCore
+    : public FieldsComponent<LocateCore<TStorage, TAlphabet, TLocateIdx, TGetDoc>, TStorage, TAlphabet::int_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
+  using Base = FieldsComponent<LocateCore, TStorage, TAlphabet::int_width>;
   using typename Base::size_type;
   using TPattern = typename TAlphabet::string_type;
 
@@ -55,26 +57,17 @@ class LocateCore : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_
 
   std::size_t n_doc() const { return get_doc_.n_doc(); }
 
-  void load(Config t_config) override {
-    locate_idx_.load(t_config);
-    get_doc_.load(t_config);
-  }
-
-  void load(std::istream& in, const JSON& t_keys) override {
-    locate_idx_.load(in);
-    get_doc_.load(in, t_keys);
-  }
-
-  using Base::load;
-
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return locate_idx_.serialize(out, child, "locate_idx") + get_doc_.serialize(out, child, "get_doc");
-  }
-
-  SizeReport GetSizeReport() const { return {}; }
-
  protected:
+  friend Base;
+
+  // The structures, in the order they are serialized and read back (dret/fields.h). Neither is sized:
+  // the benchmark then reports the serialized size (Brute-RI / Brute-SRI as published).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    return std::tuple{SriPart<SizeAs::kNone>("locate_idx", t_self.locate_idx_),
+                      Part<SizeAs::kNone>("get_doc", t_self.get_doc_)};
+  }
+
   TLocateIdx locate_idx_;
   TGetDoc get_doc_;
 };
@@ -131,28 +124,14 @@ void construct(LocateCore<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_core,
 
 
 template <typename TStorage, typename TBvDocEnds, uint8_t t_width>
-class GetDocBv : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class GetDocBv : public FieldsComponent<GetDocBv<TStorage, TBvDocEnds, t_width>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<GetDocBv, TStorage, t_width>;
   using typename Base::size_type;
 
-  GetDocBv(const TStorage& t_storage) : IndexBaseWithExternalStorage<TStorage, t_width>(t_storage) {}
+  GetDocBv(const TStorage& t_storage) : Base(t_storage) {}
 
   GetDocBv() = default;
-
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-
-    size_type written_bytes = 0;
-    // loadInner loads doc_end with the type hash, so it is stored under the hashed key (the rank is
-    // not: loadBVRank stores it under key_ + "_rank"). With the plain key the lookup missed and an
-    // empty bitvector was written, leaving the document ends out of Brute-RI's / Brute-SRI's size.
-    written_bytes += this->template serializeItem<TBvDocEnds>(key_ + "_" + sdsl::util::class_to_hash(TBvDocEnds{}),
-                                                              out, child, "doc_end");
-    written_bytes += this->template serializeRank<TBvDocEnds>(key_, out, child, "doc_end_rank");
-
-    return written_bytes;
-  }
 
   uint32_t operator()(uint32_t t_position) const {
     return get_doc_(t_position);
@@ -162,23 +141,24 @@ class GetDocBv : public IndexBaseWithExternalStorage<TStorage, t_width> {
   std::size_t n_doc() const { return n_doc_; }
 
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
-    using namespace dret::conf;
-    key_ = t_keys[kDocEnds].get<std::string>();
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    auto key = [](const JSON& k) { return k[conf::kDocEnds].template get<std::string>(); };
+    return std::tuple{Item("doc_end", t_self.doc_ends_, key), Rank<TBvDocEnds>("doc_end_rank", t_self.rank_, key)};
+  }
 
-    const auto doc_ends_cref = this->template loadItem<TBvDocEnds>(key_, t_source, true);
-    auto doc_ends_rank_cref = this->template loadBVRank<TBvDocEnds>(key_, t_source, true);
-    n_doc_ = doc_ends_rank_cref.get()(doc_ends_cref.get().size());
-    get_doc_ = [doc_ends_rank_cref](uint32_t t_position) {
-      return doc_ends_rank_cref.get()(t_position);
-    };
+  void OnLoad() {
+    n_doc_ = (*rank_)(doc_ends_->size());
+    get_doc_ = [rank = rank_](uint32_t t_position) { return (*rank)(t_position); };
   }
 
   //~~~~~~~
 
-  std::string key_;
+  const TBvDocEnds* doc_ends_ = nullptr;
+  const typename TBvDocEnds::rank_1_type* rank_ = nullptr;
   std::function<uint32_t(uint32_t)> get_doc_;
   std::size_t n_doc_ = 0;
 };

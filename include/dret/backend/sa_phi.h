@@ -160,18 +160,25 @@ class SAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
   void loadInner(TSource& t_source, const JSON& t_keys) override {
     using namespace sri::conf;
 
+    // In the order serialize() writes them, which a stream is read back in.
+    if (auto* in = std::get_if<std::reference_wrapper<std::istream>>(&t_source))
+      sdsl::read_member(sa_sampling_, in->get());
+
     // r-index data structures, the ones the r-index (count_idx, Brute-RI) loads too. Their files are
     // the standard sr-index ones (no type hash in the name); loadSriItem keys them in storage as
-    // sr-index does, so they are held once, not once per convention.
+    // sr-index does, so they are held once, not once per convention. The run-length BWT is not part
+    // of this backend's serialization: it is the count index's, which an index serializes and loads
+    // before its backend, into the same storage, where loadSriItem finds it.
     auto cref_bwt        = this->template loadSriItem<TBwtRLE>(KEY_BWT_RLE, t_source);
     auto cref_samples    = this->template loadSriItem<sdsl::int_vector<>>(KEY_BWT_RUN_LAST_TEXT_POS, t_source);
-    auto cref_m2s        = this->template loadSriItem<sdsl::int_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS_SORTED_TO_LAST_IDX, t_source);
 
     // Marks bitvector + rank/select supports (use loadItemPtr-backed BVRank/Select
     // to guarantee stable pointers across std::any reallocations).
     auto cref_marks      = this->template loadItem<sdsl::sd_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS, t_source, true);
     auto bv_marks_rank   = this->template loadBVRank<sdsl::sd_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS, t_source, true);
     auto bv_marks_select = this->template loadBVSelect<sdsl::sd_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS, t_source, true);
+    auto cref_m2s =
+        this->template loadSriItem<sdsl::int_vector<>>(KEY_BWT_RUN_FIRST_TEXT_POS_SORTED_TO_LAST_IDX, t_source);
     samples_ = &cref_samples.get();
     mark_to_sample_ = &cref_m2s.get();
     marks_ = &cref_marks.get();

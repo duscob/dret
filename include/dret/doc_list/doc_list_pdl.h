@@ -44,6 +44,7 @@
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/doc_list/doc_list_index.h"
 #include "dret/doc_list/sampled_tree_core.h"
+#include "dret/fields.h"
 #include "dret/index_base.h"
 #include "dret/pdl/build_pdl_core.h"
 #include "dret/pdl/set_codecs.h"
@@ -58,9 +59,9 @@ namespace dret::pdl {
 // block size, with the stored sets of its selected nodes under a storage policy (PDLTreeCore, cached as
 // components). Its cover can leave several uncovered ranges, between the selected nodes.
 template <typename TStorage, uint8_t t_width, typename TCore>
-class PDLTree : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class PDLTree : public FieldsComponent<PDLTree<TStorage, t_width, TCore>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<PDLTree, TStorage, t_width>;
   using typename Base::size_type;
   using Core = TCore;
 
@@ -98,24 +99,16 @@ class PDLTree : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   StoragePolicy policy() const { return policy_; }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return core_ ? core_->serialize(out, child, "core") : 0;
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (core_)
-      for (const auto& f : core_->GetSizeReport()) append(r, "core_" + f.name, f.bytes);
-    return r;
-  }
-
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
-    core_ = this->template loadComponentsPtr<TCore>(
-        CacheComponents(TCore{}, t_keys, block_size_, storing_factor_, policy_), t_source);
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    auto components = [&t_self](const JSON& k) {
+      return CacheComponents(TCore{}, k, t_self.block_size_, t_self.storing_factor_, t_self.policy_);
+    };
+    return std::tuple{Components<SizeAs::kReport>("core", t_self.core_, components, "core_")};
   }
 
   const TCore* core_ = nullptr;

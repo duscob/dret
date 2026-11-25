@@ -27,6 +27,7 @@
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_index.h"
 #include "dret/doc_list/sampled_tree_core.h"
+#include "dret/fields.h"
 #include "dret/index_base.h"
 #include "dret/slp/combined_slp_with_unit_cover.h"
 #include "dret/slp/compact_bp_slp.h"
@@ -46,9 +47,9 @@ class MergeSetsBinaryTreeFunctor;
 // backend's grammar (backend::GCDAGrammar, which also expands the uncovered ends), and the document
 // lists of its sampled nodes. The grammar is the backend, so it is built for the sampler's cell.
 template <typename TStorage, uint8_t t_width, typename TSets>
-class GrammarTree : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class GrammarTree : public FieldsComponent<GrammarTree<TStorage, t_width, TSets>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<GrammarTree, TStorage, t_width>;
   using typename Base::size_type;
   using Sets = TSets;
 
@@ -83,23 +84,16 @@ class GrammarTree : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   float storing_factor() const { return storing_factor_; }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return sets_ ? sets_->serialize(out, child, "slp_docs") : 0;
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (sets_) append(r, "slp_sets", sdsl::size_in_bytes(*sets_));
-    return r;
-  }
-
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
-    sets_ = this->template loadItemPtr<TSets>(
-        NodeDocListsKey<TSets>(t_keys, {block_size_, storing_factor_}), t_source, true);
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    auto key = [&t_self](const JSON& k) {
+      return NodeDocListsKey<TSets>(k, {t_self.block_size_, t_self.storing_factor_});
+    };
+    return std::tuple{Item("slp_sets", t_self.sets_, key)};
   }
 
   const TSets* sets_ = nullptr;
