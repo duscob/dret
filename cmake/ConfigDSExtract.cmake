@@ -31,6 +31,11 @@ ExternalProject_Add(
         BUILD_BYPRODUCTS ${_src}/vnmextract
 )
 
+# Rebuild vnmextract when a vendored source changes: the build step has no other input, so without
+# this a patched source was never compiled into an existing build tree.
+file(GLOB _dsextract_sources CONFIGURE_DEPENDS ${_vendored}/*.cpp ${_vendored}/*.h ${_vendored}/Makefile)
+ExternalProject_Add_StepDependencies(${ExternalProjectName} build ${_dsextract_sources})
+
 ExternalProject_Get_property(${ExternalProjectName} SOURCE_DIR)
 set(${ExternalProjectName}_SOURCE_DIR ${SOURCE_DIR})
 
