@@ -21,6 +21,8 @@
 // structure's breakdown, collectSizes, under a prefix), kReport (its own GetSizeReport, under a
 // prefix) or kNone. A null structure is serialized as an empty object and not sized.
 //
+// The reads and writes themselves go through dret/archive.h, which fixes the stream format.
+//
 // Fields(self) is a static template over the component, const for serialize and the size report,
 // mutable for the load, so the same list reads and writes the members. A component that derives
 // something from what it loaded does so in OnLoad().
@@ -41,6 +43,7 @@
 #include <sdsl/int_vector.hpp>
 #include <sdsl/io.hpp>
 
+#include "dret/archive.h"
 #include "dret/config.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"
@@ -193,14 +196,13 @@ class FieldsComponent : public IndexBaseWithExternalStorage<TStorage, t_width> {
   static size_type serializeField(const fields::Ref<kKind, kSizeAs, TBv, TPtr, TKey>& t_f,
                                   std::ostream& out,
                                   sdsl::structure_tree_node* v) {
-    using T = Pointee<TPtr>;
-    return t_f.ptr ? sdsl::serialize(*t_f.ptr, out, v, t_f.name) : sdsl::serialize_empty_object<T>(out, v, t_f.name);
+    return archive::WriteOrEmpty<Pointee<TPtr>>(t_f.ptr, out, v, t_f.name);
   }
 
   template <typename TN>
   static size_type serializeField(const fields::NDocField<TN>& t_f, std::ostream& out, sdsl::structure_tree_node* v) {
     sdsl::int_vector<64> n_doc(1, t_f.n);
-    return sdsl::serialize(n_doc, out, v, "n_doc");
+    return archive::Write(n_doc, out, v, "n_doc");
   }
 
   template <SizeAs kSizeAs, bool kWithKeys, typename TPart>

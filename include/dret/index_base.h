@@ -14,6 +14,7 @@
 
 #include <sdsl/io.hpp>
 
+#include "dret/archive.h"
 #include "dret/cache_components.h"
 #include "dret/config.h"
 
@@ -99,7 +100,7 @@ class IndexBaseWithExternalStorage {
           [&](auto&& tt_source) {
             using TS = std::decay_t<decltype(tt_source.get())>;
             if constexpr (std::is_base_of_v<std::istream, TS>) {
-              sdsl::load(*mutable_item, tt_source.get());
+              archive::Read(*mutable_item, tt_source.get());
             } else if (!LoadComponents(*mutable_item, t_components, tt_source.get())) {
               throw std::invalid_argument("Cache components not found (Key: '" + t_components.front().key + "')");
             }
@@ -127,7 +128,7 @@ class IndexBaseWithExternalStorage {
 
   template <typename TItem>
   auto load(TItem& t_item, std::istream& t_in, const std::string& t_key, bool) {
-    sdsl::load(t_item, t_in);
+    archive::Read(t_item, t_in);
   }
 
   template <typename TItem>
@@ -191,34 +192,6 @@ class IndexBaseWithExternalStorage {
     }
 
     return std::cref(*item_select);
-  }
-
-  template <typename TItem>
-  std::size_t serializeItem(const std::string& t_key,
-                            std::ostream& out,
-                            sdsl::structure_tree_node* v,
-                            const std::string& name) const {
-    auto item = get<TItem>(storage_, t_key);
-    if (item) {
-      return sdsl::serialize(*item, out, v, name);
-    }
-    return sdsl::serialize_empty_object<TItem>(out, v, name);
-  }
-
-  template <typename TItem, typename TItemRank = typename TItem::rank_1_type>
-  std::size_t serializeRank(const std::string& t_key,
-                            std::ostream& out,
-                            sdsl::structure_tree_node* v,
-                            const std::string& name) const {
-    return serializeItem<TItemRank>(t_key + "_rank", out, v, name);
-  }
-
-  template <typename TItem, typename TItemSelect = typename TItem::select_1_type>
-  std::size_t serializeSelect(const std::string& t_key,
-                              std::ostream& out,
-                              sdsl::structure_tree_node* v,
-                              const std::string& name) const {
-    return serializeItem<TItemSelect>(t_key + "_select", out, v, name);
   }
 
   //********************

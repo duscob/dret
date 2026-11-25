@@ -48,6 +48,7 @@ set(SOURCE_FILES
         # Root: project config + foundational base classes used by every family.
         ${PROJECT_SOURCE_DIR}/include/dret/config.h
         ${PROJECT_SOURCE_DIR}/include/dret/index_base.h
+        ${PROJECT_SOURCE_DIR}/include/dret/archive.h
         ${PROJECT_SOURCE_DIR}/include/dret/fields.h
         ${PROJECT_SOURCE_DIR}/include/dret/construct_base.h
         ${PROJECT_SOURCE_DIR}/include/dret/size_report.h

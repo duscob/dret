@@ -60,6 +60,7 @@
 #include "sr-index/sampling.h"            // sri::SampleValidatorDefault
 #include "sr-index/sequence_ops.h"        // sri::CircularPredecessor, RandomAccessFor*
 
+#include "dret/archive.h"
 #include "dret/collection.h"
 #include "dret/backend/backend.h"
 #include "dret/config.h"
@@ -132,14 +133,14 @@ class SAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     size_type written_bytes = 0;
-    written_bytes += sdsl::write_member(sa_sampling_, out, child, "sa_sampling");
-    written_bytes += SerializeOrEmpty(samples_, out, child, "samples");
-    written_bytes += SerializeOrEmpty(marks_, out, child, "marks");
-    written_bytes += SerializeOrEmpty(marks_rank_, out, child, "marks_rank");
-    written_bytes += SerializeOrEmpty(marks_select_, out, child, "marks_select");
-    written_bytes += SerializeOrEmpty(mark_to_sample_, out, child, "mark_to_sample");
-    written_bytes += SerializeOrEmpty(doc_ends_, out, child, "doc_ends");
-    written_bytes += SerializeOrEmpty(doc_ends_rank_, out, child, "doc_ends_rank");
+    written_bytes += archive::WriteValue(sa_sampling_, out, child, "sa_sampling");
+    written_bytes += archive::WriteOrEmpty(samples_, out, child, "samples");
+    written_bytes += archive::WriteOrEmpty(marks_, out, child, "marks");
+    written_bytes += archive::WriteOrEmpty(marks_rank_, out, child, "marks_rank");
+    written_bytes += archive::WriteOrEmpty(marks_select_, out, child, "marks_select");
+    written_bytes += archive::WriteOrEmpty(mark_to_sample_, out, child, "mark_to_sample");
+    written_bytes += archive::WriteOrEmpty(doc_ends_, out, child, "doc_ends");
+    written_bytes += archive::WriteOrEmpty(doc_ends_rank_, out, child, "doc_ends_rank");
     return written_bytes;
   }
 
@@ -162,7 +163,7 @@ class SAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
     // In the order serialize() writes them, which a stream is read back in.
     if (auto* in = std::get_if<std::reference_wrapper<std::istream>>(&t_source))
-      sdsl::read_member(sa_sampling_, in->get());
+      archive::ReadValue(sa_sampling_, in->get());
 
     // r-index data structures, the ones the r-index (count_idx, Brute-RI) loads too. Their files are
     // the standard sr-index ones (no type hash in the name); loadSriItem keys them in storage as
@@ -310,11 +311,6 @@ class SAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
   std::size_t sa_sampling_ = 0;
 
   // The shared structures read above (owned by the storage), for serialize() and GetSizeReport().
-  template <typename TItem>
-  static size_type SerializeOrEmpty(const TItem* t_item, std::ostream& out, sdsl::structure_tree_node* v,
-                                    const std::string& name) {
-    return t_item ? sdsl::serialize(*t_item, out, v, name) : sdsl::serialize_empty_object<TItem>(out, v, name);
-  }
   const sdsl::int_vector<>* samples_ = nullptr;
   const sdsl::int_vector<>* mark_to_sample_ = nullptr;
   const sdsl::sd_vector<>* marks_ = nullptr;
