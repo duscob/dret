@@ -28,6 +28,24 @@
 
 #include "factories/cells.h"
 
+// The length of the int_vector stored in t_file (the BWT: the text length), read from its header.
+//
+// Not through sdsl::int_vector_buffer, which rewrites the file whenever it is closed: its constructor
+// opens the output stream whatever the requested mode, and close() writes the header back. Asking a
+// read-only-looking buffer for its size touched the file, harmless in content but it dirtied mtimes,
+// which is what "did this stage build anything?" checks read. (sri's constructRIndex did the same
+// for every index over an r-index, built or not, until it read the length only when it needed it.)
+// Mirrors int_vector_buffer's arithmetic: read_header yields the length in bits and the stored width.
+inline std::size_t ReadVectorLength(const std::string& t_file) {
+  std::ifstream in(t_file, std::ios::binary);
+  if (!in) throw std::runtime_error("cannot open '" + t_file + "'");
+  uint64_t bits = 0;
+  uint8_t width = 0;
+  sdsl::int_vector<0>::read_header(bits, width, in);
+  if (width == 0) throw std::runtime_error("'" + t_file + "' reports width 0");
+  return bits / width;
+}
+
 template <uint8_t t_width = 8>
 class Factory {
  public:
@@ -37,37 +55,7 @@ class Factory {
   };
 
   explicit Factory(dret::Config t_config) : config_{std::move(t_config)} {
-    // Sequence length, read straight from the BWT's int_vector header.
-    //
-    // This used to be `int_vector_buffer<t_width> buf(...); seq_size_ = buf.size();`
-    // which REWROTE the file on every query run. sdsl::int_vector_buffer's
-    // constructor forces the output stream open regardless of the requested
-    // mode --- `m_ofile.open(m_filename, mode | std::ios::out | std::ios::binary)`
-    // --- and its destructor calls close(), which unconditionally does
-    // write_block() and rewrites the header. So merely asking a read-only-looking
-    // buffer for its size touched bwt_data.sdsl every time a Factory was built.
-    //
-    // Harmless in content (the BWT is deterministic, and the 8 collections whose
-    // copies happened to be read-only completed identically with the write
-    // failing), but it dirtied mtimes, which is what makes "did the query stage
-    // build anything?" checks unreliable --- they compare filenames, not mtimes.
-    //
-    // Mirrors int_vector_buffer's own arithmetic: read_header yields the length
-    // in BITS and the stored width, and m_size = bits / width.
-    {
-      const auto bwt_file = sdsl::cache_file_name(sdsl::key_bwt_trait<t_width>::KEY_BWT, config_);
-      std::ifstream bwt_in(bwt_file, std::ios::binary);
-      if (!bwt_in) {
-        throw std::runtime_error("Factory: cannot open BWT file '" + bwt_file + "'");
-      }
-      uint64_t bits = 0;
-      uint8_t stored_width = 0;
-      sdsl::int_vector<0>::read_header(bits, stored_width, bwt_in);
-      if (stored_width == 0) {
-        throw std::runtime_error("Factory: BWT '" + bwt_file + "' reports width 0");
-      }
-      seq_size_ = bits / stored_width;
-    }
+    seq_size_ = ReadVectorLength(sdsl::cache_file_name(sdsl::key_bwt_trait<t_width>::KEY_BWT, config_));
   }
 
   // The index of t_cell, made once per run (a benchmark runs once per repetition).

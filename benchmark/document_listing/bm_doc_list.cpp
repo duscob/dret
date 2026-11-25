@@ -39,7 +39,6 @@
 #include <gflags/gflags.h>
 
 #include <sdsl/config.hpp>
-#include <sdsl/int_vector_buffer.hpp>
 #include <sdsl/io.hpp>
 #include <sdsl/memory_management.hpp>
 
@@ -445,8 +444,7 @@ auto BM_Query = [](benchmark::State& t_state,
 void SetupConstructCounters(benchmark::State& t_state, const dret::Config& t_config,
                              std::uint32_t bs, float sf) {
   using namespace sri::conf;
-  sdsl::int_vector_buffer<> buf(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
-  t_state.counters["n"] = buf.size();
+  t_state.counters["n"] = ReadVectorLength(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
   if (bs > 0) t_state.counters["bs"] = bs;
   if (sf > 0) t_state.counters["sf"] = sf;
 }
