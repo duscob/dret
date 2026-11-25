@@ -41,7 +41,7 @@ Missing axes default to the family's canonical value (`light`, `default`, `iv`, 
 ./bm_doc_list --spec=example_sweep.json --benchmark_out_format=csv --benchmark_out=results.csv
 ```
 
-Switch the spec's `mode` to `"construct"` to time `construct()` instead of `Search()` — same sweep, same expansion logic.
+Switch the spec's `mode` to `"construct"` to time `construct()` instead of `Search()`. Both modes register the same cells under the same names (`FAMILY[k=v|...]`): a family turns its sweep block into cells once (`factories/cells.h`), and construct mode builds every index the query mode would load.
 
 ### Construct-mode `rebuild` (clean timing)
 
@@ -68,7 +68,7 @@ Set `"memory_trace": true` in the workload block to make `bm_doc_list` emit, for
 - `construction-<bench>.html` and `construction-<bench>.json` — the sdsl memory-monitor traces (an event-by-event log of allocations during `construct()`).
 - `sizes-<bench>.json` — the per-component size breakdown produced by `GetSizeReport()` (also available as inline GBenchmark counters, but the JSON sidecar is convenient for post-processing).
 
-Files land in the working directory keyed by the GBenchmark cell name. Gated on the spec flag so a large sweep doesn't litter the working directory. Default is `false`.
+Files land in the working directory keyed by the benchmark name, sanitized for a file name (every character but `[A-Za-z0-9.-]` becomes `_`). Gated on the spec flag so a large sweep doesn't litter the working directory. Default is `false`.
 
 ## Output formats (Google Benchmark native)
 
@@ -85,17 +85,20 @@ Each output row carries the per-component size breakdown emitted by `GetSizeRepo
 
 ```
 benchmark/document_listing/
-├── axes.h                 — six axis enums at namespace bench::axes scope
+├── axes.h                 — the axis enums at namespace bench::axes scope
 ├── enum_traits.h          — EnumTraits<E>::ParseCSV / ::Name, plus ParseCSV<E>(csv) helper
 ├── spec.h                 — JSON spec types + parser for bm_doc_list
-├── factory.h              — Factory<>: builds + caches index instances; auto-builds missing cache artefacts
-├── factories/             — one header per family (brute, gcda, dgcda, slp_ns, rmq, pdl): type aliases + Make()
-│   ├── query.h            — the query-mode entry points Factory<> calls
-│   └── *.cpp              — one source file per family (RMQ per core, PDL per codec) defining them
-├── bm_doc_list.cpp        — the JSON-spec-driven benchmark binary (registration, query and construct kernels)
+├── factory.h              — Factory<>: query mode's shared storage; builds (if missing) and loads each cell's index
+├── factories/
+│   ├── cells.h            — Cell (name, how to make the index, rebuild prefixes) and Cells(sweep block) per family
+│   ├── names.h            — the FAMILY[k=v|...] name helpers
+│   ├── <family>.h         — the family's types (brute, gcda, dgcda, slp_ns, rmq, pdl)
+│   └── <family>.cpp       — its cells: enumeration, names, types (RMQ: rmq.cpp + rmq_<core>.cpp; PDL: pdl.cpp + pdl_<codec>.cpp)
+├── bm_doc_list.cpp        — the driver: spec, one query kernel, one construct kernel, registration of the cells
 └── example_sweep.json     — annotated example spec for bm_doc_list
 ```
 
-To add a new axis value (e.g. a new TSLP variant): one line in `axes.h`, one arm in `enum_traits.h`'s `EnumTraits<>` specialisation, one alias + one Make() arm in the relevant `factories/<family>.h`, and the register-block in `bm_doc_list.cpp`. A new family also gets an entry point in `factories/query.h`, its source file, and that file in `bm_doc_list_query_sources` (`benchmark/CMakeLists.txt`).
+To add a new axis value (e.g. a new TSLP variant): one line in `axes.h`, one arm in `enum_traits.h`'s `EnumTraits<>` specialisation, an alias in the family's `factories/<family>.h`, and its arm and name keys in the family's `.cpp`; both modes pick it up. A new family adds its sweep block to `spec.h`, a `Cells()` overload in `factories/cells.h`, its source file, and that file in `bm_doc_list_family_sources` (`benchmark/CMakeLists.txt`).
 
-Each family's query code is compiled in its own source file so that a change to one family cannot move another's times through GCC's inlining choices (in one large translation unit it did, by a few percent; see `factories/query.h`).
+Each family is compiled in its own source file so that a change to one family cannot move another's query times through GCC's inlining choices (in one large translation unit it did, by a few percent; see `factories/cells.h`).
+

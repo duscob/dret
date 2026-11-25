@@ -1,7 +1,7 @@
 //
-// DGCDA factory header — type aliases + Make() for the
-// dret::dgcda::DocListIdxDGCDA family (the alias of DocListIdxGCDA with
-// TSLP defaulting to DifferentialLightSLP<>).
+// DGCDA factory header: the differential grammar types of the
+// dret::dgcda::DocListIdxDGCDA family (DocListIdxGCDA with TSLP defaulting to
+// DifferentialLightSLP<>). Its cells are in dgcda.cpp.
 //
 
 #pragma once
@@ -80,49 +80,5 @@ using Idx = dret::dgcda::DocListIdxDGCDA<
     sri::RIndexCount<TStorage, dret::Alphabet<>>,
     TSLP,
     TSets>;
-
-// Factory-path entry. Builds + loads a typed-index variant selected by the
-// DGCDASLPVariant axis and returns the type-erased DocListIndex<> handle.
-template <typename TStorage>
-std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-Make(TStorage t_storage,
-     dret::Config& t_config,
-     uint32_t t_block_size,
-     float t_storing_factor,
-     bench::axes::DGCDASLPVariant t_slp,
-     bench::axes::GCDASetsCodec t_sets = bench::axes::GCDASetsCodec::RP) {
-  std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t> result;
-
-  auto build = [&](auto type_tag) {
-    using TIndex = typename decltype(type_tag)::type;
-    auto idx = std::make_shared<TIndex>(t_storage, t_block_size, t_storing_factor);
-    construct(*idx, t_config);
-    idx->load(t_config);
-    result = {idx, sdsl::size_in_bytes(*idx)};
-  };
-
-  auto by_slp = [&]<typename TSets>() {
-    struct T_Default { using type = Idx<TStorage, SLP_Default, TSets>; };
-    struct T_OTF     { using type = Idx<TStorage, SLP_OTF, TSets>; };
-    struct T_CRL     { using type = Idx<TStorage, SLP_CRL, TSets>; };
-    struct T_EV      { using type = Idx<TStorage, SLP_EV, TSets>; };
-    struct T_DV      { using type = Idx<TStorage, SLP_DV, TSets>; };
-    struct T_VV      { using type = Idx<TStorage, SLP_VV, TSets>; };
-    switch (t_slp) {
-      case bench::axes::DGCDASLPVariant::OTF: build(T_OTF{}); break;
-      case bench::axes::DGCDASLPVariant::CRL: build(T_CRL{}); break;
-      case bench::axes::DGCDASLPVariant::EV:  build(T_EV{});  break;
-      case bench::axes::DGCDASLPVariant::DV:  build(T_DV{});  break;
-      case bench::axes::DGCDASLPVariant::VV:  build(T_VV{});  break;
-      case bench::axes::DGCDASLPVariant::Default:
-      default:                                build(T_Default{}); break;
-    }
-  };
-  if (t_sets == bench::axes::GCDASetsCodec::Plain)
-    by_slp.template operator()<Sets_Plain>();
-  else
-    by_slp.template operator()<Sets_RP>();
-  return result;
-}
 
 }  // namespace bench::factories::dgcda

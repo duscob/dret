@@ -1,8 +1,8 @@
 //
-// SLP-NS factory header — type aliases + Make() for the non-sampled
-// dret::DocListIdxSLP family (Brute-GCDA). Also exposes the BareSLP_* type
-// aliases that the RMQ-NS path in factories/rmq.h reuses to share cache
-// files via grammar::SLP<TVars, TLens> type-hashing.
+// SLP-NS factory header: the bare grammar types of the dret::DocListIdxSLP
+// family (Brute-GCDA). Its cells are in slp_ns.cpp; the RMQ and PDL factories
+// reuse the BareSLP_* types, so their cache files are shared through
+// grammar::SLP<TVars, TLens> type-hashing.
 //
 
 #pragma once
@@ -55,65 +55,5 @@ using Idx = dret::DocListIdxSLP<
     dret::Alphabet<>,
     sri::RIndexCount<TStorage, dret::Alphabet<>>,
     TSLP>;
-
-// t_sampled set: a sampled GCDA grammar without its document lists, at block
-// size t_spacing and storing factor t_storing_factor; t_slp is then ignored.
-template <typename TStorage>
-std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-Make(TStorage t_storage,
-     dret::Config& t_config,
-     bench::axes::BareSLPVariant t_slp,
-     uint32_t t_spacing = dret::kDiffBlockSize,
-     std::optional<bench::axes::GCDASLPVariant> t_sampled = std::nullopt,
-     float t_storing_factor = dret::kNolistsStoringFactor) {
-  std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t> result;
-
-  // t_spacing: sample spacing of a differential TSLP; plain ones ignore it.
-  auto build = [&](auto type_tag) {
-    using TIndex = typename decltype(type_tag)::type;
-    auto idx = std::make_shared<TIndex>(t_storage, t_spacing, t_storing_factor);
-    construct(*idx, t_config);
-    idx->load(t_config);
-    result = {idx, sdsl::size_in_bytes(*idx)};
-  };
-
-  struct T_IV { using type = Idx<TStorage, BareSLP_IV>; };
-  struct T_Raw     { using type = Idx<TStorage, BareSLP_Raw>; };
-  struct T_DV      { using type = Idx<TStorage, BareSLP_DV>; };
-  struct T_VV      { using type = Idx<TStorage, BareSLP_VV>; };
-  struct T_Diff    { using type = Idx<TStorage, BareSLP_Diff>; };
-  struct T_DiffEV  { using type = Idx<TStorage, BareSLP_DiffEV>; };
-  struct T_DiffDV  { using type = Idx<TStorage, BareSLP_DiffDV>; };
-  struct T_DiffVV  { using type = Idx<TStorage, BareSLP_DiffVV>; };
-
-  struct T_Light        { using type = Idx<TStorage, gcda::SLP_Light>; };
-  struct T_Combined     { using type = Idx<TStorage, gcda::SLP_Combined>; };
-  struct T_CompactBP    { using type = Idx<TStorage, gcda::SLP_CompactBP>; };
-  struct T_CompactLOUDS { using type = Idx<TStorage, gcda::SLP_CompactLOUDS>; };
-
-  if (t_sampled) {
-    switch (*t_sampled) {
-      case bench::axes::GCDASLPVariant::Combined:     build(T_Combined{});     break;
-      case bench::axes::GCDASLPVariant::CompactBP:    build(T_CompactBP{});    break;
-      case bench::axes::GCDASLPVariant::CompactLOUDS: build(T_CompactLOUDS{}); break;
-      case bench::axes::GCDASLPVariant::Light:
-      default:                                        build(T_Light{});        break;
-    }
-    return result;
-  }
-
-  switch (t_slp) {
-    case bench::axes::BareSLPVariant::Raw:    build(T_Raw{});    break;
-    case bench::axes::BareSLPVariant::DV:     build(T_DV{});     break;
-    case bench::axes::BareSLPVariant::VV:     build(T_VV{});     break;
-    case bench::axes::BareSLPVariant::Diff:   build(T_Diff{});   break;
-    case bench::axes::BareSLPVariant::DiffEV: build(T_DiffEV{}); break;
-    case bench::axes::BareSLPVariant::DiffDV: build(T_DiffDV{}); break;
-    case bench::axes::BareSLPVariant::DiffVV: build(T_DiffVV{}); break;
-    case bench::axes::BareSLPVariant::IV:
-    default:                                  build(T_IV{});    break;
-  }
-  return result;
-}
 
 }  // namespace bench::factories::slp_ns

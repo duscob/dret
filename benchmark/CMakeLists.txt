@@ -12,27 +12,28 @@ list(APPEND benchmark_LIBS ${CMAKE_THREAD_LIBS_INIT})
 #    cxx_executable_with_flags(query_doc_freq_index_bm "" "${benchmark_LIBS}" query_doc_freq_index_bm.cpp)
 cxx_executable_with_flags(bm_query_doc_freq_index "" "${benchmark_LIBS}" document_frequencies/bm_query_doc_freq_index.cpp)
 
-# bm_doc_list: each family's query code is compiled in a source file of its own
-# (document_listing/factories/query.h says why). The family files come before
-# bm_doc_list.cpp, whose construct kernels instantiate the same library code:
-# the linker keeps the first copy of a shared inline function it meets, so the
-# copy the query runs is a family file's, not the large construct unit's.
-set(bm_doc_list_query_sources
+# bm_doc_list: each family's cells (document_listing/factories/cells.h) are
+# compiled in a source file of its own, RMQ one per core and PDL one per codec,
+# so a change to one family does not move another's query times through GCC's
+# inlining choices (cells.h says how it did). bm_doc_list.cpp is the driver.
+set(bm_doc_list_family_sources
         document_listing/factories/brute.cpp
         document_listing/factories/gcda.cpp
         document_listing/factories/gcda_backend.cpp
         document_listing/factories/dgcda.cpp
         document_listing/factories/slp_ns.cpp
+        document_listing/factories/rmq.cpp
         document_listing/factories/rmq_sada.cpp
         document_listing/factories/rmq_ilcp.cpp
         document_listing/factories/rmq_cilcp.cpp
         document_listing/factories/rmq_sada_v.cpp
         document_listing/factories/rmq_ilcp_v.cpp
         document_listing/factories/rmq_cilcp_v.cpp
+        document_listing/factories/pdl.cpp
         document_listing/factories/pdl_plain.cpp
         document_listing/factories/pdl_rp.cpp
         document_listing/factories/pdl_bc.cpp)
-cxx_executable_with_flags(bm_doc_list "" "${benchmark_LIBS}" ${bm_doc_list_query_sources} document_listing/bm_doc_list.cpp)
+cxx_executable_with_flags(bm_doc_list "" "${benchmark_LIBS}" ${bm_doc_list_family_sources} document_listing/bm_doc_list.cpp)
 cxx_executable_with_flags(migrate_cache_components "" "${benchmark_LIBS}" document_listing/migrate_cache_components.cpp)
 
 # The benchmarks shell out to two external-project binaries at run time: PDL-BC
