@@ -20,7 +20,7 @@ int main(int argc, char *argv[]){
   string outfile;
 
   if(argc < 8){
-	cout<<"usage: ./vnmextract graph format[bin format] shingle_size iters bcsize(separated by ,) outputDir_and_file num_hashes\n";
+	cout<<"usage: ./vnmextract graph format[bin format] shingle_size iters bcsize(separated by ,) outputDir_and_file num_hashes [seed]\n";
 	exit(1);
   }
   format = atoi(argv[2]);
@@ -30,6 +30,10 @@ int main(int argc, char *argv[]){
   string bcsizeStr = argv[5];
   outfile = argv[6]; 
   num_hashes = atoi(argv[7]);
+  if(argc > 8){
+	Shingles::has_seed = true;
+	Shingles::fixed_seed = strtoul(argv[8], NULL, 10);
+  }
   
   vector<int> bcsizeVector = AdjacencyMatrix::splitToInt(bcsizeStr, ",");
   cout<<" filename input "<<argv[1]<<" format "<<format<<" shingle_size "<<shingle_size<<" outfile "<<outfile<<endl;
@@ -59,6 +63,7 @@ int main(int argc, char *argv[]){
 	bcsize = bcsizeVector[k];
   	int numberRows = ds.getNumberROWS();
   	start = clock();
+  	Shingles::pass = i;
   	Shingles *sh = new Shingles(num_hashes, numberRows, bcsize);
   	finish = clock();
   	time = double(finish - start) / CLOCKS_PER_SEC;
