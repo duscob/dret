@@ -89,9 +89,13 @@ benchmark/document_listing/
 ├── enum_traits.h          — EnumTraits<E>::ParseCSV / ::Name, plus ParseCSV<E>(csv) helper
 ├── spec.h                 — JSON spec types + parser for bm_doc_list
 ├── factory.h              — Factory<>: builds + caches index instances; auto-builds missing cache artefacts
-├── factories/             — one header per family (brute, gcda, dgcda, slp_ns, rmq, pdl)
-├── bm_doc_list.cpp        — the JSON-spec-driven benchmark binary
+├── factories/             — one header per family (brute, gcda, dgcda, slp_ns, rmq, pdl): type aliases + Make()
+│   ├── query.h            — the query-mode entry points Factory<> calls
+│   └── *.cpp              — one source file per family (RMQ per core, PDL per codec) defining them
+├── bm_doc_list.cpp        — the JSON-spec-driven benchmark binary (registration, query and construct kernels)
 └── example_sweep.json     — annotated example spec for bm_doc_list
 ```
 
-To add a new axis value (e.g. a new TSLP variant): one line in `axes.h`, one arm in `enum_traits.h`'s `EnumTraits<>` specialisation, one alias + one Make() arm in the relevant `factories/<family>.h`, and the register-block in `bm_doc_list.cpp`.
+To add a new axis value (e.g. a new TSLP variant): one line in `axes.h`, one arm in `enum_traits.h`'s `EnumTraits<>` specialisation, one alias + one Make() arm in the relevant `factories/<family>.h`, and the register-block in `bm_doc_list.cpp`. A new family also gets an entry point in `factories/query.h`, its source file, and that file in `bm_doc_list_query_sources` (`benchmark/CMakeLists.txt`).
+
+Each family's query code is compiled in its own source file so that a change to one family cannot move another's times through GCC's inlining choices (in one large translation unit it did, by a few percent; see `factories/query.h`).
