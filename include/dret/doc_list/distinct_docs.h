@@ -25,10 +25,11 @@ class DistinctDocs {
  public:
   explicit DistinctDocs(std::size_t t_n_doc) : words_((t_n_doc >> 6) + 1, 0) {}
 
-  // True the first time t_doc is inserted.
+  // True the first time t_doc is inserted. Small enough to inline into every report: growing the
+  // bitmap, which happens only past the size given, is out of line.
   bool Insert(std::size_t t_doc) {
     const std::size_t w = t_doc >> 6;
-    if (w >= words_.size()) words_.resize(w + 1, 0);
+    if (w >= words_.size()) [[unlikely]] Grow(w);
     const uint64_t bit = uint64_t{1} << (t_doc & 63);
     if (words_[w] & bit) return false;
     words_[w] |= bit;
@@ -42,6 +43,8 @@ class DistinctDocs {
   }
 
  private:
+  [[gnu::noinline]] void Grow(std::size_t t_word) { words_.resize(t_word + 1, 0); }
+
   std::vector<uint64_t> words_;
 };
 

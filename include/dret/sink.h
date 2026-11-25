@@ -44,7 +44,9 @@ class ListSink {
  public:
   ListSink(std::size_t t_n_doc, const TReport& t_report) : seen_(t_n_doc), report_(t_report) {}
 
-  void Position(std::size_t t_doc) {
+  // Inlined into the cores' inner loops (an RMQ run's fan-out reports every position): a call per
+  // position measured 6% on ILCP over the DA (revision-small).
+  [[gnu::always_inline]] void Position(std::size_t t_doc) {
     if (seen_.Insert(t_doc)) {
 #ifdef DRET_DOC_LIST_PROFILE
       ++reported_;
@@ -53,9 +55,9 @@ class ListSink {
     }
   }
 
-  void Listed(std::size_t t_doc) { Position(t_doc); }
+  [[gnu::always_inline]] void Listed(std::size_t t_doc) { Position(t_doc); }
 
-  void operator()(std::size_t t_doc) { Position(t_doc); }
+  [[gnu::always_inline]] void operator()(std::size_t t_doc) { Position(t_doc); }
 
   static constexpr bool Done() { return false; }
 
