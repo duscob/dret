@@ -52,17 +52,16 @@ the new ones.
 
 ## Sizes that are not reproducible
 
-Two fresh builds of the same code agree on every answer and every size except these, which
+Two fresh builds of the same code agree on every answer and every size except this one, which
 `UNSTABLE_SIZES` in `regression.py` leaves out of the size comparison:
 
-- **PDL-BC** (`codec=bc`), both sizes: the vendored `vnmextract` seeds its min-hashes with
-  `srand(time(NULL))` (`external/dsextract/Shingles.cpp`), so each build mines other bicliques
-  (0.01-0.4% apart on revision-small). PDL-BC is not reported in the journal.
 - **RLCSA backend**, serialized size only: it serializes the path of its files, so the size
   depends on the directory the index lives in.
 
-Both are defects to fix in the redesign (a seed in the spec; no paths in a serialization), after
-which their entries go.
+It is a defect to fix in the redesign (no paths in a serialization), after which its entry goes.
+PDL-BC (`codec=bc`) had an entry until its builds were seeded (`BCCodec::MiningParams::seed`):
+the vendored `vnmextract` seeded its min-hashes with the time, so each build mined other
+bicliques.
 
 ## Gate for merging into `redesign/base`
 

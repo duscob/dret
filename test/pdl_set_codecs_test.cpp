@@ -11,7 +11,10 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <random>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #include "dret/pdl/set_codecs.h"
@@ -635,6 +638,53 @@ TEST(PDLBCCodec, RulesAndBlocksRoundTripWhenBicliquesExtracted) {
       EXPECT_GT(f.bytes, 0u) << "field " << f.name;
     }
   }
+}
+
+// Overlapping sets for the seed tests: each slot is the union of a few of 30 communities of 6-14
+// docs, plus a stray doc, so the min-hash grouping (and with it the bicliques) depends on the hash
+// functions. Fixed generator seed: the fixture is the same in every run.
+std::vector<StoredSet> CommunitySets(std::size_t t_n_doc) {
+  std::mt19937 gen(12345);
+  std::vector<std::vector<std::size_t>> communities(30);
+  for (auto& c : communities) {
+    const std::size_t size = 6 + gen() % 9;
+    for (std::size_t i = 0; i < size; ++i) c.push_back(gen() % t_n_doc);
+  }
+  std::vector<StoredSet> sets;
+  for (std::size_t s = 0; s < 400; ++s) {
+    std::vector<std::size_t> docs;
+    for (std::size_t k = 0, n = 2 + gen() % 2; k < n; ++k) {
+      const auto& c = communities[gen() % communities.size()];
+      docs.insert(docs.end(), c.begin(), c.end());
+    }
+    docs.push_back(gen() % t_n_doc);
+    std::sort(docs.begin(), docs.end());
+    docs.erase(std::unique(docs.begin(), docs.end()), docs.end());
+    sets.push_back({false, std::move(docs)});
+  }
+  return sets;
+}
+
+std::string SerializedBC(const std::vector<StoredSet>& t_sets, std::size_t t_n_doc, const std::string& t_seed) {
+  BCCodec<> codec;
+  codec.SetMiningParams({"1", "10,5,2", "4", t_seed});
+  codec.Build(t_sets.size(), SetSource(t_sets), t_n_doc);
+  EXPECT_GT(codec.n_rules(), 0u) << "the fixture must make vnmextract emit bicliques";
+  std::ostringstream out;
+  codec.serialize(out);
+  return out.str();
+}
+
+// vnmextract seeded its min-hashes with the time, so two builds of one index differed. With the
+// seed, a build is a function of its input and seed. The other seed must give other bytes, or the
+// first check would also pass if the seed never reached vnmextract and two builds just fell in the
+// same second.
+TEST(PDLBCCodec, BuildIsAFunctionOfTheSeed) {
+  constexpr std::size_t kNDoc = 200;
+  const auto sets = CommunitySets(kNDoc);
+  const auto first = SerializedBC(sets, kNDoc, "1");
+  EXPECT_EQ(first, SerializedBC(sets, kNDoc, "1"));
+  EXPECT_NE(first, SerializedBC(sets, kNDoc, "2"));
 }
 
 }  // namespace

@@ -37,9 +37,6 @@ COUNT_ONLY_MARK = "Count"  # the count-only brute kind reports no documents
 # Sizes that differ between two builds of the same code, found by comparing two fresh builds.
 # (substring of the benchmark name, size fields not compared, why). Answers are still compared.
 UNSTABLE_SIZES = [
-    ("codec=bc", ("size_bytes", "serialized_bytes"),
-     "vnmextract seeds its min-hashes with srand(time(NULL)) (external/dsextract/Shingles.cpp), "
-     "so each build mines other bicliques"),
     ("RLCSA", ("serialized_bytes",),
      "the RLCSA backend serializes the path of its files, so the size depends on the directory"),
     ("rlcsa", ("serialized_bytes",),
