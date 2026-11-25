@@ -8,9 +8,8 @@
 // that depend on declarations being visible at template-definition
 // point:
 //
-//   - PDLTreeCore<>::computeCoverFull        (protected virtual,
-//                                              called unqualified from
-//                                              DLSampledTreeScheme::Search)
+//   - PDLTreeCore<>::computeCoverFull        (called from PDLTree, the
+//                                              sampler of SampledTreeCore)
 //   - dret::pdl::collectSizes(SizeReport&,
 //                              PlainCodec<>&,
 //                              prefix)         (free-function
@@ -54,8 +53,8 @@ TEST(PDLHeaderInclusion, DocListIdxPDLPlainInstantiates) {
   (void)idx;
 }
 
-// 2. PDLTreeCore::computeCoverFull is what DLSampledTreeScheme's
-//    Search() forwards to via PDL Plain's override. Force its
+// 2. PDLTreeCore::computeCoverFull is what PDLTree, PDL's sampler, forwards
+//    the cover to. Force its
 //    instantiation at default template args; an empty core returns
 //    no raw ranges and no nodes.
 TEST(PDLHeaderInclusion, PDLTreeCoreComputeCoverFullCompilesAndRuns) {

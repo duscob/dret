@@ -102,8 +102,8 @@ class SAPhi : public IndexBaseWithExternalStorage<TStorage, t_width> {
   // Delegates to range_get_doc_, which iterates BWT runs and reuses the
   // intermediate SA values from a single per-run Phi-walk to emit doc ids
   // for every position in [b, e). Order across positions is not guaranteed
-  // (per-run high-to-low, runs left-to-right); the sole consumer
-  // (DLSampledTreeScheme::Search) sort+uniques before emitting.
+  // (per-run high-to-low, runs left-to-right); the listing sink keeps each
+  // document once (dret/sink.h).
   template <typename TReport>
   void operator()(std::size_t t_b, std::size_t t_e, TReport& t_report) const {
     std::function<void(std::size_t)> report = [&t_report](std::size_t d) {

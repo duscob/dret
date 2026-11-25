@@ -12,9 +12,9 @@
 //     uses excess tracking for an O(N) total scan of the requested range.
 //
 // Must be `#include`-d at the top of `slp/gcda_grammar.h` so
-// `DocListIdxGCDA::getDocs` (unqualified `ExpandSLP(*slp_, ...)`) and
-// `GetSizeReport` (unqualified `collectSizes(*slp_, ...)`) resolve at
-// the template-definition point.
+// `backend::GCDAGrammar`'s range expansion (unqualified `ExpandSLP(*slp_, ...)`)
+// and `GetSizeReport` (unqualified `collectSizes(*slp_, ...)`) resolve at the
+// template-definition point.
 //
 
 #pragma once

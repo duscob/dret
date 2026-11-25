@@ -4,9 +4,9 @@
 // PDL sparse-suffix-tree core. Holds the compact navigation
 // representation (per-node intervals + linked-list children encoded as
 // id arrays + selected-node bitvector) and answers multi-range cover
-// queries from DLSampledTreeScheme. Built either from a BuilderNode tree
-// at construction (construct(DocListIdxPDL&) via build_pdl_core.h) or from
-// disk via load().
+// queries for PDL's sampler (PDLTree, doc_list/doc_list_pdl.h). Built either
+// from a BuilderNode tree at construction (construct(PDLTree&) via
+// build_pdl_core.h) or from disk via load().
 //
 
 #pragma once
@@ -145,8 +145,8 @@ class PDLTreeCore {
                         [&out](std::size_t d) { out.push_back(d); });
     // Sorted and unique for every codec: Plain and RP emit in ascending order
     // (kExpandsSorted), BC concatenates per-rule runs and is sorted here.
-    // DLSampledTreeScheme::Search no longer needs the order (it deduplicates with
-    // a bitmap, distinct_docs.h), but the contract is kept for other callers.
+    // The listing query does not need the order (it deduplicates with a bitmap,
+    // distinct_docs.h), but the contract is kept for other callers.
     // No reserve(n_doc_): a stored list is usually far shorter than the number
     // of documents, and reserving it cost an n_doc allocation per list.
     if constexpr (!TStoredSetCodec::kExpandsSorted) {

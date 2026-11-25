@@ -7,7 +7,7 @@
 //   1. PDL search output equals brute-force output for every pattern.
 //   2. At least one pattern's cover under that policy contains
 //      multiple raw ranges, exercising the
-//      DLSampledTreeScheme::Search → computeCoverFull → multi-getDocs
+//      SampledTreeCore::Query → computeCoverFull → the backend over each gap
 //      multi-range path. Without this guard, the parity
 //      tests would still pass on a fixture where every cover happens
 //      to be a single range, leaving the multi-range path untested.
@@ -37,15 +37,9 @@ namespace {
 using ExternalGenericStorage = std::reference_wrapper<dret::GenericStorage>;
 using PDLPlain = dret::pdl::DocListIdxPDLPlain<ExternalGenericStorage>;
 
-// Inspector subclass: re-publishes count() and computeCoverFull() so
-// the test can probe the cover decision directly without depending on
-// the Search side effect.
-struct PDLPlainInspector : PDLPlain {
-  using PDLPlain::PDLPlain;
-  using PDLPlain::computeCoverFull;
-  using PDLPlain::count;
-  using PDLPlain::backend;
-};
+// The cover decision, probed directly through the core's sampler rather than
+// through the Search side effect.
+using PDLPlainInspector = PDLPlain;
 
 class DocListResultVector : public std::vector<std::size_t> {
  public:
@@ -143,7 +137,7 @@ TEST_F(PDLStoragePolicyCorrectnessTest, EachPolicyMatchesBruteAndExercisesMultiR
     // to produce single-range covers on a small fixture); probing the
     // SA directly removes that dependency. This pins the multi-range
     // path is reachable under each storage policy on this fixture.
-    const std::size_t n = pdl.backend().size();
+    const std::size_t n = pdl.core().backend().size();
     ASSERT_GT(n, 0u);
 
     std::size_t max_raw_ranges_for_policy = 0;
@@ -152,7 +146,7 @@ TEST_F(PDLStoragePolicyCorrectnessTest, EachPolicyMatchesBruteAndExercisesMultiR
       for (std::size_t ep = sp + 1; ep <= n; ++ep) {
         std::vector<std::pair<std::size_t, std::size_t>> raw_ranges;
         std::vector<std::size_t> nodes;
-        pdl.computeCoverFull(sp, ep, raw_ranges, nodes);
+        pdl.core().sampler().computeCoverFull(pdl.core().backend(), sp, ep, raw_ranges, nodes);
         if (raw_ranges.size() > max_raw_ranges_for_policy) {
           max_raw_ranges_for_policy = raw_ranges.size();
           max_range = {sp, ep};

@@ -13,10 +13,9 @@
 #include "dret/collection.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
-#include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_base.h"
+#include "dret/doc_list/doc_list_index.h"
 #include "dret/index_base.h"
-#include "dret/sink.h"
 
 namespace dret {
 
@@ -26,37 +25,35 @@ class GetDocBv;
 //~~~~~~~
 
 
-template <typename TStorage = GenericStorage,
-          typename TAlphabet = Alphabet<>,
-          typename TLocateIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
-          typename TGetDoc = GetDocBv<TStorage, sdsl::sd_vector<>, TAlphabet::int_width>>
-class DocListIdxBrute : public DocListIndexExtStorage<TStorage, TAlphabet> {
+// Brute force over the r-index or sr-index locate (Brute-RI / Brute-SRI): the text position of every
+// occurrence, mapped to its document by the document ends (GetDocBv). A pattern core: the locate index
+// finds the occurrences itself, so the index holds no r-index count (doc_list_index.h). Serialized as
+// the locate index, then the document ends; no size report (the benchmark falls back to the serialized
+// size).
+template <typename TStorage, typename TAlphabet, typename TLocateIdx, typename TGetDoc>
+class LocateCore : public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
-  using Base = DocListIndexExtStorage<TStorage, TAlphabet>;
+  using Base = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
   using typename Base::size_type;
-  using typename Base::TDocId;
-  using typename Base::TPattern;
+  using TPattern = typename TAlphabet::string_type;
 
-  explicit DocListIdxBrute(const TStorage& t_storage) : Base(t_storage), locate_idx_(t_storage), get_doc_(t_storage) {}
+  explicit LocateCore(const TStorage& t_storage) : Base(t_storage), locate_idx_(t_storage), get_doc_(t_storage) {}
 
-  explicit DocListIdxBrute(const TStorage& t_storage, const TLocateIdx& t_locate_idx)
+  LocateCore(const TStorage& t_storage, const TLocateIdx& t_locate_idx)
       : Base(t_storage), locate_idx_(t_locate_idx), get_doc_(t_storage) {}
 
-  explicit DocListIdxBrute(const TStorage& t_storage, const TLocateIdx& t_locate, const TGetDoc& t_get_doc)
-      : Base(t_storage), locate_idx_(t_locate), get_doc_(t_get_doc) {}
+  LocateCore(const TStorage& t_storage, const TLocateIdx& t_locate_idx, const TGetDoc& t_get_doc)
+      : Base(t_storage), locate_idx_(t_locate_idx), get_doc_(t_get_doc) {}
 
-  DocListIdxBrute() = default;
+  LocateCore() = default;
 
-  void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
-    ListSink<std::function<void(TDocId)>> sink(get_doc_.n_doc(), t_report);
-    Query(t_pattern, sink);
-  }
-
-  // The query into any sink (dret/sink.h): the document of every occurrence Locate yields.
+  // The document of every occurrence Locate yields.
   template <typename TSink>
   void Query(const TPattern& t_pattern, TSink& t_sink) const {
     for (const auto& item : locate_idx_.Locate(t_pattern)) t_sink.Position(get_doc_(item));
   }
+
+  std::size_t n_doc() const { return get_doc_.n_doc(); }
 
   void load(Config t_config) override {
     locate_idx_.load(t_config);
@@ -75,26 +72,32 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, TAlphabet> {
     return locate_idx_.serialize(out, child, "locate_idx") + get_doc_.serialize(out, child, "get_doc");
   }
 
+  SizeReport GetSizeReport() const { return {}; }
 
  protected:
   TLocateIdx locate_idx_;
   TGetDoc get_doc_;
 };
 
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TLocateIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
+          typename TGetDoc = GetDocBv<TStorage, sdsl::sd_vector<>, TAlphabet::int_width>>
+using DocListIdxBrute =
+    DocListIdx<TStorage, TAlphabet, NoCountIdx, LocateCore<TStorage, TAlphabet, TLocateIdx, TGetDoc>>;
+
 //~~~~~~~
 
 
 template <typename TStorage, typename TAlphabet, typename TLocateIdx, typename TGetDoc>
-void construct(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_index, Config& t_config) {
+void construct(LocateCore<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_core, Config& t_config) {
   EnsureText<TAlphabet::int_width>(t_config);
 
-  TLocateIdx locate_index(t_index.storage());
+  TLocateIdx locate_index(t_core.storage());
   construct(locate_index, t_config.data_path, t_config);
 
-  TGetDoc get_doc(t_index.storage());
+  TGetDoc get_doc(t_core.storage());
   construct(get_doc, t_config);
-
-  t_index.load(t_config);
 }
 
 // Overload for locate indexes that take the subsample rate as a runtime
@@ -108,22 +111,20 @@ void construct(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_inde
 // (sri::SrIndex::setupKeyNames), so it must match the rate the query side
 // later loads with, or the load fails with a missing "<rate>_bwt_run_*" key.
 //
-// t_index must already carry the same rate: this ends by load()ing t_index's
-// own locate index member, and a default-constructed one has an empty key
-// prefix.
+// The index must already carry the same rate: construct(index, config, rate)
+// ends by load()ing the index's own locate index, and a default-constructed one
+// has an empty key prefix.
 template <typename TStorage, typename TAlphabet, typename TLocateIdx, typename TGetDoc>
-void construct(DocListIdxBrute<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_index,
+void construct(LocateCore<TStorage, TAlphabet, TLocateIdx, TGetDoc>& t_core,
                Config& t_config,
                std::size_t t_subsample_rate) {
   EnsureText<TAlphabet::int_width>(t_config);
 
-  TLocateIdx locate_index(t_index.storage(), t_subsample_rate);
+  TLocateIdx locate_index(t_core.storage(), t_subsample_rate);
   construct(locate_index, t_config.data_path, t_config);
 
-  TGetDoc get_doc(t_index.storage());
+  TGetDoc get_doc(t_core.storage());
   construct(get_doc, t_config);
-
-  t_index.load(t_config);
 }
 
 //~~~~~~~
