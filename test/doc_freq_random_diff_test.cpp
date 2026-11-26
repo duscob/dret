@@ -24,6 +24,7 @@
 #include "dret/backend/diff_sa.h"
 #include "dret/backend/wavelet_da.h"
 #include "dret/doc_freq/oracle.h"
+#include "dret/doc_freq/gcda_occs_core.h"
 #include "dret/doc_freq/rmq_core.h"
 #include "dret/doc_list/doc_list_brute_backend.h"
 #include "dret/doc_list/doc_list_gcda.h"
@@ -100,6 +101,10 @@ struct GCDA : Kind<dret::gcda::DocFreqIdxGCDA<S>> {
   static Index Make(S t_storage) { return Index(t_storage, 4, 2); }
 };
 struct BruteDA : Kind<dret::DocListIdxBruteBackend<S>> {};
+struct GcdaOccsWT : Kind<dret::freq::DocFreqIdxGCDAOccs<S, A, RC, WT, Rank>> {};
+struct GcdaOccsIsa : Kind<dret::freq::DocFreqIdxGCDAOccs<S, A, RC, DSA, Isa>> {
+  static Index Make(S t_storage) { return Index(t_storage, 4u); }
+};
 
 using Kinds = testing::Types<RmqWT<Cores::Sada>,
                              RmqWT<Cores::Ilcp>,
@@ -108,7 +113,9 @@ using Kinds = testing::Types<RmqWT<Cores::Sada>,
                              RmqIsa<Cores::Ilcp>,
                              RmqIsa<Cores::Cilcp>,
                              GCDA,
-                             BruteDA>;
+                             BruteDA,
+                             GcdaOccsWT,
+                             GcdaOccsIsa>;
 
 template <typename TKind>
 class DocFreqRandomDiffTest : public BaseConfigTests<8> {

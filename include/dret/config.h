@@ -53,7 +53,13 @@ constexpr std::string_view kDaNodeDocCounts = "daNodeDocCounts";
 // The grammars carry their sample spacing in the key.
 constexpr std::string_view kDaWt = "daWt";
 constexpr std::string_view kDiffSA = "diffSA";
-constexpr std::string_view kDocIsa = "docIsa";  // frequencies of each node list's documents
+constexpr std::string_view kDocIsa = "docIsa";
+// GCDA with occurrence bitvectors: the DA grammar's rules bit-packed, where each top-level symbol
+// starts in the DA, and per rule the first and the last occurrence of every document.
+constexpr std::string_view kDaGrammarPacked = "daGrammarPacked";
+constexpr std::string_view kDaGrammarRootHeads = "daGrammarRootHeads";
+constexpr std::string_view kDaFirstOccs = "daFirstOccs";
+constexpr std::string_view kDaLastOccs = "daLastOccs";  // frequencies of each node list's documents
 constexpr std::string_view kDaDiffGrammar = "daDiffGrammar";      // RePair grammar of the differential DA
 constexpr std::string_view kDaDiffRoots = "daDiffRoots";          // its top-level sequence
 constexpr std::string_view kDaDiffSpanSums = "daDiffSpanSums";    // differential sum of each rule
@@ -129,6 +135,10 @@ struct Keys {
         {conf::kDaWt, "da_wt"},
         {conf::kDiffSA, "dsa"},
         {conf::kDocIsa, "doc_disa"},
+        {conf::kDaGrammarPacked, "da_grammar_packed"},
+        {conf::kDaGrammarRootHeads, "da_grammar_root_heads"},
+        {conf::kDaFirstOccs, "da_first_occs"},
+        {conf::kDaLastOccs, "da_last_occs"},
         {conf::kDaDiffGrammar, "da_diff_grammar"},
         {conf::kDaDiffRoots, "da_diff_roots"},
         {conf::kDaDiffSpanSums, "da_diff_span_sums"},

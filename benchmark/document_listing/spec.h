@@ -215,8 +215,15 @@ struct RMQFreqSweep {
   std::vector<std::uint32_t> block_size{256};
 };
 
+// GCDA with occurrence bitvectors (dret/doc_freq/gcda_occs_core.h): a frequency oracle x the sample
+// spacing of the doc-ISA oracle's grammars. Frequency task only.
+struct GCDAOccsSweep {
+  std::vector<axes::FreqOracle> oracle{axes::FreqOracle::Rank, axes::FreqOracle::DocIsa};
+  std::vector<std::uint32_t> block_size{256};
+};
+
 using FamilySweep = std::variant<GCDASweep, DGCDASweep, SLPNSSweep,
-                                  RMQSweep, PDLSweep, BruteSweep, GCDABackendSweep, RMQFreqSweep>;
+                                  RMQSweep, PDLSweep, BruteSweep, GCDABackendSweep, RMQFreqSweep, GCDAOccsSweep>;
 
 struct Spec {
   // 0 when the spec does not say (see ParseRmqCore).
@@ -410,6 +417,13 @@ inline RMQFreqSweep ParseRMQFreq(const nlohmann::json& j, int t_version) {
   return s;
 }
 
+inline GCDAOccsSweep ParseGCDAOccs(const nlohmann::json& j) {
+  GCDAOccsSweep s;
+  s.oracle = ParseEnumList<axes::FreqOracle>(j, "oracle", s.oracle);
+  s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
+  return s;
+}
+
 inline PDLSweep ParsePDL(const nlohmann::json& j) {
   PDLSweep s;
   s.codec = ParseEnumList<axes::PDLVariant>(j, "codec", s.codec);
@@ -451,6 +465,7 @@ inline FamilySweep ParseFamilyBlock(const nlohmann::json& j, int t_version) {
   if (family == "slp_ns")  return ParseSLPNS(j);
   if (family == "rmq")     return ParseRMQ(j, t_version);
   if (family == "rmq_freq") return ParseRMQFreq(j, t_version);
+  if (family == "gcda_occs") return ParseGCDAOccs(j);
   if (family == "pdl")     return ParsePDL(j);
   if (family == "brute")   return ParseBrute(j);
   if (family == "gcda_backend") return ParseGCDABackend(j);

@@ -26,6 +26,7 @@
 #include "dret/backend/rlcsa.h"
 #include "dret/backend/sa_phi.h"
 #include "dret/backend/wavelet_da.h"
+#include "dret/doc_freq/gcda_occs_core.h"
 #include "dret/doc_freq/rmq_core.h"
 #include "dret/doc_list/doc_list_brute.h"
 #include "dret/doc_list/doc_list_brute_backend.h"
@@ -87,6 +88,10 @@ struct RmqIsa : Kind<dret::freq::DocFreqIdxRMQ<S, A, RC, DSA, TCoreOf, Isa>> {
     return typename Kind<dret::freq::DocFreqIdxRMQ<S, A, RC, DSA, TCoreOf, Isa>>::Index(t_storage, 16u);
   }
 };
+struct GcdaOccsWT : Kind<dret::freq::DocFreqIdxGCDAOccs<S, A, RC, WT, Rank>> {};
+struct GcdaOccsIsa : Kind<dret::freq::DocFreqIdxGCDAOccs<S, A, RC, DSA, Isa>> {
+  static Index Make(S t_storage) { return Index(t_storage, 16u); }
+};
 struct SadaWT : RmqWT<Cores::Sada> {};
 struct IlcpWT : RmqWT<Cores::Ilcp> {};
 struct CilcpWT : RmqWT<Cores::Cilcp> {};
@@ -109,7 +114,9 @@ using Kinds = testing::Types<BruteRI,
                              CilcpWT,
                              SadaIsa,
                              IlcpIsa,
-                             CilcpIsa>;
+                             CilcpIsa,
+                             GcdaOccsWT,
+                             GcdaOccsIsa>;
 
 using Freqs = std::map<std::size_t, std::size_t>;
 
