@@ -48,6 +48,25 @@ It fails when
 Query times are otherwise only reported, as the median and extreme ratios against the baseline.
 Laptop times are noisy (frequency scaling); gate on time only on a quiet machine.
 
+## Document frequencies
+
+`sweep-freq.json` lists every index that computes document frequencies and sets `"task":
+"frequency"`: its queries return each document with its frequency, and the answers file holds, per
+pattern, `d:f` for each document in document order. It runs like `sweep.json`, against its own
+baseline:
+
+```bash
+python3 test/regression/regression.py run --bin cmake-build-release/benchmark/bm_doc_list \
+    --sweep test/regression/sweep-freq.json \
+    --data experiments/data/regression/revision-small/data \
+    --patterns experiments/data/revision/patterns \
+    --check test/regression/baseline/revision-small-freq.json
+```
+
+The same checks apply: the indexes agree with each other, and answers and sizes match the baseline.
+The frequency baselines were recorded with the brute-force indexes, whose answers, without the
+counts, are the listing baseline's.
+
 A change that renames benchmarks passes `--names NAMES.json`, a map from the baseline's names to
 the new ones.
 

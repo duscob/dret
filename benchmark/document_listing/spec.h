@@ -15,7 +15,8 @@
 //                   "data_width": 8, "sa_algo": "SDSL_LIBDIVSUFSORT",
 //                   "doc_delim": 0 },
 //     "workload": { "reps": 10, "min_time": 0.0,
-//                   "report_stats": false, "print_result": false },
+//                   "report_stats": false, "print_result": false,
+//                   "task": "listing" | "frequency" },
 //     "repair":   { "variant": "auto", "mb": null, "mb_max": null },
 //     "sweep": [
 //       { "family": "gcda",  "tslp": ["Light"], "block_size": [512],
@@ -60,6 +61,9 @@
 namespace bench::spec {
 
 enum class Mode { Query, Construct };
+
+// What a query returns: the documents of the pattern, or each with its frequency (query mode only).
+enum class Task { Listing, Frequency };
 
 struct Dataset {
   std::string dir;
@@ -110,6 +114,7 @@ struct Workload {
   // bm_doc_list reads patterns as PLAIN lines.
   std::string pattern_code = "PLAIN";
   int pattern_delim = '\n';
+  Task task = Task::Listing;
 };
 
 struct GCDASweep {
@@ -466,6 +471,12 @@ inline Workload ParseWorkload(const nlohmann::json& j) {
   if (j.contains("memory_trace")) w.memory_trace = j.at("memory_trace").get<bool>();
   if (j.contains("pattern_code")) w.pattern_code = j.at("pattern_code").get<std::string>();
   if (j.contains("pattern_delim")) w.pattern_delim = j.at("pattern_delim").get<int>();
+  if (j.contains("task")) {
+    const auto t = j.at("task").get<std::string>();
+    if (t == "listing") w.task = Task::Listing;
+    else if (t == "frequency") w.task = Task::Frequency;
+    else throw std::invalid_argument("spec.workload.task: must be 'listing' or 'frequency', got '" + t + "'");
+  }
   return w;
 }
 

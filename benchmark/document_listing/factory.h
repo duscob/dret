@@ -52,6 +52,7 @@ class Factory {
   struct Index {
     std::shared_ptr<dret::DocListIndex<>> idx;
     std::size_t size = 0;  // serialized
+    bench::factories::Frequencies frequencies;  // empty when the index does not compute frequencies
   };
 
   explicit Factory(dret::Config t_config) : config_{std::move(t_config)} {
@@ -64,7 +65,7 @@ class Factory {
     auto cell_index = t_cell.make(std::ref(storage_));
     if (t_cell.query_constructs) cell_index.construct(config_);
     cell_index.load(config_);
-    return indexes_[t_cell.name] = {cell_index.index, cell_index.serialized_size()};
+    return indexes_[t_cell.name] = {cell_index.index, cell_index.serialized_size(), cell_index.frequencies};
   }
 
   [[nodiscard]] std::size_t SequenceSize() const { return seq_size_; }

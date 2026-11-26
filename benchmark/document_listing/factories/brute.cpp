@@ -26,7 +26,8 @@ MakeIndex MakeBruteSr(std::size_t t_rate) {
     return CellIndex{idx,
                      [idx, t_rate](dret::Config& t_config) { construct(*idx, t_config, t_rate); },
                      [idx](dret::Config& t_config) { idx->load(t_config); },
-                     [idx] { return static_cast<std::size_t>(sdsl::size_in_bytes(*idx)); }};
+                     [idx] { return static_cast<std::size_t>(sdsl::size_in_bytes(*idx)); },
+                     FrequenciesOf(idx)};
   };
 }
 

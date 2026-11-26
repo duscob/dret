@@ -21,7 +21,6 @@
 #include <grammar/sampled_slp.h>
 
 #include <dret/doc_freq/doc_freq_base.h>
-#include <dret/doc_freq/doc_freq_brute.h>
 #include <dret/doc_freq/doc_freq_rmq.h>
 #include <dret/doc_freq/doc_freq_gcda.h>
 #include <dret/slp/slp_tools.h>
@@ -97,8 +96,7 @@ class Factory {
   using RangeMaxQuery = sdsl::rmq_succinct_sct<false>;
 
   enum class IndexEnum {
-    Brute = 0,
-    SADA_ISAs,
+    SADA_ISAs = 0,
     SADA_WT_DA,
     ILCP_ISAs,
     ILCP_WT_DA,
@@ -355,10 +353,6 @@ class Factory {
 
   std::pair<dret::DocFreqIndex *, std::size_t> Build(const Config &_config) const {
     switch (_config.index) {
-      case IndexEnum::Brute: {
-        return {dret::MakeNewDocFreqIndexBrute(*csa_wrappers_[0], doc_endings_rank_),
-                size_r_idx_ + size_doc_endings_};
-      }
       case IndexEnum::SADA_ISAs: {
         return {
             dret::MakePtrDocFreqIndexBasicScheme(

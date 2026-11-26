@@ -9,7 +9,6 @@ list(APPEND benchmark_LIBS benchmark::benchmark benchmark::benchmark_main)
 find_package(Threads)
 list(APPEND benchmark_LIBS ${CMAKE_THREAD_LIBS_INIT})
 
-#    cxx_executable_with_flags(query_doc_freq_index_bm "" "${benchmark_LIBS}" query_doc_freq_index_bm.cpp)
 cxx_executable_with_flags(bm_query_doc_freq_index "" "${benchmark_LIBS}" document_frequencies/bm_query_doc_freq_index.cpp)
 
 # bm_doc_list: each family's cells (document_listing/factories/cells.h) are

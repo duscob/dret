@@ -31,6 +31,7 @@
 
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_base.h"
+#include "dret/doc_list/doc_list_index.h"
 
 #include "../spec.h"
 
@@ -40,6 +41,10 @@ namespace bench::factories {
 // its benchmark owns (construct mode).
 using Storage = std::reference_wrapper<sri::GenericStorage>;
 
+// t_report(d, f) for each document d of a pattern, with its frequency f.
+using FreqReport = std::function<void(std::size_t, std::size_t)>;
+using Frequencies = std::function<void(const std::string&, const FreqReport&)>;
+
 // An index, made but neither built nor loaded, behind its type-erased interface, with the calls
 // that need its type.
 struct CellIndex {
@@ -47,9 +52,28 @@ struct CellIndex {
   std::function<void(dret::Config&)> construct;  // builds the cache files the index needs, if missing
   std::function<void(dret::Config&)> load;
   std::function<std::size_t()> serialized_size;
+  Frequencies frequencies;  // empty when the index does not compute document frequencies
+};
+
+// The index computes document frequencies (dret::DocListIdx over a frequency core).
+template <typename TIndex>
+concept ComputesFrequencies = requires {
+  typename TIndex::Core;
+  requires dret::FrequencyCore<typename TIndex::Core>;
 };
 
 using MakeIndex = std::function<CellIndex(Storage)>;
+
+// The frequency query of t_idx, or nothing when it does not compute frequencies. Every cell index
+// sets its frequencies from this.
+template <typename TIndex>
+Frequencies FrequenciesOf(const std::shared_ptr<TIndex>& t_idx) {
+  if constexpr (ComputesFrequencies<TIndex>) {
+    return [t_idx](const std::string& t_pattern, const FreqReport& t_report) { t_idx->Frequencies(t_pattern, t_report); };
+  } else {
+    return {};
+  }
+}
 
 // The cell index of TIndex as t_new(storage) creates it.
 template <typename TIndex, typename TNew>
@@ -59,7 +83,8 @@ MakeIndex MakeBy(TNew t_new) {
     return CellIndex{idx,
                      [idx](dret::Config& t_config) { construct(*idx, t_config); },
                      [idx](dret::Config& t_config) { idx->load(t_config); },
-                     [idx] { return static_cast<std::size_t>(sdsl::size_in_bytes(*idx)); }};
+                     [idx] { return static_cast<std::size_t>(sdsl::size_in_bytes(*idx)); },
+                     FrequenciesOf(idx)};
   };
 }
 

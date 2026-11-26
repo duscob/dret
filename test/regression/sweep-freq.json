@@ -1,0 +1,49 @@
+{
+  "comment": "Every index bm_doc_list can compute document frequencies with, queried for frequencies (task). The answers are, per pattern, d:f for each document. regression.py runs it like sweep.json, against baseline/<collection>-freq.json.",
+  "spec_version": 2,
+  "task": "frequency",
+  "sweep": [
+    {
+      "family": "brute",
+      "kind": [
+        "r-index",
+        "sr-index",
+        "da",
+        "rlcsa"
+      ],
+      "sampling_size": [
+        16
+      ]
+    },
+    {
+      "family": "slp_ns",
+      "tslp": [
+        "iv",
+        "raw",
+        "dv",
+        "vv",
+        "diff",
+        "diff-ev",
+        "diff-dv",
+        "diff-vv"
+      ],
+      "block_size": [
+        256
+      ]
+    },
+    {
+      "family": "slp_ns",
+      "tslp": [],
+      "gcda_slp": [
+        "light",
+        "compact_louds"
+      ],
+      "block_size": [
+        256
+      ],
+      "storing_factor": [
+        32
+      ]
+    }
+  ]
+}

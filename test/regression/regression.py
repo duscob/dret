@@ -91,12 +91,15 @@ def make_data(args):
     print(f"{dest / 'data'}: {len(out)} documents, {total} bytes, sha256 {sha256(dest / 'data')}")
 
 
-def write_spec(path, mode, dataset, sweep, reps, version):
+def write_spec(path, mode, dataset, sweep, reps, version, task="listing"):
+    workload = {"reps": reps, "min_time": 0.0}
+    if mode == "query":
+        workload["task"] = task
     spec = {
         "spec_version": version,
         "mode": mode,
         "dataset": dataset,
-        "workload": {"reps": reps, "min_time": 0.0},
+        "workload": workload,
         "sweep": sweep,
     }
     Path(path).write_text(json.dumps(spec, indent=2))
@@ -116,6 +119,7 @@ def build_manifest(args):
     patterns = Path(args.patterns).resolve()
     sweep_spec = json.loads(Path(args.sweep).read_text())
     sweep, version = sweep_spec["sweep"], sweep_spec.get("spec_version", 1)
+    task = sweep_spec.get("task", "listing")  # what the queries return: documents, or with frequencies
 
     work = Path(args.work).resolve() if args.work else Path(tempfile.mkdtemp(prefix="dret-regression-"))
     if work.exists() and any(work.iterdir()):
@@ -135,7 +139,7 @@ def build_manifest(args):
         run_bm(binary, work / "construct.json", index_dir, [], work / "construct.log")
 
     dataset = {"dir": str(index_dir), "name": data.name, "data_width": 8, "patterns": str(patterns)}
-    write_spec(work / "query.json", "query", dataset, sweep, args.reps, version)
+    write_spec(work / "query.json", "query", dataset, sweep, args.reps, version, task)
     print(f"query -> {work / 'query.out.json'} (log {work / 'query.log'})", flush=True)
     # Query mode only loads: a query that writes the index (a cache file rebuilt, a header rewritten)
     # changes what the next query reads and races with any other reader of the directory.
