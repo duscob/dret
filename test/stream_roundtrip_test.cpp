@@ -2,8 +2,9 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 11/25/26.
 //
 // Every listing family through its serialization: build an index, serialize it to a stream, load a
-// fresh one from that stream alone (a new storage, nothing from the cache), and require the same
-// answers, the same size report and the same size, with the stream read to its end. The load reads
+// fresh one from that stream alone (a new storage, the cache directory deleted), and require the same
+// answers, the same size report and the same size, with the stream read to its end, and the same
+// bytes when the loaded index is serialized again (no path or other trace of the cache in them). The load reads
 // the structures back in the order serialize() wrote them, which is what a component's field list
 // (dret/fields.h) guarantees and what hand-written methods used to keep in step by hand.
 //
@@ -11,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <functional>
 #include <random>
 #include <set>
@@ -21,6 +23,7 @@
 #include "sr-index/r_index.h"
 
 #include "dret/backend/da.h"
+#include "dret/backend/rlcsa.h"
 #include "dret/backend/sa_phi.h"
 #include "dret/doc_list/doc_list_brute.h"
 #include "dret/doc_list/doc_list_brute_backend.h"
@@ -47,6 +50,7 @@ struct Kind {
 struct BruteRI : Kind<dret::DocListIdxBrute<S, A, sri::RIndex<S>>> {};
 struct BruteDA : Kind<dret::DocListIdxBruteBackend<S>> {};
 struct BruteSAPhi : Kind<dret::DocListIdxBruteBackend<S, A, RC, dret::backend::SAPhi<S, A::int_width>>> {};
+struct BruteRLCSA : Kind<dret::DocListIdxBruteBackend<S, A, RC, dret::backend::RLCSA<S, A::int_width>>> {};
 struct BruteGCDA : Kind<dret::DocListIdxSLP<S>> {};
 struct GCDA : Kind<dret::gcda::DocListIdxGCDA<S>> {
   static Index Make(S t_storage) { return Index(t_storage, 8, 4); }
@@ -60,6 +64,9 @@ struct GCDAOverDA : Kind<dret::gcda::DocListIdxGCDABackend<S, A, RC, dret::backe
 struct PDL : Kind<dret::pdl::DocListIdxPDLPlain<S>> {
   static Index Make(S t_storage) { return Index(t_storage, 8, 4.0f); }
 };
+struct PDLOverRLCSA : Kind<dret::pdl::DocListIdxPDLPlain<S, A, RC, dret::backend::RLCSA<S, A::int_width>>> {
+  static Index Make(S t_storage) { return Index(t_storage, 8, 4.0f); }
+};
 struct Sada : Kind<dret::rmq::DocListIdxRMQ<S, A, RC, dret::rmq::SadaCore<S>>> {};
 struct SadaV : Kind<dret::rmq::DocListIdxRMQ<S, A, RC, dret::rmq::SadaValueCore<S>>> {};
 struct Ilcp : Kind<dret::rmq::DocListIdxRMQ<S, A, RC, dret::rmq::IlcpCore<S>>> {};
@@ -70,11 +77,13 @@ struct CilcpV : Kind<dret::rmq::DocListIdxRMQ<S, A, RC, dret::rmq::CilcpValueCor
 using Kinds = testing::Types<BruteRI,
                              BruteDA,
                              BruteSAPhi,
+                             BruteRLCSA,
                              BruteGCDA,
                              GCDA,
                              GCDADiff,
                              GCDAOverDA,
                              PDL,
+                             PDLOverRLCSA,
                              Sada,
                              SadaV,
                              Ilcp,
@@ -137,13 +146,20 @@ TYPED_TEST(StreamRoundTripTest, LoadsWhatItSerialized) {
   const auto written = sdsl::serialize(built, stream);
   ASSERT_EQ(written, stream.str().size());
 
+  // The stream alone: a load that reopened a cache file would fail now.
+  std::filesystem::remove_all(this->tmp_dir_);
+
   dret::GenericStorage loaded_storage;
   auto loaded = TypeParam::Make(std::ref(loaded_storage));
   loaded.load(stream);
   EXPECT_EQ(static_cast<std::size_t>(stream.tellg()), written) << "the load did not read the stream to its end";
 
+  std::stringstream again;
+  sdsl::serialize(loaded, again);
+  EXPECT_TRUE(again.str() == stream.str()) << "serializing the loaded index wrote other bytes";
+
   EXPECT_EQ(this->Answers(loaded), this->Answers(built));
-  EXPECT_EQ(sdsl::size_in_bytes(loaded), sdsl::size_in_bytes(built));
+  EXPECT_EQ(sdsl::size_in_bytes(loaded), written);  // not built's: the RLCSA's serialize reads its cache files
   const auto sizes_built = built.GetSizeReport();
   const auto sizes_loaded = loaded.GetSizeReport();
   ASSERT_EQ(sizes_loaded.size(), sizes_built.size());

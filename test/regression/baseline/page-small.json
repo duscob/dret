@@ -19,7 +19,7 @@
   },
   "BruteRLCSA": {
    "answers_md5": "91044e75ba90cbefbaca6dd55523d626",
-   "serialized_bytes": 177,
+   "serialized_bytes": 728340,
    "size_bytes": 925104,
    "time_x_pattern": 0.0001314921035518412
   },
@@ -319,13 +319,13 @@
   },
   "GCDA[tree=sampled|get-doc=rlcsa|block-size=256|storing-factor=4]": {
    "answers_md5": "91044e75ba90cbefbaca6dd55523d626",
-   "serialized_bytes": 440411,
+   "serialized_bytes": 1168574,
    "size_bytes": 1365354,
    "time_x_pattern": 5.659551077304841e-05
   },
   "GCDA[tree=sampled|get-doc=rlcsa|sets=plain|block-size=256|storing-factor=4]": {
    "answers_md5": "91044e75ba90cbefbaca6dd55523d626",
-   "serialized_bytes": 480099,
+   "serialized_bytes": 1208262,
    "size_bytes": 1405042,
    "time_x_pattern": 5.7527892530687283e-05
   },
@@ -493,7 +493,7 @@
   },
   "PDL[codec=plain|get-doc=rlcsa|policy=occ-weighted|block-size=256|storing-factor=4]": {
    "answers_md5": "91044e75ba90cbefbaca6dd55523d626",
-   "serialized_bytes": 2516763,
+   "serialized_bytes": 3244926,
    "size_bytes": 3441681,
    "time_x_pattern": 3.062964316183479e-05
   },

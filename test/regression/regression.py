@@ -36,12 +36,8 @@ COUNT_ONLY_MARK = "Count"  # the count-only brute kind reports no documents
 
 # Sizes that differ between two builds of the same code, found by comparing two fresh builds.
 # (substring of the benchmark name, size fields not compared, why). Answers are still compared.
-UNSTABLE_SIZES = [
-    ("RLCSA", ("serialized_bytes",),
-     "the RLCSA backend serializes the path of its files, so the size depends on the directory"),
-    ("rlcsa", ("serialized_bytes",),
-     "the RLCSA backend serializes the path of its files, so the size depends on the directory"),
-]
+# Empty: two builds agree on every size (README.md, "Sizes that are not reproducible").
+UNSTABLE_SIZES = []
 
 
 def unstable_fields(name):
