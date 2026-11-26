@@ -19,7 +19,7 @@ See `example_sweep.json` for a complete reference. The spec is a single JSON doc
 {
   "mode":     "query",           // "query" | "construct"
   "dataset":  { "dir": "...", "name": "...", "patterns": "...", "data_width": 8 },
-  "workload": { "reps": 10, "min_time": 0.0 },
+  "workload": { "reps": 10, "min_time": 0.0, "task": "listing" },   // task: "listing" | "frequency"
   "sweep":    [ ...family blocks... ]
 }
 ```
@@ -28,12 +28,22 @@ Each entry in `sweep` is one family block. The driver expands each block's Carte
 
 | Family | Axes |
 |---|---|
-| `gcda`   | `tslp` (`light` / `compact_bp` / `compact_louds` / `combined`), `block_size`, `storing_factor` |
+| `gcda`   | `tslp` (`light` / `compact_bp` / `compact_louds` / `combined`), `sets` (`rp` / `plain`), `counts` (`none` / `plain`), `block_size`, `storing_factor` |
 | `dgcda`  | `tslp` (`default` / `otf` / `crl` / `ev` / `dv` / `vv`), `block_size`, `storing_factor` |
 | `slp_ns` | `tslp` (`iv` / `raw` / `dv` / `vv`) |
 | `rmq`    | `core` (`sada` / `ilcp` / `cilcp`), `get_doc` (`da` / `slp` / `slp_ns` / `dslp`), `gcda_slp`, `bare_slp`, `block_size`, `storing_factor` |
 | `pdl`    | `codec` (`plain` / `rp` / `bc`), `get_doc` (`da` / `slp` / `dslp`), `policy`, `block_size`, `storing_factor` |
 | `brute`  | `kind` (`r-index` / `sr-index`), `sampling_size` |
+| `rmq_freq`  | `core` (`sada` / `ilcp` / `cilcp`), `oracle` (`rank` / `doc_isa`), `block_size` |
+| `gcda_occs` | `oracle` (`rank` / `doc_isa`), `block_size` |
+
+With `"task": "frequency"` a query returns each document with its frequency, and the answers dump
+(`-print_results_dir`) writes `d:f` per document. Only the indexes that compute frequencies can run
+it (the others are skipped with an error): `brute` (all but `count`), `slp_ns`, `gcda` with
+`counts: plain`, `rmq_freq` and `gcda_occs`. The last two need a frequency oracle: `rank`, over a
+wavelet tree on the document array, which is then also their backend; or `doc_isa`, the
+per-document inverse suffix arrays over a differential suffix array (their backend), whose grammars
+sample every `block_size` positions.
 
 Missing axes default to the family's canonical value (`light`, `default`, `iv`, etc.). Unknown axis values throw at parse time with a helpful message.
 

@@ -67,7 +67,6 @@ set(SOURCE_FILES
         # common/: small cross-cutting utilities.
         ${PROJECT_SOURCE_DIR}/include/dret/common/algorithm.h
         ${PROJECT_SOURCE_DIR}/include/dret/common/util.h
-        ${PROJECT_SOURCE_DIR}/include/dret/common/run_length_encode.h
         ${PROJECT_SOURCE_DIR}/include/dret/common/tf.h
 
         # slp/: SLP variants and helpers, and the builds of the DA's grammars.
@@ -86,14 +85,11 @@ set(SOURCE_FILES
         # rmq/: RMQ traversal schemes.
         ${PROJECT_SOURCE_DIR}/include/dret/rmq/doc_list_rmq_scheme.h
 
-        # doc_freq/: document frequencies: the oracles and the RMQ frequency cores (the brute-force and
-        # GCDA ones are the listing cores with a frequency sink); doc_freq_base.h and doc_freq_gcda.h are
-        # the 2020 code still in use by the legacy GCDA-ISAs / GCDA-WT-DA.
+        # doc_freq/: document frequencies: the oracles and the cores that need one (the brute-force and
+        # GCDA-with-counts ones are the listing cores with a frequency sink, dret/sink.h).
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/oracle.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/rmq_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/gcda_occs_core.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_base.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_gcda.h
 
         # doc_list/: document-listing family — all listing index entry points.
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_base.h
@@ -199,15 +195,11 @@ endif ()
 find_package(Threads)
 
 if (dret_build_tools)
-    include(ConfigRIndexLib)
-
     list(APPEND tool_LIBS dret ${LIBS} gflags::gflags)
 
     find_package(Threads)
     list(APPEND tool_LIBS ${CMAKE_THREAD_LIBS_INIT})
 
-    cxx_executable_with_flags(build_items "" "${tool_LIBS}" tool/build_items.cpp)
-    cxx_executable_with_flags(build_items_gcda "" "${tool_LIBS}" tool/build_items_gcda.cpp tool/definitions.h)
     cxx_executable_with_flags(dump_pdl_doclists "" "${tool_LIBS}" tool/dump_pdl_doclists.cpp)
 endif ()
 

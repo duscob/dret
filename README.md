@@ -47,48 +47,23 @@ $ make
 ```
 
 
-### Tools and Benchmarks
+### Benchmarks
 
-We include a set of tools to preprocess the datasets and build the document retrieval indexes.
-To facilitate the building process, we also provide some shell scripts to orchestrate the flow execution.
+`bm_doc_list` builds and queries every index from a JSON spec: the collection, the mode (`construct`
+or `query`) and one block per index family. In query mode, `workload.task` selects what a query
+returns: the documents of the pattern (`listing`, the default) or each document with its frequency
+(`frequency`). Every index computes listing; frequencies come from the brute-force indexes, GCDA with
+`counts`, and the `rmq_freq` (SADA / ILCP / CILCP) and `gcda_occs` families, the last two with a
+frequency oracle (`rank` over a wavelet tree on the document array, or `doc_isa`, the per-document
+inverse suffix arrays over a differential suffix array). See `benchmark/document_listing/README.md`
+for the spec, and `test/regression/` for a sweep of every index in each task.
 
 >##### Dependencies
 >
->Notice that some of the implemented solutions are grammar-compression based. In our experimental setup, we used the balanced re-pair implementation for integers provided by Gonzalo Navarro [here](https://users.dcc.uchile.cl/~gnavarro/software/repair.tgz).
->
->Our tools and benchmarks also require that the [GFlags](https://gflags.github.io/gflags/) library is installed on your system.
+>The grammar-compressed indexes run the balanced Re-Pair for integers by Gonzalo Navarro
+>([here](https://users.dcc.uchile.cl/~gnavarro/software/repair.tgz)), built with the project.
+>The benchmarks require the [GFlags](https://gflags.github.io/gflags/) library.
 
-
-##### Building the Indexes
-
-To build the indexes, you can execute the following script
-
-```shell
-$ <source_dir>/benchmark/build_bm.sh <datasets_dir> <source_dir>/build <irepair_exe> <grammar_source_dir>/build 
-```
-
-where
- * *source_dir* is the source directory of our project.
- * *datasets_dir* is the parent directory of the datasets. Each subdirectory is a different dataset containing two files: `data` and `patterns`. The file `data` is a binary file that represents the collection, where each document is separated by the symbol **0** (zero). The file must not contain symbols **1** and **2**.
- * *irepair_exe* is the absolute path of the balanced re-pair executable for integer sequences.
-
-All paths must be absolute.
-
-This script creates a folder for each dataset in the current directory and stores on it the data structures required by each index.
-
-
-##### Benchmarking the Indexes
-To run the benchmarks of the indexes, you can execute the following script.
-
-```shell
-$ <source_dir>/benchmark/run_bm.sh <indexes_dir> <datasets_dir> 
-```
-
-where
- * *indexes_dir* is the directory that stores the indexes built for the collection, i.e., the current directory where you executed the previous command.
- * *datasets_dir* is the parent directory of the datasets. Each subdirectory is a different dataset containing two files: `data` and `patterns`. The file `patterns` is a text file that contains the query patterns, one per line.
-
-All paths must be absolute.
-
-This script creates a folder for each dataset in the current directory, and stores on it the query results by each index and the required space and time.
-
+The 2020 tools and scripts of the paper above (`build_items*`, `build_bm.sh`, `run_bm.sh` and
+`bm_query_doc_freq_index`) were replaced by these indexes; they are in the history up to commit
+`52b4525`.

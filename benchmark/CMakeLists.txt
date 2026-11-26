@@ -9,7 +9,6 @@ list(APPEND benchmark_LIBS benchmark::benchmark benchmark::benchmark_main)
 find_package(Threads)
 list(APPEND benchmark_LIBS ${CMAKE_THREAD_LIBS_INIT})
 
-cxx_executable_with_flags(bm_query_doc_freq_index "" "${benchmark_LIBS}" document_frequencies/bm_query_doc_freq_index.cpp)
 
 # bm_doc_list: each family's cells (document_listing/factories/cells.h) are
 # compiled in a source file of its own, RMQ one per core and PDL one per codec,
@@ -51,7 +50,7 @@ cxx_executable_with_flags(migrate_cache_components "" "${benchmark_LIBS}" docume
 # long misdiagnosis in 2026-08. The test targets already declared this
 # dependency, which is exactly why the tests passed while the benchmarks were
 # quietly broken.
-foreach (_dret_bm bm_query_doc_freq_index bm_doc_list)
+foreach (_dret_bm bm_doc_list)
     if (TARGET ${_dret_bm})
         add_dependencies(${_dret_bm} dsextract repair)
     endif ()
