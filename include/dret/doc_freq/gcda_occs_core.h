@@ -33,6 +33,7 @@
 #include "dret/collection.h"
 #include "dret/common/tf.h"
 #include "dret/config.h"
+#include "dret/doc_freq/frequencies.h"
 #include "dret/doc_freq/oracle.h"
 #include "dret/doc_list/doc_list_index.h"
 #include "dret/fields.h"
@@ -90,9 +91,6 @@ class GcdaOccsCore : public FieldsComponent<GcdaOccsCore<TStorage, t_width, TBac
   using SLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>;
   using OccsBVs = std::vector<sdsl::bit_vector>;
   using RootHeads = sdsl::sd_vector<>;
-
-  // Every document of the range with its frequency (Weighted).
-  static constexpr bool kFrequencies = true;
 
   // t_block_size: the sample spacing of the backend's and the oracle's grammars, when they keep one.
   explicit GcdaOccsCore(const TStorage& t_storage, uint32_t t_block_size = 256)
@@ -242,6 +240,10 @@ void construct(GcdaOccsCore<TStorage, t_width, TBackend, TOracle>& t_core, Confi
     construct(oracle, t_config);
   }
 }
+
+// Every document of the range with its frequency (Weighted).
+template <typename TStorage, uint8_t t_width, typename TBackend, typename TOracle>
+struct ComputesFrequencies<GcdaOccsCore<TStorage, t_width, TBackend, TOracle>> : std::true_type {};
 
 // A GCDA frequency index: the r-index for the range, then GcdaOccsCore.
 template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TBackend, typename TOracle>

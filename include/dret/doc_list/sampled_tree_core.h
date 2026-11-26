@@ -24,9 +24,9 @@
 //                                                  storage alone, unless the caller sets it up
 //   kBackendName, kBackendPrefix                   the backend's name in the serialization and the
 //                                                  prefix of its fields in the size report
-//   kWeighted, forEachWeightedInNode(node, f)      optional: the lists carry counts, f(d, freq) for
-//                                                  every document of the node's list; the core then
-//                                                  computes document frequencies
+//   ReportNode(node, sink)                         optional: the sampler hands the node's list to the
+//                                                  sink itself (e.g. with the counts it stores); else
+//                                                  every document goes to sink.Listed
 //   serialize, GetSizeReport, block_size, storing_factor
 //
 // and a construct(sampler, config) that builds its structures.
@@ -89,10 +89,6 @@ class SampledTreeCore
   // The query profile (search_profile.h) also times the index's count.
   static constexpr bool kProfiled = true;
 
-  // Frequencies when the lists carry counts: the uncovered ends go position by position, the nodes
-  // with their counts.
-  static constexpr bool kFrequencies = requires { requires TSampler::kWeighted; };
-
   // The backend from the storage (and, for GCDA's grammar, the sampler's cell); t_sampler_args after
   // the storing factor go to the sampler (PDL's storage policy).
   template <typename... TArgs>
@@ -140,16 +136,12 @@ class SampledTreeCore
     const auto prof_t3 = prof_clk::now();
 #endif
 
-    if constexpr (kFrequencies && requires { t_sink.Weighted(std::size_t{}, std::size_t{}); }) {
-      auto weighted = [&t_sink](std::size_t d, std::size_t f) { t_sink.Weighted(d, f); };
-      for (auto i : nodes) {
-        if (t_sink.Done()) return;
-        sampler_.forEachWeightedInNode(i, weighted);
-      }
-    } else {
-      auto listed = [&t_sink](std::size_t d) { t_sink.Listed(d); };
-      for (auto i : nodes) {
-        if (t_sink.Done()) return;
+    for (auto i : nodes) {
+      if (t_sink.Done()) return;
+      if constexpr (requires { sampler_.ReportNode(i, t_sink); }) {
+        sampler_.ReportNode(i, t_sink);
+      } else {
+        auto listed = [&t_sink](std::size_t d) { t_sink.Listed(d); };
         sampler_.forEachInNode(i, listed);
       }
     }

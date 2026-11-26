@@ -33,6 +33,7 @@
 
 #include "dret/collection.h"
 #include "dret/config.h"
+#include "dret/doc_freq/frequencies.h"
 #include "dret/doc_freq/oracle.h"
 #include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_rmq.h"
@@ -164,9 +165,6 @@ class RmqFreqCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using typename Base::size_type;
   using Left = TCoreOf<TBackend>;
   using Right = TCoreOf<ReversedView<TBackend, TStorage, t_width>>;
-
-  // Every document of the range with its frequency (Weighted).
-  static constexpr bool kFrequencies = true;
 
   // t_block_size: the sample spacing of the grammars the backend and the oracle keep, when they keep one
   // (backend::DiffSA, DocIsaOracle); the others ignore it.
@@ -318,6 +316,10 @@ void construct(RmqFreqCore<TStorage, t_width, TBackend, TCoreOf, TOracle>& t_cor
     construct(oracle, t_config);
   }
 }
+
+// Every document of the range with its frequency (Weighted).
+template <typename TStorage, uint8_t t_width, typename TBackend, template <typename> class TCoreOf, typename TOracle>
+struct ComputesFrequencies<RmqFreqCore<TStorage, t_width, TBackend, TCoreOf, TOracle>> : std::true_type {};
 
 // The published listing cores with their backend as the only parameter, for RmqFreqCore.
 template <typename TStorage = GenericStorage, uint8_t t_width = 8>

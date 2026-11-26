@@ -31,6 +31,7 @@
 
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_base.h"
+#include "dret/doc_freq/frequencies.h"
 #include "dret/doc_list/doc_list_index.h"
 
 #include "../spec.h"
@@ -55,11 +56,11 @@ struct CellIndex {
   Frequencies frequencies;  // empty when the index does not compute document frequencies
 };
 
-// The index computes document frequencies (dret::DocListIdx over a frequency core).
+// The index computes document frequencies (dret/doc_freq/frequencies.h).
 template <typename TIndex>
 concept ComputesFrequencies = requires {
   typename TIndex::Core;
-  requires dret::FrequencyCore<typename TIndex::Core>;
+  requires dret::freq::FrequencyIndex<TIndex>;
 };
 
 using MakeIndex = std::function<CellIndex(Storage)>;
@@ -69,7 +70,9 @@ using MakeIndex = std::function<CellIndex(Storage)>;
 template <typename TIndex>
 Frequencies FrequenciesOf(const std::shared_ptr<TIndex>& t_idx) {
   if constexpr (ComputesFrequencies<TIndex>) {
-    return [t_idx](const std::string& t_pattern, const FreqReport& t_report) { t_idx->Frequencies(t_pattern, t_report); };
+    return [t_idx](const std::string& t_pattern, const FreqReport& t_report) {
+      dret::freq::Frequencies(*t_idx, t_pattern, t_report);
+    };
   } else {
     return {};
   }

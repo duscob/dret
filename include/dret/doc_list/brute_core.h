@@ -41,9 +41,6 @@ class BruteCore : public FieldsComponent<BruteCore<TStorage, t_width, TBackend>,
   using typename Base::size_type;
   using Backend = TBackend;
 
-  // Every position of the range goes to the sink once.
-  static constexpr bool kFrequencies = true;
-
   // The backend's parameters follow the storage (e.g. a grammar's block size and storing factor).
   template <typename... TArgs>
     requires std::constructible_from<TBackend, const TStorage&, TArgs...>

@@ -17,7 +17,7 @@
 #include <sdsl/rmq_succinct_sct.hpp>
 
 #include "dret/rmq/doc_list_rmq_scheme.h"
-#include "dret/sink.h"
+#include "dret/doc_list/list_sink.h"
 
 //~~~~~~~
 // Basic scheme coverage on a synthetic DA + SADA-style prev_doc RMQ.

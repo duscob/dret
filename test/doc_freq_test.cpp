@@ -3,7 +3,7 @@
 //
 // Document frequencies against a direct count: for every pattern and document, the number of
 // occurrences of the pattern in the document's text (overlapping ones included), over every index
-// that serves frequencies (doc_list_index.h, FrequencyCore), on versions of one random reference with
+// that serves frequencies (doc_freq/frequencies.h, ComputesFrequencies), on versions of one random reference with
 // a few short documents and one-character ones, so ranges hold repeated documents, documents once, and
 // patterns that cross no delimiter but end at one.
 //
@@ -30,6 +30,7 @@
 #include "dret/doc_freq/rmq_core.h"
 #include "dret/doc_list/doc_list_brute.h"
 #include "dret/doc_list/doc_list_brute_backend.h"
+#include "dret/doc_freq/gcda_counts.h"
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/doc_list/doc_list_slp.h"
 
@@ -58,10 +59,10 @@ struct BruteDSA : Kind<dret::DocListIdxBruteBackend<S, A, RC, dret::backend::Dif
   static Index Make(S t_storage) { return Index(t_storage, 16); }
 };
 // Small blocks, so the sampled nodes cover most of a range and their counts carry the answer.
-struct GCDA : Kind<dret::gcda::DocFreqIdxGCDA<S>> {
+struct GCDA : Kind<dret::freq::DocFreqIdxGCDA<S>> {
   static Index Make(S t_storage) { return Index(t_storage, 4, 2); }
 };
-struct GCDARP : Kind<dret::gcda::DocFreqIdxGCDA<S,
+struct GCDARP : Kind<dret::freq::DocFreqIdxGCDA<S,
                                                 A,
                                                 RC,
                                                 grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
@@ -178,7 +179,7 @@ TYPED_TEST(DocFreqTest, MatchesADirectCount) {
   for (const auto& p : this->patterns_) {
     Freqs got;
     std::size_t reports = 0;
-    index.Frequencies(p, [&](std::size_t d, std::size_t f) {
+    dret::freq::Frequencies(index, p, [&](std::size_t d, std::size_t f) {
       got[d] += f;
       ++reports;
     });

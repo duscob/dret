@@ -27,6 +27,7 @@
 #include "dret/doc_freq/gcda_occs_core.h"
 #include "dret/doc_freq/rmq_core.h"
 #include "dret/doc_list/doc_list_brute_backend.h"
+#include "dret/doc_freq/gcda_counts.h"
 #include "dret/doc_list/doc_list_gcda.h"
 
 #include "base_test.h"
@@ -97,7 +98,7 @@ struct RmqIsa : Kind<dret::freq::DocFreqIdxRMQ<S, A, RC, DSA, TCoreOf, Isa>> {
   using Index = dret::freq::DocFreqIdxRMQ<S, A, RC, DSA, TCoreOf, Isa>;
   static Index Make(S t_storage) { return Index(t_storage, 4u); }
 };
-struct GCDA : Kind<dret::gcda::DocFreqIdxGCDA<S>> {
+struct GCDA : Kind<dret::freq::DocFreqIdxGCDA<S>> {
   static Index Make(S t_storage) { return Index(t_storage, 4, 2); }
 };
 struct BruteDA : Kind<dret::DocListIdxBruteBackend<S>> {};
@@ -151,7 +152,7 @@ TYPED_TEST(DocFreqRandomDiffTest, CountsEveryOccurrence) {
 
     for (const auto& p : AllPatterns(docs)) {
       Freqs got;
-      index.Frequencies(p, [&got](std::size_t d, std::size_t f) { got[d] += f; });
+      dret::freq::Frequencies(index, p, [&got](std::size_t d, std::size_t f) { got[d] += f; });
       ++n_queries;
       const auto want = DirectCount(docs, p);
       if (got != want && ++n_wrong <= 5) {

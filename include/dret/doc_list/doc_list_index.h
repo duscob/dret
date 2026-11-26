@@ -20,9 +20,6 @@
 //   Count(pattern)           optional, a range core: [sp, ep) in place of the r-index
 //   n_doc()                  the number of documents, or 0 when not loaded (the listing bitmap then grows)
 //   GetSizeReport()          its fields
-//   kFrequencies             optional, true when its Query serves document frequencies (FreqSink): it
-//                            hands the sink every position of the range once, or the counts of the parts
-//                            it does not expand
 //
 // and a construct(core, config, ...) that builds its structures.
 //
@@ -47,6 +44,7 @@
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/index_base.h"
+#include "dret/doc_list/list_sink.h"
 #include "dret/sink.h"
 #include "dret/size_report.h"
 
@@ -77,12 +75,6 @@ concept PatternCore = requires(const TCore& t_core, const TPattern& t_pattern, i
 template <typename TCore, typename TPattern>
 concept CoreCountsPattern = requires(const TCore& t_core, const TPattern& t_pattern) {
   { t_core.Count(t_pattern) } -> std::convertible_to<std::pair<std::size_t, std::size_t>>;
-};
-
-// The core's Query serves document frequencies (dret/sink.h, FreqSink).
-template <typename TCore>
-concept FrequencyCore = requires {
-  requires TCore::kFrequencies;
 };
 
 // The range finder of an index whose core needs none: constructible from anything, holds nothing.
@@ -143,16 +135,6 @@ class DocListIdx : public DocListIndexExtStorage<TStorage, TAlphabet> {
       if (sp >= ep) return;
       core_.Query(sp, ep, t_pattern.size(), t_sink);
     }
-  }
-
-  // The documents of the pattern with their frequencies: t_report(d, f) once per document, in no given
-  // order. Only over a core that serves frequencies.
-  template <typename TReport>
-    requires FrequencyCore<TCore>
-  void Frequencies(const TPattern& t_pattern, const TReport& t_report) const {
-    FreqSink<TReport> sink(core_.n_doc(), t_report);
-    Query(t_pattern, sink);
-    sink.Finish();
   }
 
   // The suffix-array range of the pattern (a range core only).

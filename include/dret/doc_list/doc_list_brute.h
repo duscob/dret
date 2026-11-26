@@ -39,9 +39,6 @@ class LocateCore
   using typename Base::size_type;
   using TPattern = typename TAlphabet::string_type;
 
-  // Every occurrence goes to the sink once.
-  static constexpr bool kFrequencies = true;
-
   explicit LocateCore(const TStorage& t_storage) : Base(t_storage), locate_idx_(t_storage), get_doc_(t_storage) {}
 
   LocateCore(const TStorage& t_storage, const TLocateIdx& t_locate_idx)

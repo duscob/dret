@@ -87,6 +87,8 @@ set(SOURCE_FILES
 
         # doc_freq/: document frequencies: the oracles and the cores that need one (the brute-force and
         # GCDA-with-counts ones are the listing cores with a frequency sink, dret/sink.h).
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/frequencies.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/gcda_counts.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/oracle.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/rmq_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/gcda_occs_core.h
@@ -94,6 +96,7 @@ set(SOURCE_FILES
         # doc_list/: document-listing family — all listing index entry points.
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_base.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_index.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/list_sink.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/brute_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/sampled_tree_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_brute.h
