@@ -144,6 +144,11 @@ inline const char* SetsValue(axes::GCDASetsCodec t_v) {
   return t_v == axes::GCDASetsCodec::Plain ? "plain" : "";
 }
 
+// GCDA's counts in keyed form: none, the default, is the empty value, which KeyedName omits.
+inline const char* CountsValue(axes::GCDACounts t_v) {
+  return t_v == axes::GCDACounts::Plain ? "plain" : "";
+}
+
 inline const char* RunValuesValue(axes::RunValuesVariant t_v) {
   switch (t_v) {
     case axes::RunValuesVariant::DV:

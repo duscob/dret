@@ -123,6 +123,8 @@ struct GCDASweep {
   std::vector<float> storing_factor{4.0f};
   // Document-set codec: "rp" (default) or "plain".
   std::vector<axes::GCDASetsCodec> sets{axes::GCDASetsCodec::RP};
+  // The frequencies of each list's documents: "none" (default) or "plain" (computes frequencies).
+  std::vector<axes::GCDACounts> counts{axes::GCDACounts::None};
 };
 
 struct DGCDASweep {
@@ -353,6 +355,7 @@ inline GCDASweep ParseGCDA(const nlohmann::json& j) {
   s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
   s.storing_factor = ParseStoringFactors(j, s.storing_factor);
   s.sets = ParseEnumList<axes::GCDASetsCodec>(j, "sets", s.sets);
+  s.counts = ParseEnumList<axes::GCDACounts>(j, "counts", s.counts);
   return s;
 }
 

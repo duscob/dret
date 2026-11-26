@@ -26,6 +26,7 @@
 #include "dret/backend/sa_phi.h"
 #include "dret/doc_list/doc_list_brute.h"
 #include "dret/doc_list/doc_list_brute_backend.h"
+#include "dret/doc_list/doc_list_gcda.h"
 #include "dret/doc_list/doc_list_slp.h"
 
 #include "base_test.h"
@@ -48,7 +49,23 @@ struct BruteDA : Kind<dret::DocListIdxBruteBackend<S>> {};
 struct BruteSAPhi : Kind<dret::DocListIdxBruteBackend<S, A, RC, dret::backend::SAPhi<S, A::int_width>>> {};
 struct BruteRLCSA : Kind<dret::DocListIdxBruteBackend<S, A, RC, dret::backend::RLCSA<S, A::int_width>>> {};
 struct BruteGCDA : Kind<dret::DocListIdxSLP<S>> {};
-using Kinds = testing::Types<BruteRI, BruteSRI, BruteDA, BruteSAPhi, BruteRLCSA, BruteGCDA>;
+// Small blocks, so the sampled nodes cover most of a range and their counts carry the answer.
+struct GCDA : Kind<dret::gcda::DocFreqIdxGCDA<S>> {
+  static Index Make(S t_storage) { return Index(t_storage, 4, 2); }
+};
+struct GCDARP : Kind<dret::gcda::DocFreqIdxGCDA<S,
+                                                A,
+                                                RC,
+                                                grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
+                                                                  grammar::SampledSLP<>,
+                                                                  grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
+                                                grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>,
+                                                                  true,
+                                                                  grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>>> {
+  static Index Make(S t_storage) { return Index(t_storage, 4, 2); }
+};
+
+using Kinds = testing::Types<BruteRI, BruteSRI, BruteDA, BruteSAPhi, BruteRLCSA, BruteGCDA, GCDA, GCDARP>;
 
 using Freqs = std::map<std::size_t, std::size_t>;
 

@@ -189,62 +189,6 @@ auto MakePtrComputeSuffixesByDocGCDAFunctor(const SLP &_slp,
       (_slp, _roots, _root_head_bv, _root_head_bv_rank, _root_head_bv_select, _f_occs_bvs, _l_occs_bvs, _get_suffix);
 }
 
-template<typename CSA, typename ComputeCover, typename GetDocs, typename GetDocFreqs>
-class DocFreqIndexGCDA : public DocFreqIndex {
- public:
-  DocFreqIndexGCDA(const std::shared_ptr<CSA> &_csa,
-                   const std::shared_ptr<ComputeCover> &_compute_cover,
-                   const std::shared_ptr<GetDocs> &_get_docs,
-                   const std::shared_ptr<GetDocFreqs> &_get_doc_freqs)
-      : csa_{_csa}, compute_cover_{_compute_cover}, get_docs_{_get_docs}, get_doc_freqs_{_get_doc_freqs} {
-  }
-
-  std::unordered_map<std::size_t, std::size_t> Search(const std::string &_pattern) const override {
-    auto values = csa_->Search(_pattern);
-    auto _sp = values.first;
-    auto _ep = values.second + 1;
-
-    auto cover = (*compute_cover_)(_sp, _ep);
-
-    const auto &range = cover.first;
-    const auto &nodes = cover.second;
-
-    std::unordered_map<std::size_t, std::size_t> doc_freqs;
-    auto add_doc = [&doc_freqs](const auto &_d) { ++doc_freqs[_d]; };
-
-    if (nodes.empty()) {
-      (*get_docs_)(_sp, _ep, add_doc);
-    } else {
-      (*get_docs_)(_sp, range.first, add_doc);
-      (*get_docs_)(range.second, _ep, add_doc);
-    }
-
-    auto add_doc_freq = [&doc_freqs](const auto &_d, const auto &_f) {
-      doc_freqs[_d] += _f;
-    };
-
-    for (const auto &node: nodes) {
-      (*get_doc_freqs_)(node, add_doc_freq);
-    }
-
-    return doc_freqs;
-  }
-
- private:
-  std::shared_ptr<CSA> csa_;
-  std::shared_ptr<ComputeCover> compute_cover_;
-  std::shared_ptr<GetDocs> get_docs_;
-  std::shared_ptr<GetDocFreqs> get_doc_freqs_;
-};
-
-template<typename CSA, typename ComputeCover, typename GetDocs, typename GetDocFreqs>
-auto MakePtrDocFreqIndexGCDA(const std::shared_ptr<CSA> &_csa,
-                             const std::shared_ptr<ComputeCover> &_compute_cover,
-                             const std::shared_ptr<GetDocs> &_get_docs,
-                             const std::shared_ptr<GetDocFreqs> &_get_doc_freqs) {
-  return new DocFreqIndexGCDA<CSA, ComputeCover, GetDocs, GetDocFreqs>(_csa, _compute_cover, _get_docs, _get_doc_freqs);
-}
-
 }
 
 #endif //DRET_DOC_FREQ_INDEX_GCDA_H_

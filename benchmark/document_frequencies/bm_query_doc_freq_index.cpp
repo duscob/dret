@@ -106,8 +106,7 @@ int main(int argc, char *argv[]) {
       {"CILCP", Factory::Config{Factory::IndexEnum::CILCP_ISAs}},
       {"CILCP-WT-DA", Factory::Config{Factory::IndexEnum::CILCP_WT_DA}},
       {"GCDA", Factory::Config{Factory::IndexEnum::GCDA_ISAs}},
-      {"GCDA-WT-DA", Factory::Config{Factory::IndexEnum::GCDA_WT_DA}},
-      {"Full-GCDA", Factory::Config{Factory::IndexEnum::FULL_GCDA}}
+      {"GCDA-WT-DA", Factory::Config{Factory::IndexEnum::GCDA_WT_DA}}
   };
 
   std::string print_bm_prefix = "Print-";

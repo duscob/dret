@@ -44,6 +44,46 @@
       "storing_factor": [
         32
       ]
+    },
+    {
+      "family": "gcda",
+      "tslp": [
+        "light",
+        "compact_bp",
+        "compact_louds",
+        "combined"
+      ],
+      "sets": [
+        "rp",
+        "plain"
+      ],
+      "counts": [
+        "plain"
+      ],
+      "block_size": [
+        256
+      ],
+      "storing_factor": [
+        4
+      ]
+    },
+    {
+      "family": "gcda",
+      "tslp": [
+        "light"
+      ],
+      "sets": [
+        "rp"
+      ],
+      "counts": [
+        "plain"
+      ],
+      "block_size": [
+        256
+      ],
+      "storing_factor": [
+        "inf"
+      ]
     }
   ]
 }
