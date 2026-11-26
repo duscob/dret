@@ -1,7 +1,7 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 11/24/26.
 //
-// The listing index: a range finder and a core. Every listing index is a DocListIdx:
+// The index: a range finder and a core. Every index of the library is a DocIndex, whatever its task:
 //
 //   range finder  [sp, ep) of the pattern: the r-index count (TCountIdx), or the core itself when it
 //                 finds the range (a backend that counts, the RLCSA: backend::CountsPattern)
@@ -22,6 +22,9 @@
 //   GetSizeReport()          its fields
 //
 // and a construct(core, config, ...) that builds its structures.
+//
+// The task is the sink a query runs into: Search lists the documents (ListSink, list_sink.h), and
+// dret::freq::Frequencies computes their frequencies over the same Query (doc_freq/frequencies.h).
 //
 // The index holds what every family shares: the r-index (loaded, serialized, sized and built only when
 // the core needs it), the listing Search, and the serialization order -- the r-index, then the core --,
@@ -85,7 +88,7 @@ struct NoCountIdx {
 };
 
 template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TCore>
-class DocListIdx : public DocListIndexExtStorage<TStorage, TAlphabet> {
+class DocIndex : public DocListIndexExtStorage<TStorage, TAlphabet> {
  public:
   using Base = DocListIndexExtStorage<TStorage, TAlphabet>;
   using typename Base::size_type;
@@ -103,13 +106,13 @@ class DocListIdx : public DocListIndexExtStorage<TStorage, TAlphabet> {
   // The core's parameters follow the storage (e.g. block size and storing factor).
   template <typename... TArgs>
     requires std::constructible_from<TCore, const TStorage&, TArgs...>
-  explicit DocListIdx(const TStorage& t_storage, TArgs&&... t_core_args)
+  explicit DocIndex(const TStorage& t_storage, TArgs&&... t_core_args)
       : Base(t_storage), count_idx_(t_storage), core_(t_storage, std::forward<TArgs>(t_core_args)...) {}
 
   // A core set up by the caller (e.g. the RMQ cores over a backend with its own parameters).
-  DocListIdx(const TStorage& t_storage, const TCore& t_core) : Base(t_storage), count_idx_(t_storage), core_(t_core) {}
+  DocIndex(const TStorage& t_storage, const TCore& t_core) : Base(t_storage), count_idx_(t_storage), core_(t_core) {}
 
-  DocListIdx() = default;
+  DocIndex() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
     ListSink<std::function<void(TDocId)>> sink(core_.n_doc(), t_report);
@@ -190,12 +193,12 @@ class DocListIdx : public DocListIndexExtStorage<TStorage, TAlphabet> {
 // The core's structures (on a copy of the core, which keeps the index's parameters), then the r-index
 // when the index uses it, then the load. Extra arguments go to the core's construct.
 template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TCore, typename... TArgs>
-void construct(DocListIdx<TStorage, TAlphabet, TCountIdx, TCore>& t_index, Config& t_config, TArgs&&... t_args) {
+void construct(DocIndex<TStorage, TAlphabet, TCountIdx, TCore>& t_index, Config& t_config, TArgs&&... t_args) {
   {
     auto core = t_index.core();
     construct(core, t_config, std::forward<TArgs>(t_args)...);
   }
-  if constexpr (DocListIdx<TStorage, TAlphabet, TCountIdx, TCore>::kUsesCountIdx) {
+  if constexpr (DocIndex<TStorage, TAlphabet, TCountIdx, TCore>::kUsesCountIdx) {
     auto count_idx = t_index.count_idx();
     construct(count_idx, t_config.data_path, t_config);
   }

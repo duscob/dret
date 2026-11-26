@@ -20,7 +20,7 @@
 
 #include "dret/doc_list/brute_core.h"
 #include "dret/doc_list/doc_list_brute.h"
-#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/doc_index.h"
 #include "dret/sink.h"
 
 namespace dret::freq {

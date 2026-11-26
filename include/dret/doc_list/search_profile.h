@@ -1,10 +1,10 @@
 //
 // Optional, zero-overhead-by-default phase profiler for the sampled-tree
-// document-listing query path (SampledTreeCore, and the count in DocListIdx).
+// document-listing query path (SampledTreeCore, and the count in DocIndex).
 //
 // Enabled only when the translation unit is compiled with
 // -DDRET_DOC_LIST_PROFILE; otherwise this header defines nothing and the
-// instrumentation in sampled_tree_core.h and doc_list_index.h compiles out entirely.
+// instrumentation in sampled_tree_core.h and doc_index.h compiles out entirely.
 //
 // Purpose: split a query's time into its four phases so the combine-vs-expand
 // trade-off behind the block-size U-shape (Page vs Revision) can be measured

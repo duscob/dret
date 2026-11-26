@@ -2,7 +2,7 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 11/24/26.
 //
 // The listing sink (the contract is dret/sink.h): each document reported once, the first time it is
-// seen. DocListIdx::Search queries through it.
+// seen. DocIndex::Search queries through it.
 //
 
 #pragma once

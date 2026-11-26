@@ -4,7 +4,7 @@
 // The core of the sampled-tree indexes (GCDA, GCDA over a backend, PDL): cover the suffix-array range
 // with the sampled nodes inside it, read the stored lists of those nodes, and expand the positions no
 // node covers through a document-array backend (backend/backend.h), every document into a sink
-// (dret/sink.h). The range itself comes from the index (doc_list_index.h).
+// (dret/sink.h). The range itself comes from the index (doc_index.h).
 //
 // The indexes differ only in the sampler, which owns the sampled nodes and their lists:
 //

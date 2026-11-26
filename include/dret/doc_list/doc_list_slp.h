@@ -24,7 +24,7 @@
 #include "dret/backend/grammar.h"
 #include "dret/config.h"
 #include "dret/doc_list/brute_core.h"
-#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/doc_index.h"
 #include "dret/slp/bare_grammar.h"
 
 namespace dret {
@@ -34,7 +34,7 @@ template <typename TStorage = GenericStorage,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
           typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>
 using DocListIdxSLP =
-    DocListIdx<TStorage,
+    DocIndex<TStorage,
                TAlphabet,
                TCountIdx,
                BruteCore<TStorage, TAlphabet::int_width, backend::BareGrammar<TStorage, TAlphabet::int_width, TSLP>>>;

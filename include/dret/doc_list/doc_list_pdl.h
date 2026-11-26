@@ -6,7 +6,7 @@
 // navigation and the per-slot stored sets, and a document-array backend for the
 // ranges no stored node covers (default: backend::PlainDA; see backend/backend.h).
 // The range comes from the r-index count (default: sri::RIndexCount), or from a
-// backend that counts (the RLCSA, as in the original PDL; doc_list_index.h).
+// backend that counts (the RLCSA, as in the original PDL; doc_index.h).
 //
 // The three PlainCodec / RPCodec / BCCodec variants are exposed as alias
 // templates DocListIdxPDLPlain / DocListIdxPDLRP / DocListIdxPDLBC. Each codec
@@ -42,7 +42,7 @@
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_gcda.h"
-#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/doc_index.h"
 #include "dret/doc_list/sampled_tree_core.h"
 #include "dret/fields.h"
 #include "dret/index_base.h"
@@ -181,7 +181,7 @@ template <typename TStorage = GenericStorage,
           typename TBitvector = sdsl::sd_vector<>,
           typename TIntVector = sdsl::int_vector<>,
           typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
-using DocListIdxPDL = DocListIdx<TStorage,
+using DocListIdxPDL = DocIndex<TStorage,
                                  TAlphabet,
                                  TCountIdx,
                                  SampledTreeCore<TStorage,

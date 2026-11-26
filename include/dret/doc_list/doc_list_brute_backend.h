@@ -6,7 +6,7 @@
 // (backend/backend.h): the plain DA, SA-Phi, a GCDA grammar, the RLCSA.
 //
 // A backend that finds the range itself (the RLCSA) replaces the r-index, as in PDL: count_idx is then
-// neither loaded, serialized nor counted in the size (doc_list_index.h).
+// neither loaded, serialized nor counted in the size (doc_index.h).
 //
 
 #pragma once
@@ -16,7 +16,7 @@
 #include "dret/backend/da.h"
 #include "dret/config.h"
 #include "dret/doc_list/brute_core.h"
-#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/doc_index.h"
 
 namespace dret {
 
@@ -25,6 +25,6 @@ template <typename TStorage = GenericStorage,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
           typename TGetDoc = backend::PlainDA<TStorage, TAlphabet::int_width>>
 using DocListIdxBruteBackend =
-    DocListIdx<TStorage, TAlphabet, TCountIdx, BruteCore<TStorage, TAlphabet::int_width, TGetDoc>>;
+    DocIndex<TStorage, TAlphabet, TCountIdx, BruteCore<TStorage, TAlphabet::int_width, TGetDoc>>;
 
 }  // namespace dret

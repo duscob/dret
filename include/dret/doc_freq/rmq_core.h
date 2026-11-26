@@ -340,6 +340,6 @@ template <typename TStorage,
           template <typename> class TCoreOf,
           typename TOracle>
 using DocFreqIdxRMQ =
-    DocListIdx<TStorage, TAlphabet, TCountIdx, RmqFreqCore<TStorage, TAlphabet::int_width, TBackend, TCoreOf, TOracle>>;
+    DocIndex<TStorage, TAlphabet, TCountIdx, RmqFreqCore<TStorage, TAlphabet::int_width, TBackend, TCoreOf, TOracle>>;
 
 }  // namespace dret::freq

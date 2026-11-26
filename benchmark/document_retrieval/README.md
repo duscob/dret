@@ -94,7 +94,7 @@ Each output row carries the per-component size breakdown emitted by `GetSizeRepo
 ## Where the code lives
 
 ```
-benchmark/document_listing/
+benchmark/document_retrieval/
 ├── axes.h                 — the axis enums at namespace bench::axes scope
 ├── enum_traits.h          — EnumTraits<E>::ParseCSV / ::Name, plus ParseCSV<E>(csv) helper
 ├── spec.h                 — JSON spec types + parser for bm_doc_list

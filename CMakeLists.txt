@@ -95,7 +95,7 @@ set(SOURCE_FILES
 
         # doc_list/: document-listing family — all listing index entry points.
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_base.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_index.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_index.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/list_sink.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/brute_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/sampled_tree_core.h

@@ -25,7 +25,7 @@
 #include "dret/backend/grammar.h"
 #include "dret/collection.h"
 #include "dret/construct_base.h"
-#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/doc_index.h"
 #include "dret/doc_list/sampled_tree_core.h"
 #include "dret/fields.h"
 #include "dret/index_base.h"
@@ -126,7 +126,7 @@ template <typename TStorage = GenericStorage,
                                                 true,
                                                 grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
-using DocListIdxGCDA = DocListIdx<TStorage,
+using DocListIdxGCDA = DocIndex<TStorage,
                                   TAlphabet,
                                   TCountIdx,
                                   SampledTreeCore<TStorage,

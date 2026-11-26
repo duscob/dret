@@ -198,7 +198,7 @@ template <typename TStorage = GenericStorage,
                                             grammar::SampledSLP<>,
                                             grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
           typename TSLPSets = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>
-using DocFreqIdxGCDA = DocListIdx<TStorage,
+using DocFreqIdxGCDA = DocIndex<TStorage,
                                   TAlphabet,
                                   TCountIdx,
                                   SampledTreeCore<TStorage,
