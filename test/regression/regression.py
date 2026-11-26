@@ -56,6 +56,23 @@ def md5(path):
     return hashlib.md5(Path(path).read_bytes()).hexdigest()
 
 
+def snapshot(directory):
+    """Every file under directory: its size, mtime and inode, which a write or a replacement changes."""
+    out = {}
+    for p in sorted(directory.rglob("*")):
+        if p.is_file():
+            st = p.stat()
+            out[str(p.relative_to(directory))] = (st.st_size, st.st_mtime_ns, st.st_ino)
+    return out
+
+
+def changed_files(before, after):
+    """The files a pass created, removed or wrote, as messages."""
+    return ([f"created: {f}" for f in sorted(set(after) - set(before))]
+            + [f"removed: {f}" for f in sorted(set(before) - set(after))]
+            + [f"written: {f}" for f in sorted(set(before) & set(after)) if before[f] != after[f]])
+
+
 def make_data(args):
     docs = Path(args.source).read_bytes().split(b"\0")
     if docs and docs[-1] == b"":
@@ -120,10 +137,14 @@ def build_manifest(args):
     dataset = {"dir": str(index_dir), "name": data.name, "data_width": 8, "patterns": str(patterns)}
     write_spec(work / "query.json", "query", dataset, sweep, args.reps, version)
     print(f"query -> {work / 'query.out.json'} (log {work / 'query.log'})", flush=True)
+    # Query mode only loads: a query that writes the index (a cache file rebuilt, a header rewritten)
+    # changes what the next query reads and races with any other reader of the directory.
+    before = snapshot(index_dir)
     run_bm(binary, work / "query.json", index_dir,
            ["-print_results_dir", str(results_dir),
             f"--benchmark_out={work / 'query.out.json'}", "--benchmark_out_format=json"],
            work / "query.log")
+    query_writes = changed_files(before, snapshot(index_dir))
 
     out = json.loads((work / "query.out.json").read_text())
     entries = {}
@@ -159,6 +180,7 @@ def build_manifest(args):
         "commit": subprocess.run(["git", "-C", str(HERE), "rev-parse", "--short", "HEAD"],
                                  capture_output=True, text=True).stdout.strip(),
         "validate": validate,
+        "query_writes": query_writes,
         "indexes": manifest,
     }, work
 
@@ -226,6 +248,9 @@ def run(args):
     print(f"{len(manifest['indexes'])} benchmarks, manifest {work / 'manifest.json'}")
 
     problems = check_cross_index(manifest)
+    if manifest["query_writes"]:
+        problems.append("the query pass wrote the index directory:")
+        problems += [f"  {m}" for m in manifest["query_writes"]]
     if args.record:
         if problems:
             print("\n".join(problems))

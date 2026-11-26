@@ -42,7 +42,8 @@ It fails when
 1. the indexes disagree with each other (the count-only index is left out: it reports nothing),
 2. a benchmark of the baseline is missing, or its answers changed,
 3. a size changed (skip with `--allow-size-change` when a change is meant to move sizes),
-4. with `--time-tolerance F`, a query got slower by more than the fraction F.
+4. the query pass created, removed or wrote a file in the index directory (query mode only loads),
+5. with `--time-tolerance F`, a query got slower by more than the fraction F.
 
 Query times are otherwise only reported, as the median and extreme ratios against the baseline.
 Laptop times are noisy (frequency scaling); gate on time only on a quiet machine.
