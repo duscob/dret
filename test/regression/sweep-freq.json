@@ -84,6 +84,21 @@
       "storing_factor": [
         "inf"
       ]
+    },
+    {
+      "family": "rmq_freq",
+      "core": [
+        "sada",
+        "ilcp",
+        "cilcp"
+      ],
+      "oracle": [
+        "rank",
+        "doc_isa"
+      ],
+      "block_size": [
+        64
+      ]
     }
   ]
 }

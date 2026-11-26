@@ -22,8 +22,11 @@
 #include "sr-index/r_index.h"
 
 #include "dret/backend/da.h"
+#include "dret/backend/diff_sa.h"
 #include "dret/backend/rlcsa.h"
 #include "dret/backend/sa_phi.h"
+#include "dret/backend/wavelet_da.h"
+#include "dret/doc_freq/rmq_core.h"
 #include "dret/doc_list/doc_list_brute.h"
 #include "dret/doc_list/doc_list_brute_backend.h"
 #include "dret/doc_list/doc_list_gcda.h"
@@ -49,6 +52,10 @@ struct BruteDA : Kind<dret::DocListIdxBruteBackend<S>> {};
 struct BruteSAPhi : Kind<dret::DocListIdxBruteBackend<S, A, RC, dret::backend::SAPhi<S, A::int_width>>> {};
 struct BruteRLCSA : Kind<dret::DocListIdxBruteBackend<S, A, RC, dret::backend::RLCSA<S, A::int_width>>> {};
 struct BruteGCDA : Kind<dret::DocListIdxSLP<S>> {};
+struct BruteWT : Kind<dret::DocListIdxBruteBackend<S, A, RC, dret::backend::WaveletDA<S, A::int_width>>> {};
+struct BruteDSA : Kind<dret::DocListIdxBruteBackend<S, A, RC, dret::backend::DiffSA<S, A::int_width>>> {
+  static Index Make(S t_storage) { return Index(t_storage, 16); }
+};
 // Small blocks, so the sampled nodes cover most of a range and their counts carry the answer.
 struct GCDA : Kind<dret::gcda::DocFreqIdxGCDA<S>> {
   static Index Make(S t_storage) { return Index(t_storage, 4, 2); }
@@ -65,7 +72,44 @@ struct GCDARP : Kind<dret::gcda::DocFreqIdxGCDA<S,
   static Index Make(S t_storage) { return Index(t_storage, 4, 2); }
 };
 
-using Kinds = testing::Types<BruteRI, BruteSRI, BruteDA, BruteSAPhi, BruteRLCSA, BruteGCDA, GCDA, GCDARP>;
+// The RMQ cores with each oracle: the wavelet tree's rank, or the per-document ISAs over the
+// differential suffix array (small sample spacing, so lookups cross samples).
+using WT = dret::backend::WaveletDA<S, A::int_width>;
+using DSA = dret::backend::DiffSA<S, A::int_width>;
+using Rank = dret::freq::WtRankOracle<S, A::int_width>;
+using Isa = dret::freq::DocIsaOracle<S, A::int_width>;
+using Cores = dret::freq::Cores<S, A::int_width>;
+template <template <typename> class TCoreOf>
+struct RmqWT : Kind<dret::freq::DocFreqIdxRMQ<S, A, RC, WT, TCoreOf, Rank>> {};
+template <template <typename> class TCoreOf>
+struct RmqIsa : Kind<dret::freq::DocFreqIdxRMQ<S, A, RC, DSA, TCoreOf, Isa>> {
+  static typename Kind<dret::freq::DocFreqIdxRMQ<S, A, RC, DSA, TCoreOf, Isa>>::Index Make(S t_storage) {
+    return typename Kind<dret::freq::DocFreqIdxRMQ<S, A, RC, DSA, TCoreOf, Isa>>::Index(t_storage, 16u);
+  }
+};
+struct SadaWT : RmqWT<Cores::Sada> {};
+struct IlcpWT : RmqWT<Cores::Ilcp> {};
+struct CilcpWT : RmqWT<Cores::Cilcp> {};
+struct SadaIsa : RmqIsa<Cores::Sada> {};
+struct IlcpIsa : RmqIsa<Cores::Ilcp> {};
+struct CilcpIsa : RmqIsa<Cores::Cilcp> {};
+
+using Kinds = testing::Types<BruteRI,
+                             BruteSRI,
+                             BruteDA,
+                             BruteSAPhi,
+                             BruteRLCSA,
+                             BruteGCDA,
+                             GCDA,
+                             GCDARP,
+                             BruteWT,
+                             BruteDSA,
+                             SadaWT,
+                             IlcpWT,
+                             CilcpWT,
+                             SadaIsa,
+                             IlcpIsa,
+                             CilcpIsa>;
 
 using Freqs = std::map<std::size_t, std::size_t>;
 

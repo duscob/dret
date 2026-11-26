@@ -117,6 +117,7 @@ std::vector<Cell> Cells(const spec::DGCDASweep& t_sweep);        // dgcda.cpp
 std::vector<Cell> Cells(const spec::SLPNSSweep& t_sweep);        // slp_ns.cpp
 std::vector<Cell> Cells(const spec::RMQSweep& t_sweep);          // rmq.cpp (+ rmq_<core>.cpp)
 std::vector<Cell> Cells(const spec::PDLSweep& t_sweep);          // pdl.cpp (+ pdl_<codec>.cpp)
+std::vector<Cell> Cells(const spec::RMQFreqSweep& t_sweep);      // rmq_freq.cpp
 
 // Occurrences of a pattern (the width of its range in the r-index), for the per-pattern counters.
 // Loads the r-index on its first call, so it needs the same cache files as Brute-RI. (brute.cpp)

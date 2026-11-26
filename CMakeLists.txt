@@ -61,6 +61,8 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/backend/grammar.h
         ${PROJECT_SOURCE_DIR}/include/dret/backend/sa_phi.h
         ${PROJECT_SOURCE_DIR}/include/dret/backend/rlcsa.h
+        ${PROJECT_SOURCE_DIR}/include/dret/backend/wavelet_da.h
+        ${PROJECT_SOURCE_DIR}/include/dret/backend/diff_sa.h
 
         # common/: small cross-cutting utilities.
         ${PROJECT_SOURCE_DIR}/include/dret/common/algorithm.h
@@ -82,14 +84,15 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/slp/compact_louds_slp.h
 
         # rmq/: RMQ traversal schemes.
-        ${PROJECT_SOURCE_DIR}/include/dret/rmq/doc_index_rmq_common.h
         ${PROJECT_SOURCE_DIR}/include/dret/rmq/doc_list_rmq_scheme.h
 
-        # doc_freq/: document-frequency family.
+        # doc_freq/: document frequencies: the oracles and the RMQ frequency cores (the brute-force and
+        # GCDA ones are the listing cores with a frequency sink); doc_freq_base.h and doc_freq_gcda.h are
+        # the 2020 code still in use by the legacy GCDA-ISAs / GCDA-WT-DA.
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/oracle.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/rmq_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_base.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_sada.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_gcda.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_rmq.h
 
         # doc_list/: document-listing family — all listing index entry points.
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_base.h
@@ -188,6 +191,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(slp_expand_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/slp_expand_test.cpp)
     cxx_test_with_flags_and_args(stream_roundtrip_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/stream_roundtrip_test.cpp)
     cxx_test_with_flags_and_args(doc_freq_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_freq_test.cpp)
+    cxx_test_with_flags_and_args(doc_freq_random_diff_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_freq_random_diff_test.cpp)
 endif ()
 
 
@@ -202,8 +206,6 @@ if (dret_build_tools)
     list(APPEND tool_LIBS ${CMAKE_THREAD_LIBS_INIT})
 
     cxx_executable_with_flags(build_items "" "${tool_LIBS}" tool/build_items.cpp)
-    cxx_executable_with_flags(build_items_sada "" "${tool_LIBS}" tool/build_items_sada.cpp tool/definitions.h)
-    cxx_executable_with_flags(build_items_ilcp "" "${tool_LIBS}" tool/build_items_ilcp.cpp tool/definitions.h)
     cxx_executable_with_flags(build_items_gcda "" "${tool_LIBS}" tool/build_items_gcda.cpp tool/definitions.h)
     cxx_executable_with_flags(dump_pdl_doclists "" "${tool_LIBS}" tool/dump_pdl_doclists.cpp)
 endif ()

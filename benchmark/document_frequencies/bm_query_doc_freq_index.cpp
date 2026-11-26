@@ -99,12 +99,6 @@ int main(int argc, char *argv[]) {
   Factory factory(config);
 
   std::vector<std::pair<const char *, Factory::Config>> index_configs = {
-      {"Sada", Factory::Config{Factory::IndexEnum::SADA_ISAs}},
-      {"Sada-WT-DA", Factory::Config{Factory::IndexEnum::SADA_WT_DA}},
-      {"ILCP", Factory::Config{Factory::IndexEnum::ILCP_ISAs}},
-      {"ILCP-WT-DA", Factory::Config{Factory::IndexEnum::ILCP_WT_DA}},
-      {"CILCP", Factory::Config{Factory::IndexEnum::CILCP_ISAs}},
-      {"CILCP-WT-DA", Factory::Config{Factory::IndexEnum::CILCP_WT_DA}},
       {"GCDA", Factory::Config{Factory::IndexEnum::GCDA_ISAs}},
       {"GCDA-WT-DA", Factory::Config{Factory::IndexEnum::GCDA_WT_DA}}
   };

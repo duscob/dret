@@ -287,6 +287,27 @@ struct EnumTraits<GCDACounts> {
 };
 
 template <>
+struct EnumTraits<FreqOracle> {
+  static constexpr const char* flag_name() { return "freq_oracle"; }
+  static constexpr bool has_default() { return true; }
+  static constexpr FreqOracle default_value() { return FreqOracle::Rank; }
+
+  static std::optional<FreqOracle> TryParse(std::string_view s) {
+    if (s == "rank")    return FreqOracle::Rank;
+    if (s == "doc_isa") return FreqOracle::DocIsa;
+    return std::nullopt;
+  }
+
+  static const char* Name(FreqOracle v) {
+    switch (v) {
+      case FreqOracle::Rank:   return "Rank";
+      case FreqOracle::DocIsa: return "DocIsa";
+    }
+    return "UNKNOWN";
+  }
+};
+
+template <>
 struct EnumTraits<PDLStoragePolicy> {
   static constexpr const char* flag_name() { return "pdl_storage_policy"; }
   static constexpr bool has_default() { return true; }

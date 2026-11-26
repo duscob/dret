@@ -5,10 +5,6 @@
 // document-listing RMQ indexes (SADA / ILCP / CILCP). Kept free of grammar /
 // SLP dependencies so it can be included cheaply in any listing core.
 //
-// This header is intentionally *not* used by doc_freq/doc_freq_rmq.h — the
-// frequency-index path continues to use GetExtremeOccurrencesRMQ from
-// doc_index_rmq_common.h.
-//
 
 #pragma once
 

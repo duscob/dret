@@ -1,9 +1,9 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com>.
 //
-// RMQ-based document listing index (SADA / ILCP / CILCP variants), mirroring the
-// frequency-index structure in doc_freq/doc_freq_rmq.h but trimmed for pure listing:
-// only the LEFTMOST pass is needed to visit each distinct doc in [sp, ep] once.
+// RMQ-based document listing index (SADA / ILCP / CILCP variants): the LEFTMOST pass
+// visits each distinct document of [sp, ep) once. The frequency cores run it twice, the
+// second time over the reversed problem (doc_freq/rmq_core.h).
 //
 
 #pragma once
@@ -38,7 +38,6 @@
 #include "dret/doc_list/doc_list_index.h"
 #include "dret/fields.h"
 #include "dret/index_base.h"
-#include "dret/rmq/doc_index_rmq_common.h"
 #include "dret/rmq/doc_list_rmq_scheme.h"
 #include "dret/sink.h"
 #include "dret/size_report.h"
@@ -159,6 +158,9 @@ sdsl::int_vector<> LoadOrComputeIlcp(Config& t_config, std::size_t t_n_doc) {
 // This replaces a head lookup, a peek and a range expansion that each located
 // their start position again. Returns false iff the visit stopped at a head that
 // was already reported.
+//
+// report_dedup(d, i) gets each document with its position i (the frequency
+// cores record the positions; listing ignores them).
 template <bool kPeek, typename TGetDoc, typename TIsReported, typename TReportDedup>
 bool VisitRun(const TGetDoc& t_get_doc,
               std::size_t t_b,
@@ -176,14 +178,14 @@ bool VisitRun(const TGetDoc& t_get_doc,
         reported = false;
         return false;
       }
-      t_report_dedup(d);
+      t_report_dedup(d, t_b);
       return true;
     }
     if constexpr (kPeek) {
       if (seen == 2 && d == head_doc)
         return false;
     }
-    t_report_dedup(d);
+    t_report_dedup(d, t_b + seen - 1);
     return true;
   });
   return reported;
@@ -221,7 +223,7 @@ class SadaCore : public FieldsComponent<SadaCore<TStorage, t_width, TRMQ, TBvDoc
       return;
 
     auto is_reported = [this, &t_sink](std::size_t /*k*/, std::size_t d) { return d >= n_doc_ || t_sink.Contains(d); };
-    auto report = [&t_sink](std::size_t /*k*/, std::size_t d) { t_sink.Position(d); };
+    auto report = [&t_sink](std::size_t k, std::size_t d) { ReportPosition(t_sink, d, k); };
 
     ListDocsRMQScheme(t_sp, t_ep, *rmq_, get_doc_, is_reported, report);
   }
@@ -231,6 +233,8 @@ class SadaCore : public FieldsComponent<SadaCore<TStorage, t_width, TRMQ, TBvDoc
   TGetDoc& get_doc_policy() {
     return get_doc_;
   }
+
+  const TGetDoc& get_doc_policy() const { return get_doc_; }
 
  protected:
   friend Base;
@@ -297,7 +301,7 @@ class SadaValueCore
     // subrange, which is a weaker statement that does admit repeats. Measured
     // over the differential corpus, the bp form emitted 55480 times for 40295
     // documents; this one emits 40295, one per document per query.
-    auto report = [&t_sink](std::size_t /*k*/, std::size_t d) { t_sink.Position(d); };
+    auto report = [&t_sink](std::size_t k, std::size_t d) { ReportPosition(t_sink, d, k); };
     auto stop_pred = [this, t_sp](std::size_t k) {
       return static_cast<std::size_t>((*prev_doc_)[k]) >= t_sp;
     };
@@ -310,6 +314,8 @@ class SadaValueCore
   TGetDoc& get_doc_policy() {
     return get_doc_;
   }
+
+  const TGetDoc& get_doc_policy() const { return get_doc_; }
 
  protected:
   friend Base;
@@ -395,8 +401,8 @@ class IlcpLikeCore
     const auto& select = *select_;
 
     // Identifiers past n_doc (the text terminator's) count as reported, as in SadaCore.
-    auto report_dedup = [this, &t_sink](std::size_t d) {
-      if (d < n_doc_) t_sink.Position(d);
+    auto report_dedup = [this, &t_sink](std::size_t d, std::size_t i) {
+      if (d < n_doc_) ReportPosition(t_sink, d, i);
     };
     auto is_reported = [this, &t_sink](std::size_t d) { return d >= n_doc_ || t_sink.Contains(d); };
 
@@ -496,6 +502,8 @@ class IlcpLikeCore
   TGetDoc& get_doc_policy() {
     return get_doc_;
   }
+
+  const TGetDoc& get_doc_policy() const { return get_doc_; }
 
  protected:
   friend Base;
@@ -616,8 +624,8 @@ class IlcpLikeValueCore
     };
 
     // Identifiers past n_doc (the text terminator's) count as reported, as in SadaCore.
-    auto report_dedup = [this, &t_sink](std::size_t d) {
-      if (d < n_doc_) t_sink.Position(d);
+    auto report_dedup = [this, &t_sink](std::size_t d, std::size_t i) {
+      if (d < n_doc_) ReportPosition(t_sink, d, i);
     };
     auto is_reported = [this, &t_sink](std::size_t d) { return d >= n_doc_ || t_sink.Contains(d); };
 
@@ -644,6 +652,8 @@ class IlcpLikeValueCore
   TGetDoc& get_doc_policy() {
     return get_doc_;
   }
+
+  const TGetDoc& get_doc_policy() const { return get_doc_; }
 
  protected:
   friend Base;
