@@ -21,14 +21,19 @@
 // Cache strategy: RLCSA writes its own sidecar files (.rlcsa.array,
 // .rlcsa.parameters, .rlcsa.sa_samples) via writeTo(base). These do not
 // participate in SDSL typed-cache; the key kRLCSA maps to a file basename via
-// Config.keys. serialize() persists base_ so istream reload can reopen them.
+// Config.keys. serialize() writes the contents of the files the RLCSA reads, so
+// a stream holds the whole structure and an istream load needs nothing else.
 //
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -101,12 +106,16 @@ class RLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
     return {range.first + 1 + d, range.second + 2 + d};
   }
 
-  // Serialize the RLCSA sidecar base path (length, then the characters) so the istream reload path can
-  // reopen the sidecar without needing a Config object.
+  // The RLCSA reads and writes only files, so serialize() writes the contents of each file it reads,
+  // in kFiles order. The serialized size is then the RLCSA's own, and no path enters the stream: it
+  // used to hold the files' path, so its bytes depended on the directory the index lived in.
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v,
                       const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return archive::WriteValue(base_, out, child, "base");
+    size_type written = 0;
+    for (const auto& ext : kFiles) written += archive::WriteValue(ReadFile(base_ + ext), out, child, ext);
+    sdsl::structure_tree::add_size(child, written);
+    return written;
   }
 
   SizeReport GetSizeReport() const {
@@ -125,8 +134,16 @@ class RLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
       base_ = sdsl::cache_file_name(
           t_keys[dret::conf::kRLCSA].template get<std::string>(), config);
     } else {
+      // Write the files back to a directory of this index's own, kept while the index lives, so a
+      // later serialize() can read them again.
       auto& in = std::get<std::reference_wrapper<std::istream>>(t_source).get();
-      archive::ReadValue(base_, in);
+      files_dir_ = std::make_shared<TempDir>();
+      base_ = (files_dir_->path / "rlcsa").string();
+      for (const auto& ext : kFiles) {
+        std::string bytes;
+        archive::ReadValue(bytes, in);
+        std::ofstream(base_ + ext, std::ios::binary).write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+      }
     }
     rlcsa_ = std::make_shared<CSA::RLCSA>(base_, /*print=*/false);
     if (!rlcsa_->isOk())
@@ -134,8 +151,34 @@ class RLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
   }
 
  private:
+  // The files CSA::RLCSA(base) reads (rlcsa.cpp), in the order serialize() writes them.
+  static constexpr std::array<const char*, 3> kFiles{".rlcsa.array", ".rlcsa.parameters", ".rlcsa.sa_samples"};
+
+  static std::string ReadFile(const std::string& t_path) {
+    std::ifstream in(t_path, std::ios::binary);
+    if (!in) throw std::runtime_error("RLCSA: cannot read " + t_path);
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  }
+
+  // A directory removed with its files when the last index sharing it goes.
+  struct TempDir {
+    std::filesystem::path path;
+    TempDir() {
+      std::string tmpl = (std::filesystem::temp_directory_path() / "dret_rlcsa_XXXXXX").string();
+      if (mkdtemp(tmpl.data()) == nullptr) throw std::runtime_error("RLCSA: mkdtemp failed");
+      path = tmpl;
+    }
+    TempDir(const TempDir&) = delete;
+    TempDir& operator=(const TempDir&) = delete;
+    ~TempDir() {
+      std::error_code ec;
+      std::filesystem::remove_all(path, ec);
+    }
+  };
+
   std::shared_ptr<CSA::RLCSA> rlcsa_;
   std::string base_;
+  std::shared_ptr<TempDir> files_dir_;  // set by an istream load: the directory base_ is in
 };
 
 // Free-function construct(). Builds (or short-circuits when warm) the RLCSA

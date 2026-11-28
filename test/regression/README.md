@@ -42,7 +42,8 @@ It fails when
 1. the indexes disagree with each other (the count-only index is left out: it reports nothing),
 2. a benchmark of the baseline is missing, or its answers changed,
 3. a size changed (skip with `--allow-size-change` when a change is meant to move sizes),
-4. with `--time-tolerance F`, a query got slower by more than the fraction F.
+4. the query pass created, removed or wrote a file in the index directory (query mode only loads),
+5. with `--time-tolerance F`, a query got slower by more than the fraction F.
 
 Query times are otherwise only reported, as the median and extreme ratios against the baseline.
 Laptop times are noisy (frequency scaling); gate on time only on a quiet machine.
@@ -52,16 +53,15 @@ the new ones.
 
 ## Sizes that are not reproducible
 
-Two fresh builds of the same code agree on every answer and every size except this one, which
-`UNSTABLE_SIZES` in `regression.py` leaves out of the size comparison:
+Two fresh builds of the same code, in any directories, agree on every answer and every size.
+`UNSTABLE_SIZES` in `regression.py` lists the sizes to leave out of the comparison when that does
+not hold, and is empty. It had two entries, both fixed in the redesign:
 
-- **RLCSA backend**, serialized size only: it serializes the path of its files, so the size
-  depends on the directory the index lives in.
-
-It is a defect to fix in the redesign (no paths in a serialization), after which its entry goes.
-PDL-BC (`codec=bc`) had an entry until its builds were seeded (`BCCodec::MiningParams::seed`):
-the vendored `vnmextract` seeded its min-hashes with the time, so each build mined other
-bicliques.
+- **PDL-BC** (`codec=bc`), both sizes: the vendored `vnmextract` seeded its min-hashes with the
+  time, so each build mined other bicliques. Builds are seeded now (`BCCodec::MiningParams::seed`).
+- **RLCSA backend**, serialized size: it serialized the path of its files, so the size depended on
+  the directory the index lived in. It serializes the files' contents now, so the serialized size
+  is the RLCSA's own.
 
 ## Gate for merging into `redesign/base`
 
