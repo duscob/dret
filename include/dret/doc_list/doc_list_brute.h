@@ -16,6 +16,7 @@
 #include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/index_base.h"
+#include "dret/sink.h"
 
 namespace dret {
 
@@ -47,14 +48,14 @@ class DocListIdxBrute : public DocListIndexExtStorage<TStorage, TAlphabet> {
   DocListIdxBrute() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
-    auto occurrences = locate_idx_.Locate(t_pattern);
+    ListSink<std::function<void(TDocId)>> sink(get_doc_.n_doc(), t_report);
+    Query(t_pattern, sink);
+  }
 
-    // Locate yields one entry per occurrence; the index owns set semantics (see distinct_docs.h).
-    DistinctDocs seen(get_doc_.n_doc());
-    for (const auto& item : occurrences) {
-      const std::size_t d = get_doc_(item);
-      if (seen.Insert(d)) t_report(static_cast<TDocId>(d));
-    }
+  // The query into any sink (dret/sink.h): the document of every occurrence Locate yields.
+  template <typename TSink>
+  void Query(const TPattern& t_pattern, TSink& t_sink) const {
+    for (const auto& item : locate_idx_.Locate(t_pattern)) t_sink.Position(get_doc_(item));
   }
 
   void load(Config t_config) override {

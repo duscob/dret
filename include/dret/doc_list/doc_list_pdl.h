@@ -13,11 +13,9 @@
 // Each codec names its lists component through a static constexpr kListsKey;
 // the core is cached as components (see CacheComponents in pdl/tree_core.h).
 //
-// Search() is inherited from DLSampledTreeScheme — the index just overrides
-// the four virtual hooks: count, computeCover[Full], getDocs, getDocSet.
-// computeCover stays a stub since PDL only needs the multi-range
-// computeCoverFull; the base's default cover machinery won't be exercised by
-// Search.
+// Search() is DLSampledTreeScheme's; the index supplies its steps: count,
+// computeCoverFull (PDLTreeCore's multi-range cover), getDocs (the backend)
+// and forEachInNode (the stored set, through the codec).
 //
 
 #pragma once
@@ -68,10 +66,13 @@ template <typename TStorage = GenericStorage,
           typename TIntVector = sdsl::int_vector<>,
           typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
 class DocListIdxPDL
-    : public DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>,
+    : public DLSampledTreeScheme<
+          DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend, TStoredSetCodec, TBitvector, TIntVector, TMergeSets>,
+          TMergeSets,
+          typename TAlphabet::string_type>,
       public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
-  using SchemeBase = DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>;
+  using SchemeBase = DLSampledTreeScheme<DocListIdxPDL, TMergeSets, typename TAlphabet::string_type>;
   using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
   using TCore = PDLTreeCore<TBitvector,
                             typename TBitvector::rank_1_type,
@@ -162,39 +163,31 @@ class DocListIdxPDL
   StoragePolicy policy() const { return policy_; }
 
  protected:
-  std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const override {
+  // The steps of DLSampledTreeScheme::Query.
+  friend SchemeBase;
+
+  std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const {
     if constexpr (kBackendCounts) return backend_.Count(t_pattern);
     else return count_idx_.Count(t_pattern);
   }
 
-  // Single-range computeCover: PDL's multi-range covers are produced by
-  // computeCoverFull below; the base's Search() does not call this hook
-  // at all. Provide an empty cover so the pure virtual is
-  // satisfied and the base's default computeCoverFull (which delegates
-  // to computeCover) is harmless.
-  std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
-      std::size_t t_sp,
-      std::size_t /*t_ep*/) const override {
-    return {{t_sp, t_sp}, {}};
-  }
-
+  // PDL's cover: the selected nodes inside [sp, ep) and the gaps between them (PDLTreeCore).
   void computeCoverFull(std::size_t t_sp,
                         std::size_t t_ep,
                         std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,
-                        std::vector<std::size_t>& t_nodes) const override {
+                        std::vector<std::size_t>& t_nodes) const {
     if (core_) core_->computeCoverFull(t_sp, t_ep, t_raw_ranges, t_nodes);
   }
 
-  void getDocs(std::size_t t_sp,
-               std::size_t t_ep,
-               const std::function<void(typename SchemeBase::TDocId)>& t_report) const override {
-    auto wrapper = [&t_report](std::size_t d) { t_report(d); };
-    backend_(t_sp, t_ep, wrapper);
+  template <typename TSink>
+  void getDocs(std::size_t t_sp, std::size_t t_ep, TSink& t_sink) const {
+    auto position = [&t_sink](std::size_t d) { t_sink.Position(d); };
+    backend_(t_sp, t_ep, position);
   }
 
-  std::vector<typename SchemeBase::TDocId> getDocSet(std::size_t t_codec_slot) const override {
-    if (!core_) return {};
-    return core_->getDocSet(t_codec_slot);
+  template <typename TSink>
+  void forEachInNode(std::size_t t_codec_slot, TSink& t_sink) const {
+    if (core_) core_->forEachInSet(t_codec_slot, [&t_sink](std::size_t d) { t_sink.Listed(d); });
   }
 
   void loadInner(typename StorageBase::TSource& t_source, const JSON& t_keys) override {

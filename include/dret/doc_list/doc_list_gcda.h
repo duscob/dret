@@ -44,10 +44,13 @@ template <typename TStorage = GenericStorage,
                                                 true,
                                                 grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
-class DocListIdxGCDA : public DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>,
-                       public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
+class DocListIdxGCDA
+    : public DLSampledTreeScheme<DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TMergeSets>,
+                                 TMergeSets,
+                                 typename TAlphabet::string_type>,
+      public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
  public:
-  using SchemeBase = DLSampledTreeScheme<TMergeSets, typename TAlphabet::string_type>;
+  using SchemeBase = DLSampledTreeScheme<DocListIdxGCDA, TMergeSets, typename TAlphabet::string_type>;
   using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
   using typename SchemeBase::size_type;
 
@@ -97,30 +100,34 @@ class DocListIdxGCDA : public DLSampledTreeScheme<TMergeSets, typename TAlphabet
   }
 
  protected:
-  std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const override {
+  // The steps of DLSampledTreeScheme::Query.
+  friend SchemeBase;
+
+  std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const {
     return count_idx_.Count(t_pattern);
   }
 
-  std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
-      std::size_t t_sp,
-      std::size_t t_ep) const override {
-    std::vector<std::size_t> nodes;
-    auto report = [&nodes](const auto& _value) {
-      nodes.emplace_back(_value);
-    };
-    auto range = grammar::ComputeCoverFromBottom(*slp_, t_sp, t_ep, report);
-    return {std::move(range), std::move(nodes)};
+  void computeCoverFull(std::size_t t_sp,
+                        std::size_t t_ep,
+                        std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,
+                        std::vector<std::size_t>& t_nodes) const {
+    auto report = [&t_nodes](const auto& _value) { t_nodes.emplace_back(_value); };
+    const auto range = grammar::ComputeCoverFromBottom(*slp_, t_sp, t_ep, report);
+    SchemeBase::CoverToRanges(t_sp, t_ep, range, !t_nodes.empty(), t_raw_ranges);
   }
 
-  void getDocs(std::size_t t_sp,
-               std::size_t t_ep,
-               const std::function<void(typename SchemeBase::TDocId)>& t_report) const override {
-    ExpandSLP(*slp_, t_sp, t_ep, t_report);
+  // A reference to the sink, not the sink: some expansions take their report as const&.
+  template <typename TSink>
+  void getDocs(std::size_t t_sp, std::size_t t_ep, TSink& t_sink) const {
+    auto position = [&t_sink](auto d) { t_sink.Position(static_cast<std::size_t>(d)); };
+    ExpandSLP(*slp_, t_sp, t_ep, position);
   }
 
-  std::vector<typename SchemeBase::TDocId> getDocSet(std::size_t t_i) const override {
-    auto v = (*slp_sets_)[t_i];
-    return {v.begin(), v.end()};
+  // The node's list as the sets codec gives it (a grammar-compressed list expands into a vector; a
+  // plain one is read in place).
+  template <typename TSink>
+  void forEachInNode(std::size_t t_i, TSink& t_sink) const {
+    for (const auto& d : (*slp_sets_)[t_i]) t_sink.Listed(static_cast<std::size_t>(d));
   }
 
   void loadInner(typename StorageBase::TSource& t_source, const JSON& t_keys) override {

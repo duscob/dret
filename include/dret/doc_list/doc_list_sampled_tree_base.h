@@ -1,15 +1,32 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 7/26/25.
 //
+// The query of the sampled-tree indexes (GCDA, GCDA over a backend, PDL): find the suffix-array range
+// of the pattern, cover it with the sampled nodes inside it, read the stored lists of those nodes and
+// expand the positions no node covers through the index's backend, every document into a sink
+// (dret/sink.h).
+//
+// The index supplies the steps as members, found at compile time (CRTP), so a position reaches the
+// sink without a virtual call or a std::function:
+//
+//   count(pattern)                          -> [sp, ep), the suffix-array range
+//   computeCoverFull(sp, ep, raw, nodes)    the uncovered ranges and the covering nodes
+//   getDocs(b, e, sink)                     sink.Position(d) for every position of [b, e)
+//   forEachInNode(node, sink)               sink.Listed(d) for every document of the node's list
+//
+// CoverToRanges turns a single-range cover (the nodes and the span they cover) into the uncovered
+// ranges, for the indexes whose cover is one contiguous span (GCDA).
+//
 
 #pragma once
 
-#include <algorithm>
+#include <cstddef>
 #include <functional>
+#include <utility>
 #include <vector>
 
-#include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_base.h"
+#include "dret/sink.h"
 
 #ifdef DRET_DOC_LIST_PROFILE
 #include <chrono>
@@ -19,8 +36,7 @@
 
 namespace dret {
 
-
-template <typename TMergeSets, typename TSequence = Alphabet<>::string_type>
+template <typename TDerived, typename TMergeSets, typename TSequence = Alphabet<>::string_type>
 class DLSampledTreeScheme : public DocListIndex<TSequence> {
  public:
   using Base = DocListIndex<TSequence>;
@@ -33,43 +49,43 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
   DLSampledTreeScheme() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
+    // Each document is reported the first time it is seen, from the uncovered ranges or from a stored
+    // list. The number of documents is not at hand here, so the bitmap grows as needed.
+    ListSink<std::function<void(TDocId)>> sink(0, t_report);
+    Query(t_pattern, sink);
+  }
+
+  // The query into any sink.
+  template <typename TSink>
+  void Query(const TPattern& t_pattern, TSink& t_sink) const {
+    const auto& self = static_cast<const TDerived&>(*this);
 #ifdef DRET_DOC_LIST_PROFILE
     using prof_clk = std::chrono::steady_clock;
     const auto prof_t0 = prof_clk::now();
 #endif
-    auto [sp, ep] = count(t_pattern);
+    auto [sp, ep] = self.count(t_pattern);
 #ifdef DRET_DOC_LIST_PROFILE
     const auto prof_t1 = prof_clk::now();
 #endif
 
     std::vector<std::pair<std::size_t, std::size_t>> raw_ranges;
     std::vector<std::size_t> nodes;
-    computeCoverFull(sp, ep, raw_ranges, nodes);
+    self.computeCoverFull(sp, ep, raw_ranges, nodes);
 #ifdef DRET_DOC_LIST_PROFILE
     const auto prof_t2 = prof_clk::now();
 #endif
 
-    std::size_t total_raw = 0;
-    for (const auto& r : raw_ranges) total_raw += r.second - r.first;
-    std::vector<TDocId> docs;
-
-    // Each document is reported the first time it is seen, from the boundary ranges or from a
-    // stored list (distinct_docs.h), instead of sorting the boundary documents and merging the
-    // sorted lists.
-    DistinctDocs seen(0);
-    auto add_doc = [&docs, &seen](const auto& tt_d) {
-      if (seen.Insert(tt_d)) docs.emplace_back(tt_d);
-    };
-
     for (const auto& [b, e] : raw_ranges) {
-      getDocs(b, e, add_doc);
+      if (t_sink.Done()) return;
+      self.getDocs(b, e, t_sink);
     }
 #ifdef DRET_DOC_LIST_PROFILE
     const auto prof_t3 = prof_clk::now();
 #endif
 
     for (auto i : nodes) {
-      for (const auto& d : this->getDocSet(i)) add_doc(d);
+      if (t_sink.Done()) return;
+      self.forEachInNode(i, t_sink);
     }
 #ifdef DRET_DOC_LIST_PROFILE
     const auto prof_t4 = prof_clk::now();
@@ -82,48 +98,29 @@ class DLSampledTreeScheme : public DocListIndex<TSequence> {
       pr.ns_combine += std::chrono::duration_cast<ns>(prof_t4 - prof_t3).count();
       ++pr.n_queries;
       pr.n_nodes += nodes.size();
-      pr.n_raw_positions += total_raw;
-      pr.n_docs += docs.size();
+      for (const auto& r : raw_ranges) pr.n_raw_positions += r.second - r.first;
+      if constexpr (requires { t_sink.Reported(); }) pr.n_docs += t_sink.Reported();
     }
 #endif
-
-    for (const auto& doc : docs) {
-      t_report(doc);
-    }
   }
 
  protected:
-  virtual std::pair<std::size_t, std::size_t> count(const TPattern& t_pattern) const = 0;
-
-  virtual std::pair<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> computeCover(
-      std::size_t t_sp,
-      std::size_t t_ep) const = 0;
-
-  // Multi-range cover. Default delegates to the single-range computeCover
-  // and produces at most a prefix and a suffix raw range — semantically
-  // equivalent to the previous Search shape, so GCDA/DGCDA keep working
-  // unchanged. PDL indexes override this to return interleaved raw gaps
-  // when their storage policy leaves leaves unselected (see
-  // PDLTreeCore::computeCoverFull).
-  virtual void computeCoverFull(std::size_t t_sp,
-                                std::size_t t_ep,
-                                std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,
-                                std::vector<std::size_t>& t_nodes) const {
-    auto [range, nds] = computeCover(t_sp, t_ep);
-    if (nds.empty()) {
+  // The uncovered ranges of a single-range cover: all of [sp, ep) when no node covers any of it,
+  // otherwise the parts before and after the span [range.first, range.second) the nodes cover.
+  static void CoverToRanges(std::size_t t_sp,
+                            std::size_t t_ep,
+                            const std::pair<std::size_t, std::size_t>& t_range,
+                            bool t_has_nodes,
+                            std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges) {
+    if (!t_has_nodes) {
       t_raw_ranges.emplace_back(t_sp, t_ep);
-    } else {
-      if (t_sp < range.first) t_raw_ranges.emplace_back(t_sp, range.first);
-      if (range.second < t_ep) t_raw_ranges.emplace_back(range.second, t_ep);
+      return;
     }
-    t_nodes = std::move(nds);
+    if (t_sp < t_range.first) t_raw_ranges.emplace_back(t_sp, t_range.first);
+    if (t_range.second < t_ep) t_raw_ranges.emplace_back(t_range.second, t_ep);
   }
 
-  virtual void getDocs(std::size_t t_sp, std::size_t t_ep, const std::function<void(TDocId)>& t_report) const = 0;
-
-  virtual std::vector<TDocId> getDocSet(std::size_t t_i) const = 0;
-
-  // Not used by Search since the bitmap deduplication (distinct_docs.h); kept for the
+  // Not used by Query since the bitmap deduplication (distinct_docs.h); kept for the
   // MergeSetsBinaryTreeFunctor of the index types and its tests.
   TMergeSets merge_sets_;
 };

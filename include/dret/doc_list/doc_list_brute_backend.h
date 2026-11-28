@@ -29,6 +29,7 @@
 #include "dret/doc_list/distinct_docs.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/index_base.h"
+#include "dret/sink.h"
 
 namespace dret {
 
@@ -52,14 +53,16 @@ class DocListIdxBruteBackend : public DocListIndexExtStorage<TStorage, TAlphabet
   DocListIdxBruteBackend() = default;
 
   void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
+    ListSink<std::function<void(TDocId)>> sink(n_doc_, t_report);
+    Query(t_pattern, sink);
+  }
+
+  // The query into any sink (dret/sink.h): the backend expands the whole range into it.
+  template <typename TSink>
+  void Query(const TPattern& t_pattern, TSink& t_sink) const {
     auto [sp, ep] = Count(t_pattern);
     if (sp >= ep) return;
-
-    DistinctDocs seen(n_doc_);
-    auto add = [&seen, &t_report](std::size_t d) {
-      if (seen.Insert(d)) t_report(static_cast<TDocId>(d));
-    };
-    get_doc_(sp, ep, add);
+    get_doc_(sp, ep, t_sink);
   }
 
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
