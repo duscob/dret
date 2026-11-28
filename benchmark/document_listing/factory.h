@@ -21,24 +21,17 @@
 #include <sdsl/sd_vector.hpp>
 #include <sdsl/util.hpp>
 
-#include "sr-index/r_index.h"
-#include "sr-index/sr_index.h"
+#include "sr-index/index_base.h"
 
 #include "../tool/definitions.h"
 
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_base.h"
+#include "dret/pdl/storage_policy.h"
 
 #include "axes.h"
-#include "factories/brute.h"
-#include "factories/dgcda.h"
-#include "factories/gcda.h"
-#include "factories/pdl.h"
-#include "factories/rmq.h"
-#include "factories/slp_ns.h"
+#include "factories/query.h"
 
-
-using ExternalGenericStorage = std::reference_wrapper<sri::GenericStorage>;
 
 template <uint8_t t_width = 8>
 class Factory {
@@ -56,9 +49,10 @@ class Factory {
   using PrevDocVariant   = bench::axes::PrevDocVariant;
   using GCDASetsCodec    = bench::axes::GCDASetsCodec;
 
-  // Typed-index aliases for each family now live in benchmark/document_listing/
-  // factories/{brute,gcda,dgcda,slp_ns,rmq,pdl}.h. The Factory facade simply
-  // dispatches MakeIndex(Config) to the right family's Make() function.
+  // Typed-index aliases for each family live in benchmark/document_listing/
+  // factories/{brute,gcda,dgcda,slp_ns,rmq,pdl}.h. The Factory facade
+  // dispatches MakeIndex(Config) to the family's query entry point
+  // (factories/query.h), compiled in a source file of its own.
 
   struct Config {
     IndexEnum index_t;
@@ -167,12 +161,12 @@ class Factory {
       seq_size_ = bits / stored_width;
     }
 
-    // r_index_ is NOT loaded eagerly: it backs only CountOccurrences (the
-    // per-pattern occurrence counts) and requires the full r-index sample /
+    // The r-index CountOccurrences reads is NOT loaded eagerly: it backs only
+    // the per-pattern occurrence counts and requires the full r-index sample /
     // mark cache files (typed bwt_run_first_text_pos_<HASH> etc.). Loading it
     // in the ctor would force every Factory user -- including PDL-only or
     // GCDA-only benchmark runs that never touch the r-index -- to pre-build
-    // those artifacts. Deferred to rIndex().
+    // those artifacts. Deferred to the first CountOccurrences call.
 
     load(doc_endings_);
     load(doc_endings_rank_, [this]() {
@@ -185,22 +179,10 @@ class Factory {
   // brute baseline's r-index (half-open -- RIndexCount treats start >= end as empty).
   // Loads the r-index on first use, so it needs the same cache files as BruteRI.
   std::size_t CountOccurrences(const std::string& t_pattern) {
-    const auto [start, end] = rIndex().Count(t_pattern);
-    return end > start ? end - start : 0;
+    if (!count_occurrences_)
+      count_occurrences_ = bench::factories::query::OccurrenceCounter(std::ref(storage_), config_);
+    return count_occurrences_(t_pattern);
   }
-
- private:
-  // Lazy accessor for the r-index CountOccurrences reads. First call
-  // constructs + loads from the cache; later calls return the cached one.
-  sri::RIndex<ExternalGenericStorage>& rIndex() {
-    if (!r_index_) {
-      r_index_ = std::make_shared<sri::RIndex<ExternalGenericStorage>>(std::ref(storage_));
-      r_index_->load(config_);
-    }
-    return *r_index_;
-  }
-
- public:
 
   std::pair<dret::DocListIndex<>*, std::size_t> Make(const Config& t_config) {
     auto index = MakeIndex(t_config);
@@ -243,165 +225,107 @@ class Factory {
       return it->second;
     }
 
+    namespace q = bench::factories::query;
+    const q::RMQArgs rmq{.block_size = t_config.block_size,
+                         .storing_factor = t_config.storing_factor,
+                         .get_doc = t_config.get_doc,
+                         .gcda_slp = t_config.gcda_slp,
+                         .bare_slp = t_config.bare_slp,
+                         .dgcda_slp = t_config.dgcda_slp,
+                         .run_values = t_config.run_values,
+                         .prev_doc = t_config.prev_doc,
+                         .sa_sampling = t_config.sa_sampling};
+    const q::PDLArgs pdl{.block_size = t_config.block_size,
+                         .storing_factor = t_config.storing_factor,
+                         .get_doc = t_config.get_doc,
+                         .policy = t_config.pdl_storage_policy,
+                         .gcda_slp = t_config.gcda_slp,
+                         .bare_slp = t_config.bare_slp,
+                         .dgcda_slp = t_config.dgcda_slp,
+                         .sa_sampling = t_config.sa_sampling,
+                         .backend_block_size = t_config.pdl_backend_block_size};
+    const auto storage = std::ref(storage_);
+
     Index index;
+    q::Built built;
     switch (t_config.index_t) {
-      case IndexEnum::BRUTE_R_INDEX: {
-        // Brute baselines bypass auto-build: the underlying sri::RIndex /
-        // sri::SrIndexValidArea caches come from a construct run, and
-        // DocListIdxBrute's own construct() would rebuild them from scratch.
-        auto idx = std::make_shared<bench::factories::brute::IdxR<ExternalGenericStorage>>(
-            std::ref(storage_));
-        idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*idx)};
+      // Brute baselines bypass auto-build: the underlying sri::RIndex /
+      // sri::SrIndexValidArea caches come from a construct run, and
+      // DocListIdxBrute's own construct() would rebuild them from scratch.
+      case IndexEnum::BRUTE_R_INDEX:
+        built = q::BruteR(storage, config_);
         break;
-      }
+      case IndexEnum::BRUTE_SR_INDEX:
+        built = q::BruteSr(storage, config_, t_config.sampling_size);
+        break;
+      case IndexEnum::BRUTE_DA:
+        built = q::BruteDA(storage, config_);
+        break;
+      case IndexEnum::COUNT_RI:
+        built = q::CountRI(storage, config_);
+        break;
+      case IndexEnum::BRUTE_RLCSA:
+        built = q::BruteRLCSA(storage, config_);
+        break;
 
-      case IndexEnum::BRUTE_SR_INDEX: {
-        auto idx = std::make_shared<bench::factories::brute::IdxSr<ExternalGenericStorage>>(
-            std::ref(storage_),
-            sri::SrIndexValidArea<ExternalGenericStorage>(storage_, t_config.sampling_size));
-        idx->load(config_);
-        index = {idx, sdsl::size_in_bytes(*idx)};
+      case IndexEnum::GCDA:
+        built = q::GCDA(
+            storage, config_, t_config.block_size, t_config.storing_factor, t_config.gcda_slp, t_config.gcda_sets);
         break;
-      }
+      case IndexEnum::GCDA_BACKEND:
+        built = q::GCDABackend(
+            storage, config_, t_config.block_size, t_config.storing_factor, t_config.get_doc, t_config.gcda_sets);
+        break;
+      case IndexEnum::DGCDA:
+        built = q::DGCDA(
+            storage, config_, t_config.block_size, t_config.storing_factor, t_config.dgcda_slp, t_config.gcda_sets);
+        break;
+      case IndexEnum::SLP_NS:
+        built = q::SLPNS(storage,
+                         config_,
+                         t_config.bare_slp,
+                         t_config.block_size,
+                         t_config.slp_ns_sampled ? std::optional(t_config.gcda_slp) : std::nullopt,
+                         t_config.storing_factor);
+        break;
 
-      case IndexEnum::BRUTE_DA: {
-        auto [idx, size] = bench::factories::brute::MakeBackend<
-            bench::factories::brute::IdxDA<ExternalGenericStorage>>(std::ref(storage_), config_);
-        index = {idx, size};
+      // Each core reads the axes it has: the published ones neither run_values nor prev_doc,
+      // SADA-V prev_doc, ILCP-V and CILCP-V run_values.
+      case IndexEnum::SADA:
+        built = q::Sada(storage, config_, rmq);
         break;
-      }
+      case IndexEnum::ILCP:
+        built = q::Ilcp(storage, config_, rmq);
+        break;
+      case IndexEnum::CILCP:
+        built = q::Cilcp(storage, config_, rmq);
+        break;
+      case IndexEnum::SADA_V:
+        built = q::SadaValue(storage, config_, rmq);
+        break;
+      case IndexEnum::ILCP_V:
+        built = q::IlcpValue(storage, config_, rmq);
+        break;
+      case IndexEnum::CILCP_V:
+        built = q::CilcpValue(storage, config_, rmq);
+        break;
 
-      case IndexEnum::COUNT_RI: {
-        auto [idx, size] = bench::factories::brute::MakeBackend<
-            bench::factories::brute::IdxCount<ExternalGenericStorage>>(std::ref(storage_), config_);
-        index = {idx, size};
+      case IndexEnum::PDL:
+        switch (t_config.pdl_variant) {
+          case PDLVariant::RP:
+            built = q::PDLRP(storage, config_, pdl);
+            break;
+          case PDLVariant::BC:
+            built = q::PDLBC(storage, config_, pdl);
+            break;
+          case PDLVariant::Plain:
+          default:
+            built = q::PDLPlain(storage, config_, pdl);
+            break;
+        }
         break;
-      }
-
-      case IndexEnum::BRUTE_RLCSA: {
-        auto [idx, size] = bench::factories::brute::MakeBackend<
-            bench::factories::brute::IdxRLCSA<ExternalGenericStorage>>(std::ref(storage_), config_);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::GCDA: {
-        auto [idx, size] = bench::factories::gcda::Make(
-            std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor, t_config.gcda_slp, t_config.gcda_sets);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::GCDA_BACKEND: {
-        auto [idx, size] = bench::factories::gcda::MakeBackend(
-            std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor, t_config.get_doc, t_config.gcda_sets);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::DGCDA: {
-        auto [idx, size] = bench::factories::dgcda::Make(
-            std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor, t_config.dgcda_slp, t_config.gcda_sets);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::SADA: {
-        auto [idx, size] = bench::factories::rmq::Make(
-            std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::SADA,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
-            bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
-            t_config.sa_sampling);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::ILCP: {
-        auto [idx, size] = bench::factories::rmq::Make(
-            std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::ILCP,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
-            bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
-            t_config.sa_sampling);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::PDL: {
-        auto [idx, size] = bench::factories::pdl::Make(
-            std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor,
-            t_config.pdl_variant, t_config.get_doc, t_config.pdl_storage_policy,
-            t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
-            t_config.sa_sampling, t_config.pdl_backend_block_size);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::SLP_NS: {
-        auto [idx, size] = bench::factories::slp_ns::Make(
-            std::ref(storage_), config_, t_config.bare_slp, t_config.block_size,
-            t_config.slp_ns_sampled ? std::optional(t_config.gcda_slp) : std::nullopt,
-            t_config.storing_factor);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::CILCP: {
-        auto [idx, size] = bench::factories::rmq::Make(
-            std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::CILCP,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp, t_config.dgcda_slp,
-            bench::axes::RunValuesVariant::DV, bench::axes::PrevDocVariant::IV,
-            t_config.sa_sampling);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::SADA_V: {
-        auto [idx, size] = bench::factories::rmq::Make(
-            std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::SADA_V,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
-            t_config.dgcda_slp, t_config.run_values, t_config.prev_doc,
-            t_config.sa_sampling);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::ILCP_V: {
-        auto [idx, size] = bench::factories::rmq::Make(
-            std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::ILCP_V,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
-            t_config.dgcda_slp, t_config.run_values,
-            bench::axes::PrevDocVariant::IV, t_config.sa_sampling);
-        index = {idx, size};
-        break;
-      }
-
-      case IndexEnum::CILCP_V: {
-        auto [idx, size] = bench::factories::rmq::Make(
-            std::ref(storage_), config_,
-            t_config.block_size, t_config.storing_factor,
-            bench::factories::rmq::CoreKind::CILCP_V,
-            t_config.get_doc, t_config.gcda_slp, t_config.bare_slp,
-            t_config.dgcda_slp, t_config.run_values,
-            bench::axes::PrevDocVariant::IV, t_config.sa_sampling);
-        index = {idx, size};
-        break;
-      }
     }
+    index = {built.first, built.second};
 
     if (index.idx) {
       indexes_[t_config] = index;
@@ -456,7 +380,8 @@ class Factory {
 
   std::map<Config, Index> indexes_;
 
-  std::shared_ptr<sri::RIndex<ExternalGenericStorage>> r_index_;
+  // Pattern occurrences, through an r-index loaded on first use (factories/brute.cpp).
+  std::function<std::size_t(const std::string&)> count_occurrences_;
 
   // Document endings marks
   using TDocEndings = sdsl::sd_vector<>;
