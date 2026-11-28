@@ -29,6 +29,7 @@ set(bm_doc_list_family_sources
         document_listing/factories/rmq_ilcp_v.cpp
         document_listing/factories/rmq_cilcp_v.cpp
         document_listing/factories/rmq_freq.cpp
+        document_listing/factories/gcda_occs.cpp
         document_listing/factories/pdl.cpp
         document_listing/factories/pdl_plain.cpp
         document_listing/factories/pdl_rp.cpp

@@ -91,6 +91,7 @@ set(SOURCE_FILES
         # the 2020 code still in use by the legacy GCDA-ISAs / GCDA-WT-DA.
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/oracle.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/rmq_core.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/gcda_occs_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_base.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_gcda.h
 

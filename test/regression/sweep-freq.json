@@ -99,6 +99,16 @@
       "block_size": [
         64
       ]
+    },
+    {
+      "family": "gcda_occs",
+      "oracle": [
+        "rank",
+        "doc_isa"
+      ],
+      "block_size": [
+        64
+      ]
     }
   ]
 }
