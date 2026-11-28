@@ -188,26 +188,6 @@ void ExpandSLP(const SLP &_slp, std::size_t _bp, std::size_t _ep, Report &_repor
   }
 }
 
-template<typename SLP>
-class ExpandSLPFunctor {
- public:
-  explicit ExpandSLPFunctor(const SLP &_slp) : slp_{_slp} {}
-  ExpandSLPFunctor() = default;
-
-  template<typename Report>
-  void operator()(std::size_t _bp, std::size_t _ep, Report &_report) const {
-    ExpandSLP(slp_, _bp, _ep, _report);
-  }
-
- private:
-  const SLP &slp_;
-};
-
-template<typename SLP>
-auto MakePtrExpandSLPFunctor(const SLP &_slp) {
-  return new ExpandSLPFunctor<SLP>(_slp);
-}
-
 //~~~~~~~  In-order expansion with early stop  ~~~~~~~
 //
 // ExpandSLP above is not in position order: a range that starts in the back half

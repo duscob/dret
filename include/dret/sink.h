@@ -13,16 +13,24 @@
 // A sink is also callable as a position report, operator()(d) == Position(d), so it can be handed
 // to a backend's range expansion directly.
 //
-// ListSink is document listing: each document reported once, the first time it is seen. Document
-// frequencies will add Weighted(d, f) (a stored list with counts) and Finish() (the answer, once the
-// search is over) with a frequency sink; an index whose stored lists carry no counts cannot serve
-// it, and will say so at compile time.
+// ListSink is document listing: each document reported once, the first time it is seen. FreqSink is
+// document frequencies: how many positions of the range each document has, from the positions or
+// from stored lists that carry counts,
+//
+//   Weighted(d, f)  d occurs f times in a part of the range (a stored list with counts)
+//   Finish()        the search is over: report each document with its frequency
+//
+// A core serves frequencies when it hands the sink every position of the range once, or the counts
+// of the parts it does not expand (kFrequencies, doc_list_index.h). A list without counts cannot
+// serve it: FreqSink::Listed does not compile.
 //
 
 #pragma once
 
 #include <concepts>
 #include <cstddef>
+#include <type_traits>
+#include <vector>
 
 #include "dret/doc_list/distinct_docs.h"
 
@@ -74,6 +82,47 @@ class ListSink {
 #ifdef DRET_DOC_LIST_PROFILE
   std::size_t reported_ = 0;
 #endif
+};
+
+// Document frequencies: adds up, per document, the positions and the counts the core hands it, and
+// reports each document once with its total, in Finish(), in the order the documents were first seen.
+// t_n_doc sizes the counters; identifiers past it grow them, so 0 is valid as for ListSink.
+template <typename TReport>
+class FreqSink {
+ public:
+  FreqSink(std::size_t t_n_doc, const TReport& t_report) : counts_(t_n_doc, 0), report_(t_report) {}
+
+  [[gnu::always_inline]] void Position(std::size_t t_doc) { Weighted(t_doc, 1); }
+
+  [[gnu::always_inline]] void operator()(std::size_t t_doc) { Position(t_doc); }
+
+  [[gnu::always_inline]] void Weighted(std::size_t t_doc, std::size_t t_freq) {
+    if (t_doc >= counts_.size()) counts_.resize(t_doc + 1, 0);
+    if (counts_[t_doc] == 0) docs_.push_back(t_doc);
+    counts_[t_doc] += t_freq;
+  }
+
+  // A stored list without counts says a document occurs, not how often.
+  template <typename T = void>
+  void Listed(std::size_t) {
+    static_assert(!std::is_same_v<T, T>, "FreqSink: this core reads stored lists without counts, so it cannot compute "
+                                  "document frequencies");
+  }
+
+  static constexpr bool Done() { return false; }
+
+  void Finish() {
+    for (auto d : docs_) {
+      report_(d, counts_[d]);
+      counts_[d] = 0;
+    }
+    docs_.clear();
+  }
+
+ private:
+  std::vector<std::size_t> counts_;
+  std::vector<std::size_t> docs_;  // the documents with a count, in the order first seen
+  const TReport& report_;
 };
 
 }  // namespace dret

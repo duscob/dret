@@ -67,4 +67,13 @@ using Idx = dret::gcda::DocListIdxGCDA<
     TSLP,
     TSets>;
 
+// GCDA with the counts of its lists (computes document frequencies).
+template <typename TStorage, typename TSLP = SLP_Light, typename TSets = Sets_RP>
+using IdxCounts = dret::gcda::DocFreqIdxGCDA<
+    TStorage,
+    dret::Alphabet<>,
+    sri::RIndexCount<TStorage, dret::Alphabet<>>,
+    TSLP,
+    TSets>;
+
 }  // namespace bench::factories::gcda

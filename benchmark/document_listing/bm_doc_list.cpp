@@ -306,6 +306,41 @@ void SetupQueryCounters(benchmark::State& t_state) {
   t_state.counters["Time_x_Pattern"] = 0;
 }
 
+// The size and time counters of a query benchmark.
+void QueryCounters(benchmark::State& t_state,
+                   const dret::DocListIndex<>* idx,
+                   std::size_t idx_size,
+                   std::size_t t_n_patterns,
+                   std::size_t t_seq_size) {
+  SetupQueryCounters(t_state);
+
+  // Headline size = the *resident* (in-memory) footprint from GetSizeReport,
+  // which includes the rank/select/BP supports that serialize() rebuilds on
+  // load (e.g. CompactBP's bp_support, CompactLOUDS's leaf_rank) and so are
+  // absent from the serialized size. This keeps the cross-family Bits_x_Symbol
+  // comparison apples-to-apples — families that rebuild supports on load would
+  // otherwise be undercounted. The serialized (on-disk) size is still reported
+  // as `serialized_bytes`. Brute baselines have no GetSizeReport (total == 0),
+  // so they fall back to the serialized size.
+  std::size_t resident = idx_size;
+  if (idx) {
+    const auto sizes = idx->GetSizeReport();
+    appendCounters(t_state, sizes);
+    const auto report_total = dret::totalBytes(sizes);
+    t_state.counters["total_index_bytes"] = static_cast<double>(report_total);
+    if (report_total > 0) resident = report_total;
+  }
+
+  t_state.counters["Size(bytes)"] = static_cast<double>(resident);
+  t_state.counters["Bits_x_Symbol"] = resident * 8.0 / t_seq_size;
+  t_state.counters["serialized_bytes"] = static_cast<double>(idx_size);
+  t_state.counters["Patterns"] = t_n_patterns;
+  t_state.counters["Time_x_Pattern"] = benchmark::Counter(
+      t_n_patterns,
+      benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kInvert);
+}
+
+
 //~~~~~~~  Query benchmark kernel ~~~~~~~
 
 auto BM_Query = [](benchmark::State& t_state,
@@ -313,7 +348,7 @@ auto BM_Query = [](benchmark::State& t_state,
                    const Cell* t_cell,
                    const std::vector<std::string>* t_patterns,
                    std::size_t t_seq_size) {
-  auto [idx, idx_size] = t_factory->Get(*t_cell);
+  [[maybe_unused]] auto [idx, idx_size, frequencies] = t_factory->Get(*t_cell);
 
   // The per-pattern variant is a separate loop so the default path stays exactly
   // the plain one. It adds two TSC reads and two stores per pattern, into vectors
@@ -407,32 +442,53 @@ auto BM_Query = [](benchmark::State& t_state,
 
   if (per_pattern) per_pattern_timing::Report(t_state, *t_patterns, pattern_ticks, pattern_ndocs);
 
-  SetupQueryCounters(t_state);
+  QueryCounters(t_state, idx.get(), idx_size, t_patterns->size(), t_seq_size);
+};
 
-  // Headline size = the *resident* (in-memory) footprint from GetSizeReport,
-  // which includes the rank/select/BP supports that serialize() rebuilds on
-  // load (e.g. CompactBP's bp_support, CompactLOUDS's leaf_rank) and so are
-  // absent from the serialized size. This keeps the cross-family Bits_x_Symbol
-  // comparison apples-to-apples — families that rebuild supports on load would
-  // otherwise be undercounted. The serialized (on-disk) size is still reported
-  // as `serialized_bytes`. Brute baselines have no GetSizeReport (total == 0),
-  // so they fall back to the serialized size.
-  std::size_t resident = idx_size;
-  if (idx) {
-    const auto sizes = idx->GetSizeReport();
-    appendCounters(t_state, sizes);
-    const auto report_total = dret::totalBytes(sizes);
-    t_state.counters["total_index_bytes"] = static_cast<double>(report_total);
-    if (report_total > 0) resident = report_total;
+// The documents of each pattern with their frequencies, for a frequency task. The answers dump
+// writes, per pattern, "d:f" for each document in document order.
+struct DocFreqResult {
+  std::vector<std::pair<std::size_t, std::size_t>> freqs;
+  void operator()(std::size_t d, std::size_t f) { freqs.emplace_back(d, f); }
+};
+
+auto BM_QueryFreq = [](benchmark::State& t_state,
+                       Factory<>* t_factory,
+                       const Cell* t_cell,
+                       const std::vector<std::string>* t_patterns,
+                       std::size_t t_seq_size) {
+  auto [idx, idx_size, frequencies] = t_factory->Get(*t_cell);
+  if (!frequencies) {
+    t_state.SkipWithError("the index does not compute document frequencies");
+    return;
+  }
+  for (auto _ : t_state) {
+    for (const auto& pattern : *t_patterns) {
+      DocFreqResult result;
+      frequencies(pattern, std::ref(result));
+      benchmark::DoNotOptimize(result);
+    }
   }
 
-  t_state.counters["Size(bytes)"] = static_cast<double>(resident);
-  t_state.counters["Bits_x_Symbol"] = resident * 8.0 / t_seq_size;
-  t_state.counters["serialized_bytes"] = static_cast<double>(idx_size);
-  t_state.counters["Patterns"] = t_patterns->size();
-  t_state.counters["Time_x_Pattern"] = benchmark::Counter(
-      t_patterns->size(),
-      benchmark::Counter::kIsIterationInvariantRate | benchmark::Counter::kInvert);
+  if (!FLAGS_print_results_dir.empty()) {
+    std::ofstream os(FLAGS_print_results_dir + "/" + SanitizeName(t_state.name()) + ".txt");
+    std::size_t dup_count = 0;
+    for (const auto& pattern : *t_patterns) {
+      DocFreqResult result;
+      frequencies(pattern, std::ref(result));
+      std::sort(result.freqs.begin(), result.freqs.end());
+      for (std::size_t i = 0; i < result.freqs.size(); ++i) {
+        if (i && result.freqs[i].first == result.freqs[i - 1].first) ++dup_count;
+        os << (i ? " " : "") << result.freqs[i].first << ':' << result.freqs[i].second;
+      }
+      os << '\n';
+    }
+    if (dup_count)
+      std::cerr << "[VALIDATE] " << t_state.name() << ": reported " << dup_count
+                << " document(s) twice (expected 0 — possible index bug)\n";
+  }
+
+  QueryCounters(t_state, idx.get(), idx_size, t_patterns->size(), t_seq_size);
 };
 
 //~~~~~~~  Construct benchmark kernels ~~~~~~~
@@ -593,7 +649,9 @@ int main(int argc, char** argv) {
   // One benchmark per cell, the same names in both modes.
   const auto cells = SpecCells(spec);
   for (const auto& cell : cells) {
-    if (spec.mode == bench::spec::Mode::Query) {
+    if (spec.mode == bench::spec::Mode::Query && spec.workload.task == bench::spec::Task::Frequency) {
+      benchmark::RegisterBenchmark(cell.name, BM_QueryFreq, factory.get(), &cell, &patterns, seq_size);
+    } else if (spec.mode == bench::spec::Mode::Query) {
       benchmark::RegisterBenchmark(cell.name, BM_Query, factory.get(), &cell, &patterns, seq_size);
     } else {
       // In construct mode the cache directory is the working directory (the dret::Config above) and

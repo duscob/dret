@@ -99,7 +99,6 @@ int main(int argc, char *argv[]) {
   Factory factory(config);
 
   std::vector<std::pair<const char *, Factory::Config>> index_configs = {
-      {"Brute-R-Index", Factory::Config{Factory::IndexEnum::Brute}},
       {"Sada", Factory::Config{Factory::IndexEnum::SADA_ISAs}},
       {"Sada-WT-DA", Factory::Config{Factory::IndexEnum::SADA_WT_DA}},
       {"ILCP", Factory::Config{Factory::IndexEnum::ILCP_ISAs}},
@@ -107,8 +106,7 @@ int main(int argc, char *argv[]) {
       {"CILCP", Factory::Config{Factory::IndexEnum::CILCP_ISAs}},
       {"CILCP-WT-DA", Factory::Config{Factory::IndexEnum::CILCP_WT_DA}},
       {"GCDA", Factory::Config{Factory::IndexEnum::GCDA_ISAs}},
-      {"GCDA-WT-DA", Factory::Config{Factory::IndexEnum::GCDA_WT_DA}},
-      {"Full-GCDA", Factory::Config{Factory::IndexEnum::FULL_GCDA}}
+      {"GCDA-WT-DA", Factory::Config{Factory::IndexEnum::GCDA_WT_DA}}
   };
 
   std::string print_bm_prefix = "Print-";

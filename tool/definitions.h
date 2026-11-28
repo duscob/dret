@@ -39,12 +39,5 @@ const char *KEY_GCDA_FIRST_OCCS = "gcda_f_occs";
 const char *KEY_GCDA_LAST_OCCS = "gcda_l_occs";
 const char *KEY_GCDA_CSEQ_HEADS = "gcda_cseq_heads";
 
-const char *KEY_GCDA_CSLP = "gcda_cslp";
-const char *KEY_GCDA_CSLP_DOCS = "gcda_cslp_docs";
-const char *KEY_GCDA_CSLP_DOCS_C = "gcda_cslp_docs_c";
-const char *KEY_GCDA_CSLP_OCCS = "gcda_cslp_occs";
-const char *KEY_GCDA_CSLP_OCCS_C = "gcda_cslp_occs_c";
-const char *KEY_GCDA_LSLP = "gcda_lslp";
-const char *KEY_GCDA_LSLP_BASIC = "gcda_lslp_basic";
 
 #endif //DRET_TOOL_DEFINITIONS_H_

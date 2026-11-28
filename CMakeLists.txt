@@ -87,7 +87,6 @@ set(SOURCE_FILES
 
         # doc_freq/: document-frequency family.
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_base.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_brute.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_sada.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_gcda.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_freq/doc_freq_rmq.h
@@ -156,7 +155,6 @@ if (dret_build_tests)
     include(ConfigGTest)
     list(APPEND test_LIBS gtest gtest_main gmock)
 
-    cxx_test_with_flags_and_args(doc_freq_index_brute_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_freq_index_brute_test.cpp)
     cxx_test_with_flags_and_args(tf_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/tf_test.cpp)
     cxx_test_with_flags_and_args(algorithm_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/algorithm_test.cpp)
     cxx_test_with_flags_and_args(doc_list_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_list_test.cpp)
@@ -189,6 +187,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(repair_plan_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/repair_plan_test.cpp)
     cxx_test_with_flags_and_args(slp_expand_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/slp_expand_test.cpp)
     cxx_test_with_flags_and_args(stream_roundtrip_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/stream_roundtrip_test.cpp)
+    cxx_test_with_flags_and_args(doc_freq_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/doc_freq_test.cpp)
 endif ()
 
 

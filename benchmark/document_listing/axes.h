@@ -38,6 +38,13 @@ enum class GCDASetsCodec {
   Plain,
 };
 
+// Whether GCDA also stores how often each document of a node's list occurs in the node (bit-packed),
+// so it computes document frequencies (Full-GCDA in the 2020 frequency code). GCDA family only.
+enum class GCDACounts {
+  None,
+  Plain,
+};
+
 // PDL tree-construction storage policy. Threaded into the constructor as a
 // runtime argument; baked into the cache-key prefix.
 enum class PDLStoragePolicy {

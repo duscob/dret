@@ -21,10 +21,8 @@
 #include <grammar/sampled_slp.h>
 
 #include <dret/doc_freq/doc_freq_base.h>
-#include <dret/doc_freq/doc_freq_brute.h>
 #include <dret/doc_freq/doc_freq_rmq.h>
 #include <dret/doc_freq/doc_freq_gcda.h>
-#include <dret/slp/slp_tools.h>
 
 #include "../../tool/definitions.h"
 
@@ -97,21 +95,19 @@ class Factory {
   using RangeMaxQuery = sdsl::rmq_succinct_sct<false>;
 
   enum class IndexEnum {
-    Brute = 0,
-    SADA_ISAs,
+    SADA_ISAs = 0,
     SADA_WT_DA,
     ILCP_ISAs,
     ILCP_WT_DA,
     CILCP_ISAs,
     CILCP_WT_DA,
     GCDA_ISAs,
-    GCDA_WT_DA,
-    FULL_GCDA
+    GCDA_WT_DA
   };
 
   Factory(const sdsl::cache_config &_config) : config_{_config} {
     std::ofstream breakdown_csv("breakdown.csv");
-    breakdown_csv << "R-Index-Basic,R-Index,Doc-Endings,DSA,Doc-DISAs,WT-DA,Sada,ILCP,CILCP,GCDA,GCDA-Index"
+    breakdown_csv << "R-Index-Basic,R-Index,Doc-Endings,DSA,Doc-DISAs,WT-DA,Sada,ILCP,CILCP,GCDA"
                   << std::endl;
 
     // Loading CSAs
@@ -326,23 +322,7 @@ class Factory {
     Load(gcda_occs_bvs_.second, KEY_GCDA_LAST_OCCS, config_, "GCDA Last Occs BVs");
     size_gcda_ += sdsl::size_in_bytes(gcda_occs_bvs_.first) + sdsl::size_in_bytes(gcda_occs_bvs_.second);
 
-    breakdown_csv << size_gcda_ << ",";
-
-    // Loading Full GCDA components
-    Load(gcda_lslp_basic_, KEY_GCDA_LSLP_BASIC, config_, "Full-GCDA LSLP-Basic");
-    size_full_gcda_ = sdsl::size_in_bytes(gcda_lslp_basic_);
-    get_docs_.reset(dret::MakePtrExpandSLPFunctor(gcda_lslp_basic_));
-    compute_cover_.reset(grammar::BuildPtrComputeCoverBottomFunctor(gcda_lslp_basic_));
-
-    Load(gcda_lslp_docs_, KEY_GCDA_CSLP_DOCS_C, config_, "Full-GCDA LSLP Docs");
-    size_full_gcda_ += sdsl::size_in_bytes(gcda_lslp_docs_);
-    Load(gcda_lslp_occs_, KEY_GCDA_CSLP_OCCS_C, config_, "Full-GCDA LSLP Occs");
-    size_full_gcda_ += sdsl::size_in_bytes(gcda_lslp_occs_);
-
-    breakdown_csv << size_full_gcda_ << std::endl;
-
-    get_doc_freqs_.reset(new GetDocFreqsFunctor<decltype(gcda_lslp_docs_), decltype(gcda_lslp_occs_)>(
-        gcda_lslp_docs_, gcda_lslp_occs_));
+    breakdown_csv << size_gcda_ << std::endl;
   }
 
   auto SequenceSize() const {
@@ -355,10 +335,6 @@ class Factory {
 
   std::pair<dret::DocFreqIndex *, std::size_t> Build(const Config &_config) const {
     switch (_config.index) {
-      case IndexEnum::Brute: {
-        return {dret::MakeNewDocFreqIndexBrute(*csa_wrappers_[0], doc_endings_rank_),
-                size_r_idx_ + size_doc_endings_};
-      }
       case IndexEnum::SADA_ISAs: {
         return {
             dret::MakePtrDocFreqIndexBasicScheme(
@@ -472,10 +448,6 @@ class Factory {
             size_r_idx_basic_ + size_doc_endings_ + size_wt_da_ap_ + size_gcda_
         };
       }
-      case IndexEnum::FULL_GCDA: {
-        return {dret::MakePtrDocFreqIndexGCDA(csa_wrappers_[0], compute_cover_, get_docs_, get_doc_freqs_),
-                size_r_idx_basic_ + size_full_gcda_};
-      }
     }
     exit(4);
   }
@@ -581,41 +553,6 @@ class Factory {
   std::pair<OccsBV, OccsBV> gcda_occs_bvs_;
   std::size_t size_gcda_;
 
-  // Full GCDA components
-  grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
-                    grammar::SampledSLP<>,
-                    grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>> gcda_lslp_basic_;
-
-  std::shared_ptr<grammar::ComputeCoverBottomFunctor<decltype(gcda_lslp_basic_)>> compute_cover_;
-  std::shared_ptr<dret::ExpandSLPFunctor<decltype(gcda_lslp_basic_)>> get_docs_;
-
-  grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> gcda_lslp_docs_;
-  grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>> gcda_lslp_occs_;
-
-  template<typename Docs, typename Freqs>
-  class GetDocFreqsFunctor {
-   public:
-    GetDocFreqsFunctor(const Docs &_docs, const Freqs &_freqs) : docs_{_docs}, freqs_{_freqs} {}
-
-    template<typename Node, typename Report>
-    void operator()(const Node &_node, const Report &_report) {
-      auto docs = docs_[_node];
-      auto freqs = freqs_[_node];
-
-      auto itFreq = freqs.begin();
-      for (auto itDoc = docs.begin(); itDoc != docs.end(); ++itDoc, ++itFreq) {
-        _report(*itDoc, *itFreq);
-      }
-    }
-
-   private:
-    const Docs &docs_;
-    const Freqs &freqs_;
-  };
-
-  std::shared_ptr<GetDocFreqsFunctor<decltype(gcda_lslp_docs_), decltype(gcda_lslp_occs_)>> get_doc_freqs_;
-
-  std::size_t size_full_gcda_;
 
   template<typename SLP, typename Roots, typename SpanSums, typename Samples, typename SampleRootsPos, typename SamplePos, typename SamplePosRank, typename SamplePosSelect, typename DSLP>
   std::size_t LoadDifferentialSLP(const std::string &_key,

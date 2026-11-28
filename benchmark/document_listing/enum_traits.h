@@ -266,6 +266,27 @@ struct EnumTraits<GCDASetsCodec> {
 };
 
 template <>
+struct EnumTraits<GCDACounts> {
+  static constexpr const char* flag_name() { return "gcda_counts"; }
+  static constexpr bool has_default() { return true; }
+  static constexpr GCDACounts default_value() { return GCDACounts::None; }
+
+  static std::optional<GCDACounts> TryParse(std::string_view s) {
+    if (s == "none")  return GCDACounts::None;
+    if (s == "plain") return GCDACounts::Plain;
+    return std::nullopt;
+  }
+
+  static const char* Name(GCDACounts v) {
+    switch (v) {
+      case GCDACounts::None:  return "None";
+      case GCDACounts::Plain: return "Plain";
+    }
+    return "UNKNOWN";
+  }
+};
+
+template <>
 struct EnumTraits<PDLStoragePolicy> {
   static constexpr const char* flag_name() { return "pdl_storage_policy"; }
   static constexpr bool has_default() { return true; }
