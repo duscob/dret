@@ -1,7 +1,7 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 10/19/26.
 //
-// The document bitmap behind ListSink (dret/sink.h), which every listing index reports through: each
+// The document bitmap behind ListSink (doc_list/list_sink.h), which every listing index reports through: each
 // document reported once, whether it comes from a position of the range, a stored list or an RMQ run.
 //
 // A bitmap over the document identifiers, sized to the number of documents and cleared per query:

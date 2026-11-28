@@ -10,11 +10,9 @@
 
 #pragma once
 
-#include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
-#include <vector>
 
 #include <sdsl/int_vector.hpp>
 #include <sdsl/io.hpp>
@@ -368,80 +366,6 @@ inline void construct(grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>& t
   sdsl::store_to_cache(t_sets, NodeDocListsKey<grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>(
                                    t_config.keys, {t_block_size, t_storing_factor}),
                        t_config, true);
-}
-
-//~~~~~~~
-
-
-// The frequencies of the documents of each sampled node's list: how often each occurs in the node's
-// expansion, in the order of the list (GCDA's counts, for document frequencies). Bit-packed.
-using NodeDocCounts = grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>;
-
-inline std::string NodeDocCountsKey(const JSON& t_keys, const SampledTreeCell& t_cell) {
-  return CellKey(t_keys, conf::kDaNodeDocCounts, t_cell);
-}
-
-namespace internal {
-
-// grammar::AddSet (grammar/sampled_slp.h), which inserts the sorted distinct documents of a node's
-// expansion, that also inserts how often each occurs.
-class AddCountedSet {
- public:
-  AddCountedSet(grammar::Chunks<>& t_docs, grammar::Chunks<>& t_counts) : docs_(t_docs), counts_(t_counts) {}
-
-  template <typename TSLP>
-  void operator()(const TSLP& t_slp, std::size_t t_var) {
-    auto span = t_slp.Span(t_var);
-    std::sort(span.begin(), span.end());
-    std::vector<uint32_t> docs, counts;
-    for (std::size_t i = 0; i < span.size();) {
-      std::size_t j = i;
-      while (j < span.size() && span[j] == span[i]) ++j;
-      docs.push_back(span[i]);
-      counts.push_back(j - i);
-      i = j;
-    }
-    docs_.Insert(docs.begin(), docs.end());
-    counts_.Insert(counts.begin(), counts.end());
-  }
-
-  template <typename TSLP, typename TNodes, typename TRanges>
-  void operator()(const TSLP& t_slp, std::size_t t_var, const TNodes&, std::size_t, const TRanges&, const TRanges&) {
-    (*this)(t_slp, t_var);
-  }
-
- private:
-  grammar::Chunks<>& docs_;
-  grammar::Chunks<>& counts_;
-};
-
-}  // namespace internal
-
-// The cell's sampled tree again, recording the counts as its node lists are computed. The tree is a
-// function of the grammar and the cell, so it has the same nodes in the same order as the build that
-// cached the lists; the lists are compared with the cached ones to make sure.
-inline void construct(NodeDocCounts& t_counts,
-                      Config& t_config,
-                      const std::string& t_datafile,
-                      uint32_t t_block_size,
-                      float t_storing_factor) {
-  const SampledTreeCell cell{t_block_size, t_storing_factor};
-  const auto key = NodeDocCountsKey(t_config.keys, cell);
-  auto event = sdsl::memory_monitor::event(key);
-
-  grammar::CombinedSLP<> cslp(LoadOrBuildDaCnfGrammar(t_config, t_datafile));
-  grammar::Chunks<> docs, counts;
-  internal::AddCountedSet add(docs, counts);
-  cslp.Compute(t_block_size,
-               add,
-               add,
-               grammar::MustBeSampled<decltype(docs)>(grammar::AreChildrenTooBig(docs, t_storing_factor)));
-  if (!(docs == LoadRawNodeDocLists(t_config, t_block_size, t_storing_factor)))
-    throw std::runtime_error("GCDA document counts: the rebuilt tree's lists differ from the cached ones (" + key + ")");
-
-  auto bit_compress = [](sdsl::int_vector<>& v) { sdsl::util::bit_compress(v); };
-  t_counts = NodeDocCounts(counts, bit_compress, bit_compress);
-  sdsl::store_to_cache(t_counts, key, t_config, true);
 }
 
 }  // namespace dret::gcda

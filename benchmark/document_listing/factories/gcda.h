@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include "dret/doc_freq/gcda_counts.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -69,7 +71,7 @@ using Idx = dret::gcda::DocListIdxGCDA<
 
 // GCDA with the counts of its lists (computes document frequencies).
 template <typename TStorage, typename TSLP = SLP_Light, typename TSets = Sets_RP>
-using IdxCounts = dret::gcda::DocFreqIdxGCDA<
+using IdxCounts = dret::freq::DocFreqIdxGCDA<
     TStorage,
     dret::Alphabet<>,
     sri::RIndexCount<TStorage, dret::Alphabet<>>,

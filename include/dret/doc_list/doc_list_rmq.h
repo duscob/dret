@@ -2,8 +2,8 @@
 // Created by Dustin Cobas <dustin.cobas@gmail.com>.
 //
 // RMQ-based document listing index (SADA / ILCP / CILCP variants): the LEFTMOST pass
-// visits each distinct document of [sp, ep) once. The frequency cores run it twice, the
-// second time over the reversed problem (doc_freq/rmq_core.h).
+// visits each distinct document of [sp, ep) once, from its first occurrence, and hands
+// the position to a sink that takes it (ReportPosition, dret/sink.h).
 //
 
 #pragma once
@@ -159,8 +159,8 @@ sdsl::int_vector<> LoadOrComputeIlcp(Config& t_config, std::size_t t_n_doc) {
 // their start position again. Returns false iff the visit stopped at a head that
 // was already reported.
 //
-// report_dedup(d, i) gets each document with its position i (the frequency
-// cores record the positions; listing ignores them).
+// report_dedup(d, i) gets each document with its position i, for the sinks that
+// take positions (ReportPosition, dret/sink.h).
 template <bool kPeek, typename TGetDoc, typename TIsReported, typename TReportDedup>
 bool VisitRun(const TGetDoc& t_get_doc,
               std::size_t t_b,
