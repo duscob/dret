@@ -427,26 +427,26 @@
   },
   "PDL[codec=bc|get-doc=da|policy=leaves-only|block-size=256|storing-factor=4]": {
    "answers_md5": "28cd8a47d8046ee04efd8b4c38755834",
-   "serialized_bytes": 12216598,
-   "size_bytes": 12216549,
+   "serialized_bytes": 12208934,
+   "size_bytes": 12208885,
    "time_x_pattern": 4.031170072690842e-06
   },
   "PDL[codec=bc|get-doc=da|policy=list-weighted|block-size=256|storing-factor=4]": {
    "answers_md5": "28cd8a47d8046ee04efd8b4c38755834",
-   "serialized_bytes": 12307886,
-   "size_bytes": 12307837,
+   "serialized_bytes": 12281190,
+   "size_bytes": 12281141,
    "time_x_pattern": 3.657351846435136e-06
   },
   "PDL[codec=bc|get-doc=da|policy=occ-weighted|block-size=256|storing-factor=4]": {
    "answers_md5": "28cd8a47d8046ee04efd8b4c38755834",
-   "serialized_bytes": 12361478,
-   "size_bytes": 12361429,
+   "serialized_bytes": 12334710,
+   "size_bytes": 12334661,
    "time_x_pattern": 3.771401872350678e-06
   },
   "PDL[codec=bc|get-doc=da|policy=store-all|block-size=256|storing-factor=4]": {
    "answers_md5": "28cd8a47d8046ee04efd8b4c38755834",
-   "serialized_bytes": 12994382,
-   "size_bytes": 12994333,
+   "serialized_bytes": 12882606,
+   "size_bytes": 12882557,
    "time_x_pattern": 3.9644128613617064e-06
   },
   "PDL[codec=plain|get-doc=da|policy=leaves-only|block-size=256|storing-factor=4]": {

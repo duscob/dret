@@ -385,10 +385,10 @@ class BCCodec {
 
   // vnmextract mining parameters, matching its positional argv:
   //
-  //   vnmextract <graph> <format> <shingle_size> <iters> <bcsizes> <out> <num_hashes>
+  //   vnmextract <graph> <format> <shingle_size> <iters> <bcsizes> <out> <num_hashes> [seed]
   //
-  // format=1 (binary) and shingle_size=1 are fixed by runVnmextract; the other
-  // three are these. Names follow vnmextract's own usage string rather than
+  // format=1 (binary) and shingle_size=1 are fixed by runVnmextract; the others
+  // are these. Names follow vnmextract's own usage string rather than
   // what they might sound like:
   //
   //   min_bicliques (argv[4], `iters` upstream) is NOT a node-degree cutoff.
@@ -415,10 +415,19 @@ class BCCodec {
   //
   // Fixtures that need bicliques out of a tiny input must opt in explicitly via
   // SetMiningParams — see PDLBCCodec.RulesAndBlocksRoundTripWhenBicliquesExtracted.
+  //
+  // seed (argv[8], a dret patch of vnmextract) seeds the min-hash functions: pass i uses seed + i.
+  // Upstream seeds every pass with the time, so two builds of the same index mined other bicliques
+  // and differed in size (up to 1% on revision-small); a fixed seed makes the lists a function of the
+  // input. Upstream passes take seconds, so each one got other hash functions, and seed + i keeps
+  // that: one seed for all passes mined worse (1-2% larger on revision-small), while seeds 1-3 with
+  // seed + i fall within or below the sizes of the time-seeded builds. 1 is the C library's default
+  // seed.
   struct MiningParams {
     std::string min_bicliques = "500";
     std::string bcsizes = "5000,500,100,50,30,15";
     std::string num_hashes = "4";
+    std::string seed = "1";
   };
 
   BCCodec() = default;
@@ -677,11 +686,11 @@ class BCCodec {
           "built (cmake --build <dir> --target dsextract).");
     }
 
-    // <graph> format=1 shingle_size=1 <iters> <bcsizes> <out> <num_hashes>
+    // <graph> format=1 shingle_size=1 <iters> <bcsizes> <out> <num_hashes> <seed>
     std::ostringstream cmd;
     cmd << exe << " " << graph_path << " 1 1 " << mining_.min_bicliques << " "
-        << mining_.bcsizes << " " << out_prefix << " " << mining_.num_hashes
-        << " >/dev/null 2>&1";
+        << mining_.bcsizes << " " << out_prefix << " " << mining_.num_hashes << " "
+        << mining_.seed << " >/dev/null 2>&1";
     const int rc = std::system(cmd.str().c_str());
     if (rc != 0) {
       // Not fatal -- the caller falls back to verbatim sets -- but it must be

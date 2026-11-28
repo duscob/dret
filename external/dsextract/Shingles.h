@@ -22,6 +22,14 @@ class Shingles{
   typedef vector<edge_VertexList> SelectedEdges;
   unsigned bcsize;
 
+  // The seed of the min-hash functions of a pass: vnmextract's optional 8th argument plus the pass
+  // number, else the time, as upstream (a run is then not reproducible). Upstream passes take seconds,
+  // so each one got other hash functions; adding the pass keeps that. dret patch.
+  static bool has_seed;
+  static unsigned fixed_seed;
+  static unsigned pass;
+  static unsigned seed() { return has_seed ? fixed_seed + pass : static_cast<unsigned>(time(NULL)); }
+
 
   //
   // The constructor, initialize prime_, and  A_, B_, MIN_ vectors
@@ -32,7 +40,7 @@ class Shingles{
 
     //2^31 - 1 is prime
     prime_ =  static_cast<unsigned int>(pow(2,31)-1);
-    srand(time(NULL));
+    srand(seed());
 
     for (unsigned int i = 0; i < numberSignatures; i++){
 

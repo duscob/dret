@@ -22,3 +22,12 @@ applied in drl's `external/build/dsextract/`.
 
 The Makefile still has `-I/usr/include/boost` in CFLAGS but no source
 file references boost after the patch, so the missing path is harmless.
+
+`vnmextract` takes an optional 8th argument, the seed of the min-hash
+functions (`Shingles::seed()`). Upstream calls `srand(time(NULL))` at every
+pass (in the `Shingles` constructor and in `cleanAll`), so a run was not
+reproducible. With the seed, pass `i` calls `srand(seed + i)` instead: a run
+is a function of its input, and each pass still gets other hash functions, as
+upstream's passes did, since each takes seconds. Without the seed the
+behaviour is upstream's. dret's `BCCodec` always passes one
+(`MiningParams::seed`).

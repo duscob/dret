@@ -12,11 +12,14 @@
 #include <stdlib.h>
 
 VNodeList Shingles::globalVNList;
+bool Shingles::has_seed = false;
+unsigned Shingles::fixed_seed = 0;
+unsigned Shingles::pass = 0;
 
 void Shingles::cleanAll(){
         signNode.clear();
         prime_ =  static_cast<unsigned int>(pow(2.0,31.0)-1);
-        srand(time(NULL));
+        srand(seed());
 
         for (unsigned int i = 0; i < numberSignatures_; i++){
 
