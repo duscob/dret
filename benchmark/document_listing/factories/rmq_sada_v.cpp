@@ -1,25 +1,32 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 11/25/26.
 //
-// Query-mode factory of the RMQ index with the SADA-V (value rule) core, compiled on its own (see query.h).
+// The indexes of the RMQ cells with the SADA-V (value rule) core, compiled on their own (see cells.h).
 //
 
-#include "query.h"
 #include "rmq.h"
 
-namespace bench::factories::query {
+namespace bench::factories::rmq {
 
-Built SadaValue(Storage t_storage, dret::Config& t_config, const RMQArgs& t_args) {
-  return rmq::detail::MakeOneSadaValue<rmq::SadaValueCore>(t_storage,
-                                                           t_config,
-                                                           t_args.block_size,
-                                                           t_args.storing_factor,
-                                                           t_args.get_doc,
-                                                           t_args.gcda_slp,
-                                                           t_args.bare_slp,
-                                                           t_args.dgcda_slp,
-                                                           t_args.prev_doc,
-                                                           t_args.sa_sampling);
+namespace {
+// The core over a backend, its stored values (prev_doc) in TValues.
+template <typename TValues>
+struct WithValues {
+  template <typename TGetDoc>
+  using Core = SadaValueCore<Storage, TGetDoc, TValues>;
+};
+}  // namespace
+
+MakeIndex MakeSadaValue(const Params& t_params) {
+  switch (t_params.prev_doc) {
+    case axes::PrevDocVariant::DV:
+      return ByGetDoc<WithValues<PrevDoc_DV>::Core>(t_params);
+    case axes::PrevDocVariant::VV:
+      return ByGetDoc<WithValues<PrevDoc_VV>::Core>(t_params);
+    case axes::PrevDocVariant::IV:
+    default:
+      return ByGetDoc<WithValues<PrevDoc_IV>::Core>(t_params);
+  }
 }
 
-}  // namespace bench::factories::query
+}  // namespace bench::factories::rmq

@@ -1,11 +1,10 @@
 //
 // bm_doc_list — JSON-spec-driven doc-list benchmark binary.
 //
-// Reads a JSON sweep spec (see spec.h for the schema), expands each family
-// block's Cartesian product, and registers one Google Benchmark per cell.
-// The 'mode' field selects between query-time and construction-time
-// benchmarking; the two modes share the spec, the dataset / workload
-// settings, and the per-family sweep blocks.
+// Reads a JSON sweep spec (see spec.h for the schema), turns each family block
+// into its cells (factories/cells.h: one per index, named FAMILY[k=v|...]), and
+// registers one Google Benchmark per cell. The 'mode' field selects query-time
+// or construction-time benchmarking; a cell has the same name in both modes.
 //
 // Usage:
 //   bm_doc_list --spec=sweep.json [--benchmark_out_format=csv --benchmark_out=path.csv]
@@ -40,30 +39,17 @@
 #include <gflags/gflags.h>
 
 #include <sdsl/config.hpp>
-#include <sdsl/construct.hpp>
 #include <sdsl/io.hpp>
+#include <sdsl/memory_management.hpp>
 
-#include "sr-index/r_index.h"
-#include "sr-index/sr_index.h"
+#include "sr-index/config.h"
 
 #include "../bm_size_counters.h"
 
-#include "../tool/definitions.h"
-
 #include "dret/config.h"
-#include "dret/construct_base.h"
-#include "dret/doc_list/doc_list_base.h"
-#include "dret/doc_list/doc_list_brute.h"
 #include "dret/size_report.h"
 
-#include "axes.h"
-#include "enum_traits.h"
-#include "factories/brute.h"
-#include "factories/dgcda.h"
-#include "factories/gcda.h"
-#include "factories/pdl.h"
-#include "factories/rmq.h"
-#include "factories/slp_ns.h"
+#include "factories/cells.h"
 #include "factory.h"
 #include "spec.h"
 
@@ -83,18 +69,10 @@ DEFINE_string(per_pattern_dir, "",
               "time in ns), plus Time_x_Pattern_p50/_p90/_p99 counters. Occs come from "
               "the r-index, so BruteRI's cache files must exist.");
 
+
 namespace {
 
-namespace fac = bench::factories;
-using bench::axes::BareSLPVariant;
-using bench::axes::DGCDASLPVariant;
-using bench::axes::GCDASLPVariant;
-using bench::axes::GetDocEnum;
-using bench::axes::PDLStoragePolicy;
-using bench::axes::PDLVariant;
-using bench::axes::EnumTraits;
-using GS = dret::GenericStorage;
-using ExternalGS = std::reference_wrapper<sri::GenericStorage>;
+using bench::factories::Cell;
 
 //~~~~~~~  Cache helpers for the construct-mode --rebuild plumbing ~~~~~~~
 
@@ -163,64 +141,12 @@ std::function<void()> MakeHook(bool enable,
 
 }  // namespace cache_clean
 
-// Per-family cache-key prefixes of a cell: the components whose keys carry the
-// cell's parameters, built from the common keys, so the glob picks up exactly
-// the cell's own files. Components shared beyond the cell (the DA grammars, the
-// PDL tree of a block size, Text / SA / DocEnds / DA / LCP) survive, as a cell
-// built after its first sibling finds them too.
-const dret::JSON& Keys() { return dret::kDefaultKeys.keys; }
 
-std::vector<std::string> GCDAKeyPrefixes(std::uint32_t bs, float sf) {
-  return {dret::PrefixedKey(Keys(), dret::conf::kBlkSf, "da_", bs, sf)};
-}
-std::vector<std::string> DGCDAKeyPrefixes(std::uint32_t bs, float sf) {
-  // GCDA-differential samples its differential grammar every bs positions.
-  return {dret::PrefixedKey(Keys(), dret::conf::kBlkSf, "da_", bs, sf),
-          dret::PrefixedKey(Keys(), dret::conf::kSpc, dret::KeyName(Keys(), dret::conf::kDaDiffSamples), bs)};
-}
-std::vector<std::string> SLPNSKeyPrefixes(std::uint32_t spacing) {
-  // The plain grammar is the CNF grammar itself; the differential one owns its samples.
-  return {dret::KeyName(Keys(), dret::conf::kDaCnfGrammar) + "_",
-          dret::PrefixedKey(Keys(), dret::conf::kSpc, dret::KeyName(Keys(), dret::conf::kDaDiffSamples), spacing)};
-}
-std::string PDLKeyPrefix(std::uint32_t bs, float sf, PDLStoragePolicy policy) {
-  // The selection and the lists of the cell, in every codec; the tree is shared.
-  return dret::pdl::PdlSelectionPrefix(Keys(), bs, sf, bench::axes::toPDLStoragePolicy(policy)) + "pdl_";
-}
-
-// Per-core RMQ cache-file prefixes. The FILENAMES keep their historical
-// Per-core RMQ key prefixes — the structures dret::rmq::DocListIdxRMQ::construct
-// actually writes. The SLP / DSLP / DA caches are SHARED with the corresponding
-// GCDA / DGCDA / brute paths and are intentionally NOT deleted; what we wipe
-// is only the RMQ-core-specific data. rmq_n_doc is a one-element int_vector
-// that every RMQ build trivially regenerates, so we include it for cleanliness.
-std::vector<std::string> SadaKeyPrefixes() {
-  return {"sada_rmq_", "rmq_n_doc_"};
-}
-std::vector<std::string> IlcpKeyPrefixes() {
-  return {"ilcp_rmq_", "ilcp_run_heads_", "rmq_n_doc_"};
-}
-std::vector<std::string> CilcpKeyPrefixes() {
-  return {"cilcp_rmq_", "cilcp_run_heads_", "rmq_n_doc_"};
-}
-
-// The published (marking) cores OWN the shared structures, and each -V core
-// reuses them and wipes only the extra array it adds. SADA-V reuses sada_rmq_
-// and owns sada_prev_doc_; ILCP-V reuses ilcp_rmq_ + ilcp_run_heads_ and owns
-// ilcp_run_values_; CILCP-V reuses cilcp_rmq_ + cilcp_run_heads_ and owns
-// cilcp_run_values_, since CILCP-V and CILCP build the same CMR20 partition and
-// share one cache for it.
-//
-// A --rebuild of a -V cell therefore does NOT rebuild the shared partition. To
-// force that, rebuild CILCP / ILCP / SADA too.
-std::vector<std::string> SadaValueKeyPrefixes() {
-  return {"sada_prev_doc_", "rmq_n_doc_"};
-}
-std::vector<std::string> IlcpValueKeyPrefixes() {
-  return {"ilcp_run_values_", "rmq_n_doc_"};
-}
-std::vector<std::string> CilcpValueKeyPrefixes() {
-  return {"cilcp_run_values_", "rmq_n_doc_"};
+// Benchmark name -> file name: keep [A-Za-z0-9.-], map everything else to '_'.
+std::string SanitizeName(std::string t_name) {
+  for (char& c : t_name)
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '.')) c = '_';
+  return t_name;
 }
 
 // Warmth check: stderr-warn once per cell when --rebuild is off AND the
@@ -237,9 +163,9 @@ void WarnIfWarm(const benchmark::State& t_state,
 }
 
 // Memory-monitor trace + size sidecar emit, gated on workload.memory_trace.
-// Files land in the working directory keyed by the GBenchmark cell name.
+// Files land in the working directory keyed by the sanitized benchmark name.
 void WriteMemoryTrace(const benchmark::State& t_state) {
-  const std::string name = std::string(t_state.name());
+  const std::string name = SanitizeName(t_state.name());
   {
     std::ofstream ofs("construction-" + name + ".html");
     sdsl::memory_monitor::write_memory_log<sdsl::HTML_FORMAT>(ofs);
@@ -251,7 +177,7 @@ void WriteMemoryTrace(const benchmark::State& t_state) {
 }
 
 void WriteSizesSidecar(const benchmark::State& t_state, const dret::SizeReport& sizes) {
-  const std::string name = std::string(t_state.name());
+  const std::string name = SanitizeName(t_state.name());
   dret::writeSizesJson("sizes-" + name + ".json", sizes);
 }
 
@@ -269,14 +195,6 @@ struct DocListResult {
   void operator()(std::size_t d) { docs.push_back(d); }
 };
 
-// Benchmark name -> file name: keep [A-Za-z0-9.-], map everything else to '_'.
-std::string SanitizeName(std::string t_name) {
-  for (char& c : t_name)
-    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-          (c >= '0' && c <= '9') || c == '-' || c == '.'))
-      c = '_';
-  return t_name;
-}
 
 //~~~~~~~  Per-pattern timing (-per_pattern_dir) ~~~~~~~
 //
@@ -392,10 +310,10 @@ void SetupQueryCounters(benchmark::State& t_state) {
 
 auto BM_Query = [](benchmark::State& t_state,
                    Factory<>* t_factory,
-                   Factory<>::Config t_config,
+                   const Cell* t_cell,
                    const std::vector<std::string>* t_patterns,
                    std::size_t t_seq_size) {
-  auto [idx, idx_size] = t_factory->Make(t_config);
+  auto [idx, idx_size] = t_factory->Get(*t_cell);
 
   // The per-pattern variant is a separate loop so the default path stays exactly
   // the plain one. It adds two TSC reads and two stores per pattern, into vectors
@@ -526,1349 +444,57 @@ auto BM_Query = [](benchmark::State& t_state,
 void SetupConstructCounters(benchmark::State& t_state, const dret::Config& t_config,
                              std::uint32_t bs, float sf) {
   using namespace sri::conf;
-  sdsl::int_vector_buffer<> buf(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
-  t_state.counters["n"] = buf.size();
+  t_state.counters["n"] = ReadVectorLength(sdsl::cache_file_name(t_config.keys[kBWT][kBase], t_config));
   if (bs > 0) t_state.counters["bs"] = bs;
   if (sf > 0) t_state.counters["sf"] = sf;
 }
 
-template <typename TIndex>
-void BM_ConstructBrute(benchmark::State& t_state, dret::Config t_config,
-                       std::function<void()> rebuild_hook, bool memory_trace) {
-  TIndex index;
+
+// One kernel for every cell: the index is made once, in a storage the benchmark owns; each iteration
+// times its construct() (with --rebuild, after deleting the cell's own cache files, untimed); then it
+// is loaded once for the size report.
+void BM_Construct(benchmark::State& t_state,
+                  const Cell* t_cell,
+                  dret::Config* t_config,
+                  std::function<void()> t_rebuild_hook,
+                  bool t_memory_trace) {
+  sri::GenericStorage storage;
+  auto cell_index = t_cell->make(std::ref(storage));
   std::int64_t first_iter_ns = -1;
   for (auto _ : t_state) {
-    if (rebuild_hook) {
+    if (t_rebuild_hook) {
       t_state.PauseTiming();
-      rebuild_hook();
+      t_rebuild_hook();
       t_state.ResumeTiming();
     }
     const auto t0 = std::chrono::steady_clock::now();
     sdsl::memory_monitor::start();
-    construct(index, t_config);
+    cell_index.construct(*t_config);
     sdsl::memory_monitor::stop();
     const auto t1 = std::chrono::steady_clock::now();
-    if (first_iter_ns < 0) {
-      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
-    }
+    if (first_iter_ns < 0) first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
   }
-  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
-  if (memory_trace) WriteMemoryTrace(t_state);
-  SetupConstructCounters(t_state, t_config, 0, 0);
+  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(t_rebuild_hook));
+  if (t_memory_trace) WriteMemoryTrace(t_state);
+  SetupConstructCounters(t_state, *t_config, t_cell->block_size, t_cell->storing_factor);
+  if (t_cell->sampling > 0) t_state.counters["s"] = static_cast<double>(t_cell->sampling);
   t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
-}
 
-// Construct kernel for the sr-index brute baseline.
-//
-// Separate from BM_ConstructBrute because the subsample rate is a runtime
-// value that selects the "<rate>_" cache-key prefix, so it has to be baked
-// into the index object rather than merely passed alongside it: construct()
-// finishes by load()ing the index's own locate member, and a default-built
-// sri::SrIndexValidArea has an empty prefix and would look for unprefixed
-// keys. Hence the two-argument ctor here, and the rate also handed to
-// construct() for the temporary it builds internally.
-//
-// Before this existed, construct mode silently skipped `brute kind=sr-index`,
-// so the run samples had to be produced out-of-band by the sr-index project's
-// bm_construct_ri -- which is what coupled the two projects through the shared
-// cache directory. No rebuild hook: --rebuild is still not wired for brute.
-void BM_ConstructBruteSr(benchmark::State& t_state, dret::Config t_config,
-                         std::size_t subsample_rate, bool memory_trace) {
-  using TStorage = dret::GenericStorage;
-  using TIndex = bench::factories::brute::IdxSrConstruct<TStorage>;
-  using TLocateIdx = sri::SrIndexValidArea<TStorage, dret::Alphabet<>>;
-
-  TIndex index{TStorage{}, TLocateIdx{TStorage{}, subsample_rate}};
-  std::int64_t first_iter_ns = -1;
-  for (auto _ : t_state) {
-    const auto t0 = std::chrono::steady_clock::now();
-    sdsl::memory_monitor::start();
-    construct(index, t_config, subsample_rate);
-    sdsl::memory_monitor::stop();
-    const auto t1 = std::chrono::steady_clock::now();
-    if (first_iter_ns < 0) {
-      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
-    }
-  }
-  WarnIfWarm(t_state, first_iter_ns, false);
-  if (memory_trace) WriteMemoryTrace(t_state);
-  SetupConstructCounters(t_state, t_config, 0, 0);
-  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
-  t_state.counters["s"] = static_cast<double>(subsample_rate);
-}
-
-template <typename TIndex>
-void BM_ConstructGCDAFamily(benchmark::State& t_state, dret::Config t_config,
-                             std::uint32_t bs, float sf,
-                             std::function<void()> rebuild_hook, bool memory_trace) {
-  GS storage;
-  TIndex index(storage, bs, sf);
-  std::int64_t first_iter_ns = -1;
-  for (auto _ : t_state) {
-    if (rebuild_hook) {
-      t_state.PauseTiming();
-      rebuild_hook();
-      t_state.ResumeTiming();
-    }
-    const auto t0 = std::chrono::steady_clock::now();
-    sdsl::memory_monitor::start();
-    construct(index, t_config);
-    sdsl::memory_monitor::stop();
-    const auto t1 = std::chrono::steady_clock::now();
-    if (first_iter_ns < 0) {
-      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
-    }
-  }
-  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
-  if (memory_trace) WriteMemoryTrace(t_state);
-  SetupConstructCounters(t_state, t_config, bs, sf);
-  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
-  index.load(t_config);
-  const auto sizes = index.GetSizeReport();
+  cell_index.load(*t_config);
+  const auto sizes = cell_index.index->GetSizeReport();
   appendCounters(t_state, sizes);
   t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
-  if (memory_trace) WriteSizesSidecar(t_state, sizes);
+  if (t_memory_trace) WriteSizesSidecar(t_state, sizes);
 }
 
-// One SLP-NS cell: the spacing (block size of a sampled grammar) and storing factor.
-template <typename TIndex>
-void BM_ConstructSLPNSAt(benchmark::State& t_state, dret::Config t_config,
-                         std::function<void()> rebuild_hook, bool memory_trace,
-                         std::uint32_t spacing, float storing_factor) {
-  GS storage;
-  TIndex index(storage, spacing, storing_factor);
-  std::int64_t first_iter_ns = -1;
-  for (auto _ : t_state) {
-    if (rebuild_hook) {
-      t_state.PauseTiming();
-      rebuild_hook();
-      t_state.ResumeTiming();
-    }
-    const auto t0 = std::chrono::steady_clock::now();
-    sdsl::memory_monitor::start();
-    construct(index, t_config);
-    sdsl::memory_monitor::stop();
-    const auto t1 = std::chrono::steady_clock::now();
-    if (first_iter_ns < 0) {
-      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
-    }
+// The cells of the spec, in its order. They outlive the benchmarks, which point to them.
+std::vector<Cell> SpecCells(const bench::spec::Spec& t_spec) {
+  std::vector<Cell> cells;
+  for (const auto& block : t_spec.sweep) {
+    auto block_cells = std::visit([](const auto& t_sweep) { return bench::factories::Cells(t_sweep); }, block);
+    for (auto& c : block_cells) cells.push_back(std::move(c));
   }
-  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
-  if (memory_trace) WriteMemoryTrace(t_state);
-  SetupConstructCounters(t_state, t_config, 0, 0);
-  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
-  index.load(t_config);
-  const auto sizes = index.GetSizeReport();
-  appendCounters(t_state, sizes);
-  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
-  if (memory_trace) WriteSizesSidecar(t_state, sizes);
-}
-
-template <typename TIndex>
-void BM_ConstructSLPNS(benchmark::State& t_state, dret::Config t_config,
-                        std::function<void()> rebuild_hook, bool memory_trace) {
-  BM_ConstructSLPNSAt<TIndex>(t_state, t_config, std::move(rebuild_hook), memory_trace,
-                              dret::kDiffBlockSize, dret::kNolistsStoringFactor);
-}
-
-// RMQ kernels accept a rebuild hook for signature consistency with the other
-// families, but pass an empty hook today — the RMQ-SLP / RMQ-DSLP cache files
-// are SHARED with the corresponding GCDA / DGCDA builds via SDSL type-hashing,
-// so naively deleting them would corrupt the GCDA cache. RMQ rebuild support
-// is a TODO; see the README.
-template <typename TIndex, typename TCore>
-void BM_ConstructRMQ(benchmark::State& t_state, dret::Config t_config,
-                     std::function<void()> rebuild_hook, bool memory_trace) {
-  const auto bs = static_cast<std::uint32_t>(t_state.range(0));
-  const auto sf = static_cast<float>(t_state.range(1));
-  GS storage;
-  TCore core(storage, bs, sf);
-  TIndex index(storage, core);
-  std::int64_t first_iter_ns = -1;
-  for (auto _ : t_state) {
-    if (rebuild_hook) {
-      t_state.PauseTiming();
-      rebuild_hook();
-      t_state.ResumeTiming();
-    }
-    const auto t0 = std::chrono::steady_clock::now();
-    sdsl::memory_monitor::start();
-    construct(index, t_config);
-    sdsl::memory_monitor::stop();
-    const auto t1 = std::chrono::steady_clock::now();
-    if (first_iter_ns < 0) {
-      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
-    }
-  }
-  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
-  if (memory_trace) WriteMemoryTrace(t_state);
-  SetupConstructCounters(t_state, t_config, bs, sf);
-  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
-  index.load(t_config);
-  const auto sizes = index.GetSizeReport();
-  appendCounters(t_state, sizes);
-  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
-  if (memory_trace) WriteSizesSidecar(t_state, sizes);
-}
-
-template <typename TIndex, typename TCore>
-void BM_ConstructRMQ_NS(benchmark::State& t_state, dret::Config t_config,
-                        std::function<void()> rebuild_hook, bool memory_trace) {
-  GS storage;
-  TCore core(storage);
-  TIndex index(storage, core);
-  std::int64_t first_iter_ns = -1;
-  for (auto _ : t_state) {
-    if (rebuild_hook) {
-      t_state.PauseTiming();
-      rebuild_hook();
-      t_state.ResumeTiming();
-    }
-    const auto t0 = std::chrono::steady_clock::now();
-    sdsl::memory_monitor::start();
-    construct(index, t_config);
-    sdsl::memory_monitor::stop();
-    const auto t1 = std::chrono::steady_clock::now();
-    if (first_iter_ns < 0) {
-      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
-    }
-  }
-  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
-  if (memory_trace) WriteMemoryTrace(t_state);
-  SetupConstructCounters(t_state, t_config, 0, 0);
-  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
-  index.load(t_config);
-  const auto sizes = index.GetSizeReport();
-  appendCounters(t_state, sizes);
-  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
-  if (memory_trace) WriteSizesSidecar(t_state, sizes);
-}
-
-// PDL with a GCDA-family backing that has its own block size, independent of
-// PDL's own (bs, sf): GCDA-light at (backend_bs, 32), or a differential bare
-// SLP sampled every backend_bs positions.
-//
-// This mirrors the query factory (factories/pdl.h): it constructs the inner
-// get-doc explicitly at that operating point, because the plain 4-arg
-// DocListIdxPDL ctor would build the inner backing from PDL's own block size.
-// Construct used that plain ctor, so it built a backing the query never reads
-// while the query built its own -- the last thing keeping run_unit.sh's stage B
-// alive after the missing get_doc cases were added.
-template <typename TIndex, typename TGetDocs>
-void BM_ConstructPDLBackend(benchmark::State& t_state, dret::Config t_config,
-                            dret::pdl::StoragePolicy t_policy,
-                            std::uint32_t bs, float sf,
-                            std::uint32_t backend_bs, float backend_sf,
-                            std::function<void()> rebuild_hook, bool memory_trace) {
-  GS storage;
-  TGetDocs backend(storage, backend_bs, backend_sf);
-  TIndex index(storage, backend, bs, sf, t_policy);
-  std::int64_t first_iter_ns = -1;
-  for (auto _ : t_state) {
-    if (rebuild_hook) {
-      t_state.PauseTiming();
-      rebuild_hook();
-      t_state.ResumeTiming();
-    }
-    const auto t0 = std::chrono::steady_clock::now();
-    sdsl::memory_monitor::start();
-    construct(index, t_config);
-    sdsl::memory_monitor::stop();
-    const auto t1 = std::chrono::steady_clock::now();
-    if (first_iter_ns < 0) {
-      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
-    }
-  }
-  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
-  if (memory_trace) WriteMemoryTrace(t_state);
-  SetupConstructCounters(t_state, t_config, bs, sf);
-  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
-}
-
-template <typename TIndex>
-void BM_ConstructPDL(benchmark::State& t_state, dret::Config t_config,
-                     dret::pdl::StoragePolicy t_policy,
-                     std::uint32_t bs, float sf,
-                     std::function<void()> rebuild_hook, bool memory_trace) {
-  GS storage;
-  TIndex index(storage, bs, sf, t_policy);
-  std::int64_t first_iter_ns = -1;
-  for (auto _ : t_state) {
-    if (rebuild_hook) {
-      t_state.PauseTiming();
-      rebuild_hook();
-      t_state.ResumeTiming();
-    }
-    const auto t0 = std::chrono::steady_clock::now();
-    sdsl::memory_monitor::start();
-    construct(index, t_config);
-    sdsl::memory_monitor::stop();
-    const auto t1 = std::chrono::steady_clock::now();
-    if (first_iter_ns < 0) {
-      first_iter_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
-    }
-  }
-  WarnIfWarm(t_state, first_iter_ns, static_cast<bool>(rebuild_hook));
-  if (memory_trace) WriteMemoryTrace(t_state);
-  SetupConstructCounters(t_state, t_config, bs, sf);
-  t_state.counters["first_construct_ns"] = static_cast<double>(first_iter_ns);
-  index.load(t_config);
-  const auto sizes = index.GetSizeReport();
-  appendCounters(t_state, sizes);
-  t_state.counters["total_index_bytes"] = static_cast<double>(dret::totalBytes(sizes));
-  if (memory_trace) WriteSizesSidecar(t_state, sizes);
-}
-
-//~~~~~~~  Helpers ~~~~~~~
-
-std::string NameSuffix(GCDASLPVariant v) {
-  return (v == GCDASLPVariant::Light)
-      ? std::string{}
-      : std::string("-") + EnumTraits<GCDASLPVariant>::Name(v);
-}
-
-std::string NameSuffix(DGCDASLPVariant v) {
-  return (v == DGCDASLPVariant::Default)
-      ? std::string{}
-      : std::string("-") + EnumTraits<DGCDASLPVariant>::Name(v);
-}
-
-std::string NameSuffix(BareSLPVariant v) {
-  return (v == BareSLPVariant::IV)
-      ? std::string{}
-      : std::string("-") + EnumTraits<BareSLPVariant>::Name(v);
-}
-
-const char* CoreName(fac::rmq::CoreKind c) {
-  switch (c) {
-    case fac::rmq::CoreKind::SADA:    return "SADA";
-    case fac::rmq::CoreKind::ILCP:    return "ILCP";
-    case fac::rmq::CoreKind::CILCP:   return "CILCP";
-    case fac::rmq::CoreKind::SADA_V:  return "SADA-V";
-    case fac::rmq::CoreKind::ILCP_V:  return "ILCP-V";
-    case fac::rmq::CoreKind::CILCP_V: return "CILCP-V";
-  }
-  return "UNKNOWN";
-}
-
-std::string BsSfSuffix(std::uint32_t bs, float sf) {
-  return "-bs" + std::to_string(bs) + "-sf" + (dret::IsInfiniteStoringFactor(sf) ? std::string("inf") : std::to_string(static_cast<int>(sf)));
-}
-
-//~~~~~~~  Keyed-name helpers — FAMILY[k=v|k=v], canonical key order ~~~~~~~
-// Keys are emitted in the order pushed; callers follow the canonical order
-// codec · get-doc · slp · span-length · slp-container · policy · tree ·
-// block-size · storing-factor · prev-doc · run-values · sampling.
-
-using KV = std::vector<std::pair<std::string, std::string>>;
-
-std::string KeyedName(const std::string& family, const KV& kvs) {
-  std::string s = family;
-  bool first = true;
-  for (const auto& [k, v] : kvs) {
-    if (v.empty()) continue;
-    s += first ? '[' : '|';
-    s += k;
-    s += '=';
-    s += v;
-    first = false;
-  }
-  if (!first) s += ']';
-  return s;
-}
-
-const char* SlpPlainValue(GCDASLPVariant v) {
-  switch (v) {
-    case GCDASLPVariant::CompactBP:    return "compact-bp";
-    case GCDASLPVariant::CompactLOUDS: return "compact-louds";
-    case GCDASLPVariant::Combined:     return "combined";
-    case GCDASLPVariant::Light:
-    default:                           return "light";
-  }
-}
-
-// A differential SLP variant decomposes into (span-length, slp-container).
-std::pair<std::string, std::string> DiffParts(DGCDASLPVariant v) {
-  switch (v) {
-    case DGCDASLPVariant::OTF: return {"on-the-fly", "iv"};
-    case DGCDASLPVariant::CRL: return {"cached-root", "iv"};
-    case DGCDASLPVariant::EV:  return {"full", "ev"};
-    case DGCDASLPVariant::DV:  return {"full", "dv"};
-    case DGCDASLPVariant::VV:  return {"full", "vv"};
-    case DGCDASLPVariant::Default:
-    default:                   return {"full", "iv"};
-  }
-}
-
-const char* BareValue(BareSLPVariant v) {
-  switch (v) {
-    case BareSLPVariant::Raw: return "raw";
-    case BareSLPVariant::DV:  return "dv";
-    case BareSLPVariant::VV:  return "vv";
-    case BareSLPVariant::IV:
-    default:                  return "iv";
-  }
-}
-
-// The four bare-diff variants (base differential SLP, non-sampled).
-bool IsBareDiff(BareSLPVariant v) {
-  return v == BareSLPVariant::Diff || v == BareSLPVariant::DiffEV
-      || v == BareSLPVariant::DiffDV || v == BareSLPVariant::DiffVV;
-}
-
-// Differential int-container for a bare-diff variant (roots/span_sums/samples).
-const char* DiffContainerValue(BareSLPVariant v) {
-  switch (v) {
-    case BareSLPVariant::DiffEV: return "ev";
-    case BareSLPVariant::DiffDV: return "dv";
-    case BareSLPVariant::DiffVV: return "vv";
-    case BareSLPVariant::Diff:
-    default:                     return "iv";
-  }
-}
-
-// GCDA document-set codec in keyed form. Re-Pair, the family default, is the
-// empty value, which KeyedName omits: every existing GCDA name is unchanged.
-const char* SetsValue(bench::axes::GCDASetsCodec v) {
-  return v == bench::axes::GCDASetsCodec::Plain ? "plain" : "";
-}
-
-const char* RunValuesValue(bench::axes::RunValuesVariant v) {
-  switch (v) {
-    case bench::axes::RunValuesVariant::DV: return "dv";
-    case bench::axes::RunValuesVariant::VV: return "vv";
-    case bench::axes::RunValuesVariant::IV:
-    default:                                return "iv";
-  }
-}
-
-const char* PrevDocValue(bench::axes::PrevDocVariant v) {
-  switch (v) {
-    case bench::axes::PrevDocVariant::DV: return "dv";
-    case bench::axes::PrevDocVariant::VV: return "vv";
-    case bench::axes::PrevDocVariant::IV:
-    default:                              return "iv";
-  }
-}
-
-const char* CodecValue(PDLVariant v) {
-  switch (v) {
-    case PDLVariant::RP: return "rp";
-    case PDLVariant::BC: return "bc";
-    case PDLVariant::Plain:
-    default:             return "plain";
-  }
-}
-
-const char* PolicyValue(PDLStoragePolicy v) {
-  switch (v) {
-    case PDLStoragePolicy::LeavesOnly:       return "leaves-only";
-    case PDLStoragePolicy::ListWeighted:     return "list-weighted";
-    case PDLStoragePolicy::StoreAllInternal: return "store-all";
-    case PDLStoragePolicy::OccurrenceWeighted:
-    default:                                 return "occ-weighted";
-  }
-}
-
-// get-doc backend kind in keyed form: da / gcda / gcda-bare / gcda-diff /
-// sa-phi-r / sa-phi-sr.
-const char* GetDocValue(GetDocEnum g) {
-  switch (g) {
-    case GetDocEnum::SLP:     return "gcda";
-    case GetDocEnum::SLP_NS:  return "gcda-bare";
-    case GetDocEnum::DSLP:    return "gcda-diff";
-    case GetDocEnum::SAPhiR:  return "sa-phi-r";
-    case GetDocEnum::SAPhiSR: return "sa-phi-sr";
-    case GetDocEnum::RLCSA:   return "rlcsa";
-    case GetDocEnum::DA:
-    default:                  return "da";
-  }
-}
-
-std::string IntStr(std::uint32_t x) { return std::to_string(x); }
-std::string SfStr(float sf) {
-  return dret::IsInfiniteStoringFactor(sf) ? std::string("inf") : std::to_string(static_cast<int>(sf));
-}
-
-std::vector<std::int64_t> ArgsRange(const std::vector<std::uint32_t>& bs,
-                                     const std::vector<float>& sf) {
-  // Google Benchmark's ArgsProduct takes vector<vector<int64_t>>.
-  return {};
-}
-
-//~~~~~~~  Query-mode register functions (one per family) ~~~~~~~
-
-void RegisterQueryGCDA(const bench::spec::GCDASweep& sw, Factory<>& factory,
-                       const std::vector<std::string>* patterns, std::size_t seq_size) {
-  for (auto sets : sw.sets) {
-  for (auto tslp : sw.tslp) {
-    for (auto bs : sw.block_size) {
-      for (auto sf : sw.storing_factor) {
-        const auto name = KeyedName("GCDA", {
-            {"slp", SlpPlainValue(tslp)},
-            {"tree", "sampled"},
-            {"sets", SetsValue(sets)},
-            {"block-size", IntStr(bs)},
-            {"storing-factor", SfStr(sf)},
-        });
-        Factory<>::Config cfg{};
-        cfg.index_t = Factory<>::IndexEnum::GCDA;
-        cfg.block_size = bs;
-        cfg.storing_factor = sf;
-        cfg.gcda_slp = tslp;
-        cfg.gcda_sets = sets;
-        benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
-      }
-    }
-  }
-  }
-}
-
-// GCDA over a document-array backend. Named like GCDA with the backend in place of
-// the grammar representation: GCDA[tree=sampled|get-doc=..|sets=..|block-size=..|storing-factor=..].
-void RegisterQueryGCDABackend(const bench::spec::GCDABackendSweep& sw, Factory<>& factory,
-                              const std::vector<std::string>* patterns, std::size_t seq_size) {
-  for (auto gd : sw.get_doc) {
-    for (auto sets : sw.sets) {
-      for (auto bs : sw.block_size) {
-        for (auto sf : sw.storing_factor) {
-          const auto name = KeyedName("GCDA", {
-              {"tree", "sampled"},
-              {"get-doc", GetDocValue(gd)},
-              {"sets", SetsValue(sets)},
-              {"block-size", IntStr(bs)},
-              {"storing-factor", SfStr(sf)},
-          });
-          Factory<>::Config cfg{};
-          cfg.index_t = Factory<>::IndexEnum::GCDA_BACKEND;
-          cfg.block_size = bs;
-          cfg.storing_factor = sf;
-          cfg.get_doc = gd;
-          cfg.gcda_sets = sets;
-          benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
-        }
-      }
-    }
-  }
-}
-
-void RegisterQueryDGCDA(const bench::spec::DGCDASweep& sw, Factory<>& factory,
-                        const std::vector<std::string>* patterns, std::size_t seq_size) {
-  for (auto sets : sw.sets) {
-  for (auto tslp : sw.tslp) {
-    for (auto bs : sw.block_size) {
-      for (auto sf : sw.storing_factor) {
-        auto [span, cont] = DiffParts(tslp);
-        const auto name = KeyedName("GCDA", {
-            {"slp", "diff"},
-            {"span-length", span},
-            {"slp-container", cont},
-            {"tree", "sampled"},
-            {"sets", SetsValue(sets)},
-            {"block-size", IntStr(bs)},
-            {"storing-factor", SfStr(sf)},
-        });
-        Factory<>::Config cfg{};
-        cfg.index_t = Factory<>::IndexEnum::DGCDA;
-        cfg.block_size = bs;
-        cfg.storing_factor = sf;
-        cfg.dgcda_slp = tslp;
-        cfg.gcda_sets = sets;
-        benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
-      }
-    }
-  }
-  }
-}
-
-void RegisterQuerySLPNS(const bench::spec::SLPNSSweep& sw, Factory<>& factory,
-                        const std::vector<std::string>* patterns, std::size_t seq_size) {
-  for (auto tslp : sw.tslp) {
-    // A differential variant sweeps its sample spacing; a plain one has no
-    // sampling and registers once. The spacing joins the name only when it is
-    // not the default 512, so every existing GCDA-nolists name is unchanged.
-    const auto spacings = IsBareDiff(tslp) ? sw.block_size : std::vector<std::uint32_t>{512};
-    for (auto bs : spacings) {
-      // bare-diff: non-sampled differential SLP, slp=diff + container axis.
-      // Plain bare keeps slp=bare|slp-container=… ; both are tree=none.
-      const auto name = IsBareDiff(tslp)
-          ? KeyedName("GCDA", {{"slp", "diff"},
-                               {"slp-container", DiffContainerValue(tslp)},
-                               {"tree", "none"},
-                               {"block-size", bs == 512 ? std::string() : IntStr(bs)}})
-          : KeyedName("GCDA", {{"slp", "bare"},
-                               {"slp-container", BareValue(tslp)},
-                               {"tree", "none"}});
-      Factory<>::Config cfg{};
-      cfg.index_t = Factory<>::IndexEnum::SLP_NS;
-      cfg.bare_slp = tslp;
-      cfg.block_size = bs;
-      benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
-    }
-  }
-  // A sampled GCDA grammar without its document lists: tree=none like the bare
-  // ones, with the block size and storing factor of the GCDA cell it reads.
-  for (auto gslp : sw.gcda_slp) {
-    for (auto bs : sw.block_size) {
-      for (auto sf : sw.storing_factor) {
-        const auto name = KeyedName("GCDA", {{"slp", SlpPlainValue(gslp)},
-                                             {"tree", "none"},
-                                             {"block-size", IntStr(bs)},
-                                             {"storing-factor", SfStr(sf)}});
-        Factory<>::Config cfg{};
-        cfg.index_t = Factory<>::IndexEnum::SLP_NS;
-        cfg.slp_ns_sampled = true;
-        cfg.gcda_slp = gslp;
-        cfg.block_size = bs;
-        cfg.storing_factor = sf;
-        benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
-      }
-    }
-  }
-}
-
-void RegisterQueryRMQ(const bench::spec::RMQSweep& sw, Factory<>& factory,
-                      const std::vector<std::string>* patterns, std::size_t seq_size) {
-  for (auto core : sw.core) {
-    Factory<>::IndexEnum core_idx{};
-    switch (core) {
-      case fac::rmq::CoreKind::SADA:    core_idx = Factory<>::IndexEnum::SADA;    break;
-      case fac::rmq::CoreKind::ILCP:    core_idx = Factory<>::IndexEnum::ILCP;    break;
-      case fac::rmq::CoreKind::CILCP:   core_idx = Factory<>::IndexEnum::CILCP;   break;
-      case fac::rmq::CoreKind::SADA_V:  core_idx = Factory<>::IndexEnum::SADA_V;  break;
-      case fac::rmq::CoreKind::ILCP_V:  core_idx = Factory<>::IndexEnum::ILCP_V;  break;
-      case fac::rmq::CoreKind::CILCP_V: core_idx = Factory<>::IndexEnum::CILCP_V; break;
-    }
-    for (auto gd : sw.get_doc) {
-      const bool needs_bs_sf = (gd == GetDocEnum::SLP) || (gd == GetDocEnum::DSLP);
-      // A bare differential grammar has a block size (its sample spacing) but
-      // no storing factor; a bare plain grammar has neither.
-      const bool slp_ns_has_diff = (gd == GetDocEnum::SLP_NS) &&
-          std::any_of(sw.bare_slp.begin(), sw.bare_slp.end(), IsBareDiff);
-      auto bs_list = (needs_bs_sf || slp_ns_has_diff) ? sw.block_size : std::vector<std::uint32_t>{0};
-      auto sf_list = needs_bs_sf ? sw.storing_factor : std::vector<float>{0.0f};
-      // Inner SLP axis: gcda_slp for get_doc=slp; bare_slp for slp_ns; ignored otherwise.
-      auto inner_vec = [&]() -> std::vector<std::pair<GCDASLPVariant, BareSLPVariant>> {
-        if (gd == GetDocEnum::SLP) {
-          std::vector<std::pair<GCDASLPVariant, BareSLPVariant>> v;
-          for (auto x : sw.gcda_slp) v.push_back({x, BareSLPVariant::IV});
-          return v;
-        }
-        if (gd == GetDocEnum::SLP_NS) {
-          std::vector<std::pair<GCDASLPVariant, BareSLPVariant>> v;
-          for (auto x : sw.bare_slp) v.push_back({GCDASLPVariant::Light, x});
-          return v;
-        }
-        return {{GCDASLPVariant::Light, BareSLPVariant::IV}};
-      }();
-      // DGCDA variant axis: only meaningful for the differential get-doc.
-      auto dslp_vec = [&]() -> std::vector<bench::axes::DGCDASLPVariant> {
-        if (gd == GetDocEnum::DSLP)
-          return {sw.dgcda_slp.begin(), sw.dgcda_slp.end()};
-        return {bench::axes::DGCDASLPVariant::Default};
-      }();
-      // ILCP-V / CILCP-V fan out across TRunValues; SADA-V fans across
-      // TPrevDoc; the published cores ignore both axes. Use single-element default
-      // lists for irrelevant axes so the inner loop doesn't duplicate
-      // registrations.
-      const bool ilcp_s_like = (core == fac::rmq::CoreKind::ILCP_V ||
-                                core == fac::rmq::CoreKind::CILCP_V);
-      const bool sada_s = (core == fac::rmq::CoreKind::SADA_V);
-      const auto& rv_list = ilcp_s_like
-          ? sw.run_values
-          : std::vector<bench::axes::RunValuesVariant>{bench::axes::RunValuesVariant::DV};
-      const auto& pd_list = sada_s
-          ? sw.prev_doc
-          : std::vector<bench::axes::PrevDocVariant>{bench::axes::PrevDocVariant::IV};
-      // SA-sampling axis: only meaningful for SAPhiSR (sr-index subsample
-      // rate); SAPhiR and all other get-docs use a single sentinel value.
-      const auto sa_list = (gd == GetDocEnum::SAPhiSR)
-          ? sw.sa_sampling
-          : std::vector<std::size_t>{0};
-      for (auto bs : bs_list) {
-        for (auto sf : sf_list) {
-          for (auto pair : inner_vec) {
-            const bool bare_diff = (gd == GetDocEnum::SLP_NS) && IsBareDiff(pair.second);
-            // A bare plain grammar ignores the block size: register it once.
-            if (gd == GetDocEnum::SLP_NS && !bare_diff && bs != bs_list.front())
-              continue;
-            for (auto dslp : dslp_vec) {
-              for (auto rv : rv_list) {
-                for (auto pd : pd_list) {
-                  for (auto sa : sa_list) {
-                    KV kv;
-                    kv.push_back({"get-doc", GetDocValue(gd)});
-                    if (gd == GetDocEnum::SLP) {
-                      kv.push_back({"slp", SlpPlainValue(pair.first)});
-                    } else if (gd == GetDocEnum::SLP_NS) {
-                      // Mirror RegisterQuerySLPNS: bare-diff variants take the
-                      // diff-container axis (iv/ev/dv/vv) and add an explicit
-                      // slp=diff so the name doesn't collide with bare-iv.
-                      if (IsBareDiff(pair.second)) {
-                        kv.push_back({"slp", "diff"});
-                        kv.push_back({"slp-container", DiffContainerValue(pair.second)});
-                      } else {
-                        kv.push_back({"slp-container", BareValue(pair.second)});
-                      }
-                    } else if (gd == GetDocEnum::DSLP) {
-                      auto [span, cont] = DiffParts(dslp);
-                      kv.push_back({"span-length", span});
-                      kv.push_back({"slp-container", cont});
-                    } else if (gd == GetDocEnum::SAPhiSR) {
-                      kv.push_back({"sa-sampling", IntStr(static_cast<std::uint32_t>(sa))});
-                    }
-                    if (needs_bs_sf) {
-                      kv.push_back({"block-size", IntStr(bs)});
-                      kv.push_back({"storing-factor", SfStr(sf)});
-                    } else if (bare_diff) {
-                      kv.push_back({"block-size", IntStr(bs)});
-                    }
-                    if (sada_s)      kv.push_back({"prev-doc", PrevDocValue(pd)});
-                    if (ilcp_s_like) kv.push_back({"run-values", RunValuesValue(rv)});
-                    std::string name = KeyedName(CoreName(core), kv);
-                    Factory<>::Config cfg{};
-                    cfg.index_t = core_idx;
-                    cfg.get_doc = gd;
-                    cfg.gcda_slp = pair.first;
-                    cfg.bare_slp = pair.second;
-                    cfg.dgcda_slp = dslp;
-                    cfg.block_size = (needs_bs_sf || bare_diff) ? bs : 512;
-                    cfg.storing_factor = needs_bs_sf ? sf : 4.0f;
-                    cfg.run_values = rv;
-                    cfg.prev_doc = pd;
-                    cfg.sa_sampling = sa;
-                    benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-void RegisterQueryPDL(const bench::spec::PDLSweep& sw, Factory<>& factory,
-                      const std::vector<std::string>* patterns, std::size_t seq_size) {
-  for (auto codec : sw.codec) {
-    for (auto gd : sw.get_doc) {
-      // Register every (policy, bs, sf) for one fixed get-doc backend variant.
-      auto emit = [&](const KV& variant_kv, GCDASLPVariant gslp,
-                      BareSLPVariant bslp, DGCDASLPVariant dslp,
-                      std::uint32_t backend_bs = 1024) {
-        for (auto policy : sw.policy) {
-          for (auto bs : sw.block_size) {
-            for (auto sf : sw.storing_factor) {
-              KV kv;
-              kv.push_back({"codec", CodecValue(codec)});
-              kv.push_back({"get-doc", GetDocValue(gd)});
-              for (const auto& p : variant_kv) kv.push_back(p);
-              kv.push_back({"policy", PolicyValue(policy)});
-              kv.push_back({"block-size", IntStr(bs)});
-              kv.push_back({"storing-factor", SfStr(sf)});
-              Factory<>::Config cfg{};
-              cfg.index_t = Factory<>::IndexEnum::PDL;
-              cfg.block_size = bs;
-              cfg.storing_factor = sf;
-              cfg.get_doc = gd;
-              cfg.pdl_variant = codec;
-              cfg.pdl_storage_policy = policy;
-              cfg.gcda_slp = gslp;
-              cfg.bare_slp = bslp;
-              cfg.dgcda_slp = dslp;
-              cfg.pdl_backend_block_size = backend_bs;
-              benchmark::RegisterBenchmark(KeyedName("PDL", kv), BM_Query,
-                                            &factory, cfg, patterns, seq_size);
-            }
-          }
-        }
-      };
-      switch (gd) {
-        case GetDocEnum::SLP:
-          // The backend's block size joins the name only when it differs from
-          // the default 1024, so every existing PDL name stays what it was.
-          for (auto v : sw.gcda_slp) {
-            for (auto bbs : sw.backend_block_size) {
-              KV vkv{{"slp", SlpPlainValue(v)}};
-              if (bbs != 1024) vkv.push_back({"backend-block-size", IntStr(bbs)});
-              emit(vkv, v, BareSLPVariant::IV, DGCDASLPVariant::Default, bbs);
-            }
-          }
-          break;
-        case GetDocEnum::SLP_NS:
-          // Name bare-diff variants as RegisterQueryRMQ does: BareValue maps
-          // every diff variant to "iv", so without slp=diff a differential
-          // backend would take the plain iv backend's name.
-          // A differential backend samples every backend-block-size positions.
-          // The key is always in its name: a name without it means the spacing
-          // was PDL's block size, as it was before the backend had its own.
-          for (auto v : sw.bare_slp) {
-            if (IsBareDiff(v))
-              for (auto bbs : sw.backend_block_size)
-                emit({{"slp", "diff"}, {"slp-container", DiffContainerValue(v)},
-                      {"backend-block-size", IntStr(bbs)}},
-                     GCDASLPVariant::Light, v, DGCDASLPVariant::Default, bbs);
-            else
-              emit({{"slp-container", BareValue(v)}}, GCDASLPVariant::Light, v, DGCDASLPVariant::Default);
-          }
-          break;
-        case GetDocEnum::DSLP:
-          for (auto v : sw.dgcda_slp) {
-            auto [span, cont] = DiffParts(v);
-            emit({{"span-length", span}, {"slp-container", cont}},
-                 GCDASLPVariant::Light, BareSLPVariant::IV, v);
-          }
-          break;
-        case GetDocEnum::SAPhiR:
-          // r-index-backed; no sampling sub-axis.
-          emit({}, GCDASLPVariant::Light, BareSLPVariant::IV, DGCDASLPVariant::Default);
-          break;
-        case GetDocEnum::SAPhiSR:
-          // sr-index-backed; fan out across sa_sampling values. Inner emit
-          // doesn't know about sa_sampling, so set cfg.sa_sampling around it.
-          // (One cell per sa_sampling × the existing emit grid.)
-          for (auto s : sw.sa_sampling) {
-            // Hack: stash sa_sampling in a shadow var captured by emit's
-            // cfg-builder. We need to thread it; replace emit's inner block
-            // with a tiny inline expansion to inject cfg.sa_sampling = s.
-            for (auto policy : sw.policy) {
-              for (auto bs : sw.block_size) {
-                for (auto sf : sw.storing_factor) {
-                  KV kv;
-                  kv.push_back({"codec", CodecValue(codec)});
-                  kv.push_back({"get-doc", GetDocValue(gd)});
-                  kv.push_back({"sa-sampling", IntStr(static_cast<std::uint32_t>(s))});
-                  kv.push_back({"policy", PolicyValue(policy)});
-                  kv.push_back({"block-size", IntStr(bs)});
-                  kv.push_back({"storing-factor", SfStr(sf)});
-                  Factory<>::Config cfg{};
-                  cfg.index_t = Factory<>::IndexEnum::PDL;
-                  cfg.block_size = bs;
-                  cfg.storing_factor = sf;
-                  cfg.get_doc = gd;
-                  cfg.pdl_variant = codec;
-                  cfg.pdl_storage_policy = policy;
-                  cfg.gcda_slp = GCDASLPVariant::Light;
-                  cfg.bare_slp = BareSLPVariant::IV;
-                  cfg.dgcda_slp = DGCDASLPVariant::Default;
-                  cfg.sa_sampling = s;
-                  benchmark::RegisterBenchmark(KeyedName("PDL", kv), BM_Query,
-                                                &factory, cfg, patterns, seq_size);
-                }
-              }
-            }
-          }
-          break;
-        case GetDocEnum::DA:
-        default:
-          emit({}, GCDASLPVariant::Light, BareSLPVariant::IV, DGCDASLPVariant::Default);
-          break;
-      }
-    }
-  }
-}
-
-void RegisterQueryBrute(const bench::spec::BruteSweep& sw, Factory<>& factory,
-                        const std::vector<std::string>* patterns, std::size_t seq_size) {
-  using bench::spec::BruteSweep;
-  for (auto kind : sw.kind) {
-    if (kind == BruteSweep::Kind::RIndex) {
-      Factory<>::Config cfg{};
-      cfg.index_t = Factory<>::IndexEnum::BRUTE_R_INDEX;
-      benchmark::RegisterBenchmark("BruteRI", BM_Query,
-                                    &factory, cfg, patterns, seq_size);
-    } else if (kind == BruteSweep::Kind::DA || kind == BruteSweep::Kind::RLCSA) {
-      Factory<>::Config cfg{};
-      const bool da = kind == BruteSweep::Kind::DA;
-      cfg.index_t = da ? Factory<>::IndexEnum::BRUTE_DA : Factory<>::IndexEnum::BRUTE_RLCSA;
-      benchmark::RegisterBenchmark(da ? "BruteDA" : "BruteRLCSA", BM_Query,
-                                    &factory, cfg, patterns, seq_size);
-    } else if (kind == BruteSweep::Kind::Count) {
-      Factory<>::Config cfg{};
-      cfg.index_t = Factory<>::IndexEnum::COUNT_RI;
-      benchmark::RegisterBenchmark("CountRI", BM_Query, &factory, cfg, patterns, seq_size);
-    } else {
-      for (auto s : sw.sampling_size) {
-        Factory<>::Config cfg{};
-        cfg.index_t = Factory<>::IndexEnum::BRUTE_SR_INDEX;
-        cfg.sampling_size = s;
-        const auto name = KeyedName("BruteSRI", {{"sampling", std::to_string(s)}});
-        benchmark::RegisterBenchmark(name, BM_Query, &factory, cfg, patterns, seq_size);
-      }
-    }
-  }
-}
-
-//~~~~~~~  Construct-mode register functions (one per family) ~~~~~~~
-
-struct ConstructCtx {
-  bool rebuild = false;
-  bool memory_trace = false;
-  std::filesystem::path cache_dir;
-  std::string basename;
-};
-
-// Per-cell GCDA-family register: one benchmark per (variant, bs, sf), each
-// with its own rebuild hook computed from the cell's cache-key prefix. bs/sf
-// are bound to the kernel directly (no GBenchmark ArgsProduct) so the
-// benchmark name reads as "DocListGCDA-<variant>-bs<N>-sf<N>".
-template <typename TIndex, typename PrefixFn>
-void RegisterOneConstructGCDA(const std::string& family_name,
-                               dret::Config& config,
-                               const std::vector<std::uint32_t>& bs_list,
-                               const std::vector<float>& sf_list,
-                               const ConstructCtx& cc,
-                               PrefixFn prefix_for_cell) {
-  for (auto bs : bs_list) {
-    for (auto sf : sf_list) {
-      const auto cell_name = family_name + BsSfSuffix(bs, sf);
-      auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                          prefix_for_cell(bs, sf));
-      benchmark::RegisterBenchmark(cell_name, BM_ConstructGCDAFamily<TIndex>,
-                                    config, bs, sf, hook, cc.memory_trace);
-    }
-  }
-}
-
-void RegisterConstructGCDA(const bench::spec::GCDASweep& sw, dret::Config& config,
-                            const ConstructCtx& cc) {
-  using namespace fac::gcda;
-  auto prefix_fn = [](std::uint32_t bs, float sf) { return GCDAKeyPrefixes(bs, sf); };
-  for (auto tslp : sw.tslp) {
-    const auto name = "GCDA" + NameSuffix(tslp);
-    switch (tslp) {
-      case GCDASLPVariant::CompactBP:
-        RegisterOneConstructGCDA<Idx<GS, SLP_CompactBP>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
-      case GCDASLPVariant::CompactLOUDS:
-        RegisterOneConstructGCDA<Idx<GS, SLP_CompactLOUDS>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
-      case GCDASLPVariant::Combined:
-        RegisterOneConstructGCDA<Idx<GS, SLP_Combined>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
-      case GCDASLPVariant::Light:
-      default:
-        RegisterOneConstructGCDA<Idx<GS>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
-    }
-  }
-}
-
-void RegisterConstructDGCDA(const bench::spec::DGCDASweep& sw, dret::Config& config,
-                             const ConstructCtx& cc) {
-  using namespace fac::dgcda;
-  auto prefix_fn = [](std::uint32_t bs, float sf) { return DGCDAKeyPrefixes(bs, sf); };
-  for (auto tslp : sw.tslp) {
-    const auto name = "DGCDA" + NameSuffix(tslp);
-    switch (tslp) {
-      case DGCDASLPVariant::OTF: RegisterOneConstructGCDA<Idx<GS, SLP_OTF>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
-      case DGCDASLPVariant::CRL: RegisterOneConstructGCDA<Idx<GS, SLP_CRL>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
-      case DGCDASLPVariant::EV:  RegisterOneConstructGCDA<Idx<GS, SLP_EV>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
-      case DGCDASLPVariant::DV:  RegisterOneConstructGCDA<Idx<GS, SLP_DV>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
-      case DGCDASLPVariant::VV:  RegisterOneConstructGCDA<Idx<GS, SLP_VV>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
-      case DGCDASLPVariant::Default:
-      default:                   RegisterOneConstructGCDA<Idx<GS>>(name, config, sw.block_size, sw.storing_factor, cc, prefix_fn); break;
-    }
-  }
-}
-
-void RegisterConstructSLPNS(const bench::spec::SLPNSSweep& sw, dret::Config& config,
-                             const ConstructCtx& cc) {
-  using namespace fac::slp_ns;
-  auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SLPNSKeyPrefixes(dret::kDiffBlockSize));
-  for (auto tslp : sw.tslp) {
-    const auto name = "SLP-NS" + NameSuffix(tslp);
-    switch (tslp) {
-      case BareSLPVariant::Raw: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_Raw>>, config, hook, cc.memory_trace); break;
-      case BareSLPVariant::DV:  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DV>>, config, hook, cc.memory_trace); break;
-      case BareSLPVariant::VV:  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_VV>>, config, hook, cc.memory_trace); break;
-      case BareSLPVariant::Diff:   benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_Diff>>, config, hook, cc.memory_trace); break;
-      case BareSLPVariant::DiffEV: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DiffEV>>, config, hook, cc.memory_trace); break;
-      case BareSLPVariant::DiffDV: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DiffDV>>, config, hook, cc.memory_trace); break;
-      case BareSLPVariant::DiffVV: benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS, BareSLP_DiffVV>>, config, hook, cc.memory_trace); break;
-      case BareSLPVariant::IV:
-      default:                  benchmark::RegisterBenchmark(name, BM_ConstructSLPNS<Idx<GS>>, config, hook, cc.memory_trace); break;
-    }
-  }
-  // Sampled GCDA grammars without their lists: one cell per (block size,
-  // storing factor), the GCDA cell the query loads. --rebuild leaves them alone:
-  // they are GCDA's own components.
-  for (auto gslp : sw.gcda_slp) {
-    for (auto bs : sw.block_size) {
-      for (auto sf : sw.storing_factor) {
-        const auto name = "SLP-NS-" + std::string(SlpPlainValue(gslp)) + BsSfSuffix(bs, sf);
-        auto reg = [&]<typename TIndex>() {
-          benchmark::RegisterBenchmark(name, BM_ConstructSLPNSAt<TIndex>, config, std::function<void()>{},
-                                        cc.memory_trace, bs, sf);
-        };
-        switch (gslp) {
-          case GCDASLPVariant::Combined:     reg.template operator()<Idx<GS, fac::gcda::SLP_Combined>>(); break;
-          case GCDASLPVariant::CompactBP:    reg.template operator()<Idx<GS, fac::gcda::SLP_CompactBP>>(); break;
-          case GCDASLPVariant::CompactLOUDS: reg.template operator()<Idx<GS, fac::gcda::SLP_CompactLOUDS>>(); break;
-          case GCDASLPVariant::Light:
-          default:                           reg.template operator()<Idx<GS, fac::gcda::SLP_Light>>(); break;
-        }
-      }
-    }
-  }
-}
-
-// RMQ construct dispatch: per (core, get_doc, [gcda_slp | bare_slp]) tuple.
-// Helper sub-templates pick the typed TIndex / TCore for the cell.
-template <template <typename, typename> class TCoreT, typename TGetDoc, bool NeedsBsSf>
-void RegisterRMQOneTriple(const std::string& core_name, const std::string& suffix,
-                          dret::Config& config,
-                          const std::vector<std::uint32_t>& bs,
-                          const std::vector<float>& sf,
-                          bool memory_trace,
-                          const std::function<void()>& rebuild_hook) {
-  using TCore = TCoreT<GS, TGetDoc>;
-  using TIndex = fac::rmq::Idx<GS, TCore>;
-  const auto name = core_name + suffix;
-  if constexpr (NeedsBsSf) {
-    std::vector<std::int64_t> bs_i64(bs.begin(), bs.end());
-    std::vector<std::int64_t> sf_i64(sf.begin(), sf.end());
-    benchmark::RegisterBenchmark(name, BM_ConstructRMQ<TIndex, TCore>, config,
-                                  rebuild_hook, memory_trace)
-        ->ArgsProduct({bs_i64, sf_i64});
-  } else {
-    benchmark::RegisterBenchmark(name, BM_ConstructRMQ_NS<TIndex, TCore>, config,
-                                  rebuild_hook, memory_trace);
-  }
-}
-
-template <template <typename, typename> class TCoreT>
-void RegisterRMQOneCore(const std::string& core_name,
-                         const bench::spec::RMQSweep& sw, dret::Config& config,
-                         bool memory_trace,
-                         const std::function<void()>& rebuild_hook) {
-  using namespace fac::rmq;
-  for (auto gd : sw.get_doc) {
-    switch (gd) {
-      case GetDocEnum::DA: {
-        // DA-backed: one entry per core, no bs/sf.
-        using TCore = TCoreT<GS, GetDocDA<GS>>;
-        using TIndex = Idx<GS, TCore>;
-        benchmark::RegisterBenchmark(core_name + "-DA",
-            BM_ConstructBrute<TIndex>, config, rebuild_hook, memory_trace);
-        break;
-      }
-      case GetDocEnum::SLP: {
-        for (auto tslp : sw.gcda_slp) {
-          const auto suffix = std::string("-SLP") + NameSuffix(tslp);
-          switch (tslp) {
-            case GCDASLPVariant::CompactBP:    RegisterRMQOneTriple<TCoreT, GetDocSLP<GS, SLP_CompactBP>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
-            case GCDASLPVariant::CompactLOUDS: RegisterRMQOneTriple<TCoreT, GetDocSLP<GS, SLP_CompactLOUDS>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
-            case GCDASLPVariant::Combined:     RegisterRMQOneTriple<TCoreT, GetDocSLP<GS, SLP_Combined>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
-            case GCDASLPVariant::Light:
-            default:                           RegisterRMQOneTriple<TCoreT, GetDocSLP<GS>, true>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
-          }
-        }
-        break;
-      }
-      case GetDocEnum::SLP_NS: {
-        for (auto tslp : sw.bare_slp) {
-          const auto suffix = std::string("-SLP-NS") + NameSuffix(tslp);
-          switch (tslp) {
-            case BareSLPVariant::Raw: RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_Raw>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
-            case BareSLPVariant::DV:  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_DV>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
-            case BareSLPVariant::VV:  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_VV>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
-            // A bare differential grammar sweeps the block size (its sample
-            // spacing) with no storing factor, hence the single sf of 0.
-            case BareSLPVariant::Diff:   RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_Diff>, true>(core_name, suffix, config, sw.block_size, {0.0f}, memory_trace, rebuild_hook); break;
-            case BareSLPVariant::DiffEV: RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_DiffEV>, true>(core_name, suffix, config, sw.block_size, {0.0f}, memory_trace, rebuild_hook); break;
-            case BareSLPVariant::DiffDV: RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_DiffDV>, true>(core_name, suffix, config, sw.block_size, {0.0f}, memory_trace, rebuild_hook); break;
-            case BareSLPVariant::DiffVV: RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS, BareSLP_DiffVV>, true>(core_name, suffix, config, sw.block_size, {0.0f}, memory_trace, rebuild_hook); break;
-            case BareSLPVariant::IV:
-            default:                  RegisterRMQOneTriple<TCoreT, GetDocSLP_NS<GS>, false>(core_name, suffix, config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook); break;
-          }
-        }
-        break;
-      }
-      case GetDocEnum::DSLP: {
-        RegisterRMQOneTriple<TCoreT, GetDocDSLP<GS>, true>(core_name, "-DSLP", config, sw.block_size, sw.storing_factor, memory_trace, rebuild_hook);
-        break;
-      }
-      // r-index- and RLCSA-backed get-doc. No (bs,sf) axis: these read the DA
-      // through Phi walks over the r-index (or through RLCSA's batched locate),
-      // and neither is sampled by block size or storing factor.
-      //
-      // These cases were absent, so construct mode silently skipped them and
-      // stage B of run_unit.sh existed to build them at query time instead,
-      // with its timings discarded. BM_ConstructRMQ_NS has exactly the shape
-      // the query factory's MakeSAPhi_R / MakeRLCSA already use.
-      case GetDocEnum::SAPhiR: {
-        using TCore = TCoreT<GS, GetDocSAPhi_R<GS>>;
-        using TIndex = Idx<GS, TCore>;
-        benchmark::RegisterBenchmark(core_name + "-SA-Phi-R",
-            BM_ConstructRMQ_NS<TIndex, TCore>, config, rebuild_hook, memory_trace);
-        break;
-      }
-      case GetDocEnum::RLCSA: {
-        using TCore = TCoreT<GS, GetDocRLCSA<GS>>;
-        using TIndex = Idx<GS, TCore>;
-        benchmark::RegisterBenchmark(core_name + "-RLCSA",
-            BM_ConstructRMQ_NS<TIndex, TCore>, config, rebuild_hook, memory_trace);
-        break;
-      }
-      case GetDocEnum::SAPhiSR:
-        // Left out deliberately: the sr-index subsample rate is a runtime axis
-        // (sw.sa_sampling) that selects the "<rate>_" cache-key prefix, so it
-        // must be baked into the index the way DocListIdxBrute's sr-index cells
-        // are. Query mode fans out over sa_sampling; construct would have to
-        // match it rate for rate or the caches would not line up.
-        break;
-    }
-  }
-}
-
-void RegisterConstructRMQ(const bench::spec::RMQSweep& sw, dret::Config& config,
-                            const ConstructCtx& cc) {
-  // Per-core rebuild scope: wipe only the RMQ-specific cache files for that
-  // core. The SLP / DSLP / DA caches are shared with the GCDA / DGCDA / brute
-  // paths via SDSL type-hashing and stay warm — the reported time measures
-  // RMQ-core construction overhead on top of an already-built SLP / DA.
-  using namespace fac::rmq;
-  for (auto core : sw.core) {
-    switch (core) {
-      case CoreKind::SADA: {
-        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SadaKeyPrefixes());
-        RegisterRMQOneCore<SadaCore>("SADA", sw, config, cc.memory_trace, hook);
-        break;
-      }
-      case CoreKind::ILCP: {
-        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, IlcpKeyPrefixes());
-        RegisterRMQOneCore<IlcpCore>("ILCP", sw, config, cc.memory_trace, hook);
-        break;
-      }
-      case CoreKind::CILCP: {
-        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, CilcpKeyPrefixes());
-        RegisterRMQOneCore<CilcpCore>("CILCP", sw, config, cc.memory_trace, hook);
-        break;
-      }
-      case CoreKind::SADA_V: {
-        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, SadaValueKeyPrefixes());
-        RegisterRMQOneCore<SadaValueCore>("SADA-V", sw, config, cc.memory_trace, hook);
-        break;
-      }
-      case CoreKind::ILCP_V: {
-        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, IlcpValueKeyPrefixes());
-        RegisterRMQOneCore<IlcpValueCore>("ILCP-V", sw, config, cc.memory_trace, hook);
-        break;
-      }
-      case CoreKind::CILCP_V: {
-        auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename, CilcpValueKeyPrefixes());
-        RegisterRMQOneCore<CilcpValueCore>("CILCP-V", sw, config, cc.memory_trace, hook);
-        break;
-      }
-    }
-  }
-}
-
-void RegisterConstructPDL(const bench::spec::PDLSweep& sw, dret::Config& config,
-                           const ConstructCtx& cc) {
-  using namespace fac::pdl;
-  for (auto codec : sw.codec) {
-    for (auto gd : sw.get_doc) {
-      for (auto policy : sw.policy) {
-        const auto lib_policy = bench::axes::toPDLStoragePolicy(policy);
-        const auto base_name = std::string("PDL-")
-                        + EnumTraits<PDLVariant>::Name(codec) + "-"
-                        + EnumTraits<GetDocEnum>::Name(gd) + "-"
-                        + EnumTraits<PDLStoragePolicy>::Name(policy);
-        auto reg = [&]<typename TIndex>() {
-          for (auto bs : sw.block_size) {
-            for (auto sf : sw.storing_factor) {
-              const auto cell_name = base_name + BsSfSuffix(bs, sf);
-              auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                                  {PDLKeyPrefix(bs, sf, policy)});
-              benchmark::RegisterBenchmark(cell_name, BM_ConstructPDL<TIndex>,
-                                            config, lib_policy, bs, sf, hook, cc.memory_trace);
-            }
-          }
-        };
-        // A backing with its own block size (factories/pdl.h): one cell per
-        // backend_block_size. Light names it only when it is not the default
-        // 1024, a differential backing always, as the query does.
-        auto reg_backend = [&]<typename TIndex, typename TGD>(float backend_sf, bool always_named) {
-          for (auto bbs : sw.backend_block_size) {
-            const auto bbs_suffix = (always_named || bbs != 1024) ? "-bbs" + std::to_string(bbs) : std::string();
-            for (auto bs : sw.block_size) {
-              for (auto sf : sw.storing_factor) {
-                const auto cell_name = base_name + BsSfSuffix(bs, sf) + bbs_suffix;
-                auto hook = cache_clean::MakeHook(cc.rebuild, cc.cache_dir, cc.basename,
-                                                  {PDLKeyPrefix(bs, sf, policy)});
-                benchmark::RegisterBenchmark(cell_name, BM_ConstructPDLBackend<TIndex, TGD>,
-                                              config, lib_policy, bs, sf, bbs, backend_sf, hook,
-                                              cc.memory_trace);
-              }
-            }
-          }
-        };
-        switch (codec) {
-          case PDLVariant::Plain:
-            switch (gd) {
-              case GetDocEnum::DA:   reg.template operator()<IdxPlain<GS>>(); break;
-              case GetDocEnum::SLP: {
-                // GCDA-light backing at (backend_block_size, 32) -- must match the
-                // query factory exactly, see BM_ConstructPDLBackend.
-                using TGD = GetDocsSLP<GS, bench::factories::gcda::SLP_Light>;
-                reg_backend.template operator()<IdxPlain<GS, TGD>, TGD>(32.0f, false);
-                break;
-              }
-              case GetDocEnum::DSLP: reg.template operator()<IdxPlain<GS, GetDocsDSLP<GS>>>(); break;
-              // Bare-SLP-backed: one cell per bare_slp variant, mirroring the
-              // query factory's dispatch (factories/pdl.h). This was a bare
-              // `break`, so construct silently produced nothing while the query
-              // spec asked for it -- the last of the five (family, get_doc)
-              // combinations that forced run_unit.sh's stage B to exist.
-              case GetDocEnum::SLP_NS:
-                for (auto v : sw.bare_slp) {
-                  switch (v) {
-                    case BareSLPVariant::Raw:  reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Raw>>>();  break;
-                    case BareSLPVariant::DV:   reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DV>>>();   break;
-                    case BareSLPVariant::VV:   reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_VV>>>();   break;
-                    case BareSLPVariant::Diff: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>; reg_backend.template operator()<IdxPlain<GS, TGD>, TGD>(0.0f, true); break; }
-                    case BareSLPVariant::DiffEV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffEV>; reg_backend.template operator()<IdxPlain<GS, TGD>, TGD>(0.0f, true); break; }
-                    case BareSLPVariant::DiffDV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffDV>; reg_backend.template operator()<IdxPlain<GS, TGD>, TGD>(0.0f, true); break; }
-                    case BareSLPVariant::DiffVV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffVV>; reg_backend.template operator()<IdxPlain<GS, TGD>, TGD>(0.0f, true); break; }
-                    default:                   reg.template operator()<IdxPlain<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_IV>>>();   break;
-                  }
-                }
-                break;
-            // r-index- / RLCSA-backed get-doc. The PDL tree still has its
-            // (bs,sf) axis -- that sampling is independent of how the DA is
-            // read -- so these reuse the same reg() lambda. Absent before, which
-            // is why stage B of run_unit.sh had to build them at query time.
-            // SAPhiSR is deliberately omitted: query mode itself defers it and
-            // falls back to SAPhiR (see factories/pdl.h), and its subsample rate
-            // is a runtime axis that would have to be matched cell for cell.
-              case GetDocEnum::SAPhiR: reg.template operator()<IdxPlain<GS, GetDocsSAPhi_R<GS>>>(); break;
-              case GetDocEnum::RLCSA:  reg.template operator()<IdxPlain<GS, GetDocsRLCSA<GS>>>(); break;
-              case GetDocEnum::SAPhiSR: break;
-            }
-            break;
-          case PDLVariant::RP:
-            switch (gd) {
-              case GetDocEnum::DA:   reg.template operator()<IdxRP<GS>>(); break;
-              case GetDocEnum::SLP: {
-                // GCDA-light backing at (backend_block_size, 32) -- must match the
-                // query factory exactly, see BM_ConstructPDLBackend.
-                using TGD = GetDocsSLP<GS, bench::factories::gcda::SLP_Light>;
-                reg_backend.template operator()<IdxRP<GS, TGD>, TGD>(32.0f, false);
-                break;
-              }
-              case GetDocEnum::DSLP: reg.template operator()<IdxRP<GS, GetDocsDSLP<GS>>>(); break;
-              // Bare-SLP-backed: one cell per bare_slp variant, mirroring the
-              // query factory's dispatch (factories/pdl.h). This was a bare
-              // `break`, so construct silently produced nothing while the query
-              // spec asked for it -- the last of the five (family, get_doc)
-              // combinations that forced run_unit.sh's stage B to exist.
-              case GetDocEnum::SLP_NS:
-                for (auto v : sw.bare_slp) {
-                  switch (v) {
-                    case BareSLPVariant::Raw:  reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Raw>>>();  break;
-                    case BareSLPVariant::DV:   reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DV>>>();   break;
-                    case BareSLPVariant::VV:   reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_VV>>>();   break;
-                    case BareSLPVariant::Diff: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>; reg_backend.template operator()<IdxRP<GS, TGD>, TGD>(0.0f, true); break; }
-                    case BareSLPVariant::DiffEV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffEV>; reg_backend.template operator()<IdxRP<GS, TGD>, TGD>(0.0f, true); break; }
-                    case BareSLPVariant::DiffDV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffDV>; reg_backend.template operator()<IdxRP<GS, TGD>, TGD>(0.0f, true); break; }
-                    case BareSLPVariant::DiffVV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffVV>; reg_backend.template operator()<IdxRP<GS, TGD>, TGD>(0.0f, true); break; }
-                    default:                   reg.template operator()<IdxRP<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_IV>>>();   break;
-                  }
-                }
-                break;
-            // r-index- / RLCSA-backed get-doc. The PDL tree still has its
-            // (bs,sf) axis -- that sampling is independent of how the DA is
-            // read -- so these reuse the same reg() lambda. Absent before, which
-            // is why stage B of run_unit.sh had to build them at query time.
-            // SAPhiSR is deliberately omitted: query mode itself defers it and
-            // falls back to SAPhiR (see factories/pdl.h), and its subsample rate
-            // is a runtime axis that would have to be matched cell for cell.
-              case GetDocEnum::SAPhiR: reg.template operator()<IdxRP<GS, GetDocsSAPhi_R<GS>>>(); break;
-              case GetDocEnum::RLCSA:  reg.template operator()<IdxRP<GS, GetDocsRLCSA<GS>>>(); break;
-              case GetDocEnum::SAPhiSR: break;
-            }
-            break;
-          case PDLVariant::BC:
-            switch (gd) {
-              case GetDocEnum::DA:   reg.template operator()<IdxBC<GS>>(); break;
-              case GetDocEnum::SLP: {
-                // GCDA-light backing at (backend_block_size, 32) -- must match the
-                // query factory exactly, see BM_ConstructPDLBackend.
-                using TGD = GetDocsSLP<GS, bench::factories::gcda::SLP_Light>;
-                reg_backend.template operator()<IdxBC<GS, TGD>, TGD>(32.0f, false);
-                break;
-              }
-              case GetDocEnum::DSLP: reg.template operator()<IdxBC<GS, GetDocsDSLP<GS>>>(); break;
-              // Bare-SLP-backed: one cell per bare_slp variant, mirroring the
-              // query factory's dispatch (factories/pdl.h). This was a bare
-              // `break`, so construct silently produced nothing while the query
-              // spec asked for it -- the last of the five (family, get_doc)
-              // combinations that forced run_unit.sh's stage B to exist.
-              case GetDocEnum::SLP_NS:
-                for (auto v : sw.bare_slp) {
-                  switch (v) {
-                    case BareSLPVariant::Raw:  reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Raw>>>();  break;
-                    case BareSLPVariant::DV:   reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DV>>>();   break;
-                    case BareSLPVariant::VV:   reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_VV>>>();   break;
-                    case BareSLPVariant::Diff: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_Diff>; reg_backend.template operator()<IdxBC<GS, TGD>, TGD>(0.0f, true); break; }
-                    case BareSLPVariant::DiffEV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffEV>; reg_backend.template operator()<IdxBC<GS, TGD>, TGD>(0.0f, true); break; }
-                    case BareSLPVariant::DiffDV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffDV>; reg_backend.template operator()<IdxBC<GS, TGD>, TGD>(0.0f, true); break; }
-                    case BareSLPVariant::DiffVV: { using TGD = GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_DiffVV>; reg_backend.template operator()<IdxBC<GS, TGD>, TGD>(0.0f, true); break; }
-                    default:                   reg.template operator()<IdxBC<GS, GetDocsSLP_NS<GS, bench::factories::slp_ns::BareSLP_IV>>>();   break;
-                  }
-                }
-                break;
-            // r-index- / RLCSA-backed get-doc. The PDL tree still has its
-            // (bs,sf) axis -- that sampling is independent of how the DA is
-            // read -- so these reuse the same reg() lambda. Absent before, which
-            // is why stage B of run_unit.sh had to build them at query time.
-            // SAPhiSR is deliberately omitted: query mode itself defers it and
-            // falls back to SAPhiR (see factories/pdl.h), and its subsample rate
-            // is a runtime axis that would have to be matched cell for cell.
-              case GetDocEnum::SAPhiR: reg.template operator()<IdxBC<GS, GetDocsSAPhi_R<GS>>>(); break;
-              case GetDocEnum::RLCSA:  reg.template operator()<IdxBC<GS, GetDocsRLCSA<GS>>>(); break;
-              case GetDocEnum::SAPhiSR: break;
-            }
-            break;
-        }
-      }
-    }
-  }
-}
-
-void RegisterConstructBrute(const bench::spec::BruteSweep& sw, dret::Config& config,
-                            const std::string& /*data_path*/,
-                            const ConstructCtx& cc) {
-  // TODO: --rebuild not implemented for brute — its underlying sri::RIndex
-  // caches are managed externally and shared across the wider workflow.
-  using bench::spec::BruteSweep;
-  for (auto kind : sw.kind) {
-    if (kind == BruteSweep::Kind::RIndex) {
-      benchmark::RegisterBenchmark("BruteRI",
-          BM_ConstructBrute<dret::DocListIdxBrute<>>, config,
-          std::function<void()>{}, cc.memory_trace);
-    } else if (kind == BruteSweep::Kind::DA) {
-      benchmark::RegisterBenchmark("BruteDA",
-          BM_ConstructBrute<bench::factories::brute::IdxDA<dret::GenericStorage>>, config,
-          std::function<void()>{}, cc.memory_trace);
-    } else if (kind == BruteSweep::Kind::RLCSA) {
-      benchmark::RegisterBenchmark("BruteRLCSA",
-          BM_ConstructBrute<bench::factories::brute::IdxRLCSA<dret::GenericStorage>>, config,
-          std::function<void()>{}, cc.memory_trace);
-    } else if (kind == BruteSweep::Kind::Count) {
-      benchmark::RegisterBenchmark("CountRI",
-          BM_ConstructBrute<bench::factories::brute::IdxCount<dret::GenericStorage>>, config,
-          std::function<void()>{}, cc.memory_trace);
-    } else {
-      // One cell per sampling rate, named exactly as RegisterQueryBrute names
-      // it: the rate is part of the cache-key prefix, so a construct cell and
-      // a query cell only line up if their rates match.
-      for (auto s : sw.sampling_size) {
-        const auto name = KeyedName("BruteSRI", {{"sampling", std::to_string(s)}});
-        benchmark::RegisterBenchmark(name, BM_ConstructBruteSr, config,
-                                     static_cast<std::size_t>(s), cc.memory_trace);
-      }
-    }
-  }
+  return cells;
 }
 
 }  // namespace
@@ -1964,37 +590,17 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Dispatch each sweep block per mode.
-  for (const auto& fs : spec.sweep) {
+  // One benchmark per cell, the same names in both modes.
+  const auto cells = SpecCells(spec);
+  for (const auto& cell : cells) {
     if (spec.mode == bench::spec::Mode::Query) {
-      std::visit([&]<typename T>(const T& sw) {
-        if constexpr (std::is_same_v<T, bench::spec::GCDASweep>) RegisterQueryGCDA(sw, *factory, &patterns, seq_size);
-        else if constexpr (std::is_same_v<T, bench::spec::DGCDASweep>) RegisterQueryDGCDA(sw, *factory, &patterns, seq_size);
-        else if constexpr (std::is_same_v<T, bench::spec::SLPNSSweep>) RegisterQuerySLPNS(sw, *factory, &patterns, seq_size);
-        else if constexpr (std::is_same_v<T, bench::spec::RMQSweep>) RegisterQueryRMQ(sw, *factory, &patterns, seq_size);
-        else if constexpr (std::is_same_v<T, bench::spec::PDLSweep>) RegisterQueryPDL(sw, *factory, &patterns, seq_size);
-        else if constexpr (std::is_same_v<T, bench::spec::BruteSweep>) RegisterQueryBrute(sw, *factory, &patterns, seq_size);
-        else if constexpr (std::is_same_v<T, bench::spec::GCDABackendSweep>) RegisterQueryGCDABackend(sw, *factory, &patterns, seq_size);
-      }, fs);
+      benchmark::RegisterBenchmark(cell.name, BM_Query, factory.get(), &cell, &patterns, seq_size);
     } else {
-      // Cache directory: in construct mode the dret::Config above sets it to
-      // CWD (std::filesystem::current_path()). Basename = spec.dataset.name.
-      ConstructCtx cc{
-        spec.workload.rebuild,
-        spec.workload.memory_trace,
-        std::filesystem::current_path(),
-        spec.dataset.name,
-      };
-      std::visit([&]<typename T>(const T& sw) {
-        if constexpr (std::is_same_v<T, bench::spec::GCDASweep>) RegisterConstructGCDA(sw, config, cc);
-        else if constexpr (std::is_same_v<T, bench::spec::DGCDASweep>) RegisterConstructDGCDA(sw, config, cc);
-        else if constexpr (std::is_same_v<T, bench::spec::SLPNSSweep>) RegisterConstructSLPNS(sw, config, cc);
-        else if constexpr (std::is_same_v<T, bench::spec::RMQSweep>) RegisterConstructRMQ(sw, config, cc);
-        else if constexpr (std::is_same_v<T, bench::spec::PDLSweep>) RegisterConstructPDL(sw, config, cc);
-        else if constexpr (std::is_same_v<T, bench::spec::BruteSweep>) RegisterConstructBrute(sw, config, data_path, cc);
-        else if constexpr (std::is_same_v<T, bench::spec::GCDABackendSweep>)
-          std::cerr << "gcda_backend has no construct mode; its query mode builds what it needs\n";
-      }, fs);
+      // In construct mode the cache directory is the working directory (the dret::Config above) and
+      // the cache files end in _<dataset name>.sdsl.
+      auto hook = cache_clean::MakeHook(
+          spec.workload.rebuild, std::filesystem::current_path(), spec.dataset.name, cell.rebuild_prefixes);
+      benchmark::RegisterBenchmark(cell.name, BM_Construct, &cell, &config, hook, spec.workload.memory_trace);
     }
   }
 

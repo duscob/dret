@@ -1,13 +1,8 @@
 //
-// GCDA factory header — type aliases + Make() for the
-// dret::gcda::DocListIdxGCDA family.
-//
-// Storage-parametric type aliases let query mode (via the Factory<>'s shared
-// ExternalGenericStorage) and construct mode (per-bench dret::GenericStorage)
-// reuse one definition of the typed index. The Make()
-// function dispatches the GCDASLPVariant axis to the right TSLP at compile
-// time using the type-tag-lambda pattern, and runs construct() + load() so
-// missing cache artefacts get built inline.
+// GCDA factory header: the grammar and document-set types of the
+// dret::gcda::DocListIdxGCDA family. Its cells are in gcda.cpp (and, over a
+// document-array backend, gcda_backend.cpp); the RMQ and PDL factories reuse
+// the grammar types, so their cache files are shared.
 //
 
 #pragma once
@@ -71,93 +66,5 @@ using Idx = dret::gcda::DocListIdxGCDA<
     sri::RIndexCount<TStorage, dret::Alphabet<>>,
     TSLP,
     TSets>;
-
-// Factory-path entry. Builds (constructs caches if missing, then loads)
-// a typed index variant selected by `slp` and returns the type-erased
-// DocListIndex<> handle plus its serialised byte size.
-template <typename TStorage>
-std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-Make(TStorage t_storage,
-     dret::Config& t_config,
-     uint32_t t_block_size,
-     float t_storing_factor,
-     bench::axes::GCDASLPVariant t_slp,
-     bench::axes::GCDASetsCodec t_sets = bench::axes::GCDASetsCodec::RP) {
-  std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t> result;
-
-  auto build = [&](auto type_tag) {
-    using TIndex = typename decltype(type_tag)::type;
-    auto idx = std::make_shared<TIndex>(t_storage, t_block_size, t_storing_factor);
-    construct(*idx, t_config);
-    idx->load(t_config);
-    result = {idx, sdsl::size_in_bytes(*idx)};
-  };
-
-  auto by_slp = [&]<typename TSets>() {
-    struct T_Light        { using type = Idx<TStorage, SLP_Light, TSets>; };
-    struct T_CompactBP    { using type = Idx<TStorage, SLP_CompactBP, TSets>; };
-    struct T_CompactLOUDS { using type = Idx<TStorage, SLP_CompactLOUDS, TSets>; };
-    struct T_CSLP         { using type = Idx<TStorage, SLP_Combined, TSets>; };
-    switch (t_slp) {
-      case bench::axes::GCDASLPVariant::CompactBP:    build(T_CompactBP{});    break;
-      case bench::axes::GCDASLPVariant::CompactLOUDS: build(T_CompactLOUDS{}); break;
-      case bench::axes::GCDASLPVariant::Combined:     build(T_CSLP{});         break;
-      case bench::axes::GCDASLPVariant::Light:
-      default:                                        build(T_Light{});        break;
-    }
-  };
-  if (t_sets == bench::axes::GCDASetsCodec::Plain)
-    by_slp.template operator()<Sets_Plain>();
-  else
-    by_slp.template operator()<Sets_RP>();
-  return result;
-}
-
-// GCDA over a document-array backend: the sampled tree and node lists of the
-// (block size, storing factor) cell, the ends of a range expanded by t_get_doc
-// (DA, SA-Phi or RLCSA) instead of the grammar.
-template <typename TStorage, typename TGetDocs, typename TSets>
-std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-BuildBackend(TStorage t_storage, dret::Config& t_config, uint32_t t_block_size, float t_storing_factor) {
-  using TIndex = dret::gcda::DocListIdxGCDABackend<TStorage, dret::Alphabet<>,
-                                                   sri::RIndexCount<TStorage, dret::Alphabet<>>, TGetDocs, TSets>;
-  auto idx = std::make_shared<TIndex>(t_storage, t_block_size, t_storing_factor);
-  construct(*idx, t_config);
-  idx->load(t_config);
-  return {idx, sdsl::size_in_bytes(*idx)};
-}
-
-template <typename TStorage, typename TSets>
-std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-MakeBackendForSets(TStorage t_storage, dret::Config& t_config, uint32_t t_block_size, float t_storing_factor,
-                   bench::axes::GetDocEnum t_get_doc) {
-  constexpr auto kW = dret::Alphabet<>::int_width;
-  switch (t_get_doc) {
-    case bench::axes::GetDocEnum::SAPhiR:
-      return BuildBackend<TStorage, dret::backend::SAPhi<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
-                                                                                       t_storing_factor);
-    case bench::axes::GetDocEnum::RLCSA:
-      return BuildBackend<TStorage, dret::backend::RLCSA<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
-                                                                                     t_storing_factor);
-    case bench::axes::GetDocEnum::DA:
-      return BuildBackend<TStorage, dret::backend::PlainDA<TStorage, kW>, TSets>(t_storage, t_config, t_block_size,
-                                                                                  t_storing_factor);
-    default:
-      throw std::invalid_argument("GCDA backend: get_doc must be da, sa_phi_r or rlcsa");
-  }
-}
-
-template <typename TStorage>
-std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-MakeBackend(TStorage t_storage,
-            dret::Config& t_config,
-            uint32_t t_block_size,
-            float t_storing_factor,
-            bench::axes::GetDocEnum t_get_doc,
-            bench::axes::GCDASetsCodec t_sets = bench::axes::GCDASetsCodec::RP) {
-  if (t_sets == bench::axes::GCDASetsCodec::Plain)
-    return MakeBackendForSets<TStorage, Sets_Plain>(t_storage, t_config, t_block_size, t_storing_factor, t_get_doc);
-  return MakeBackendForSets<TStorage, Sets_RP>(t_storage, t_config, t_block_size, t_storing_factor, t_get_doc);
-}
 
 }  // namespace bench::factories::gcda

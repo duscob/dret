@@ -1,16 +1,12 @@
 //
-// Brute-baseline factory header — type aliases for the dret::DocListIdxBrute
-// family wrapping an r-index or sr-index.
+// Brute-baseline factory header: the types of the brute-force baselines. Its
+// cells are in brute.cpp.
 //
-// Brute baselines bypass the construct-then-load auto-build pattern: their
-// underlying sri::RIndex / sri::SrIndexValidArea caches are managed
-// externally (in the query factory: via the lazy rIndex() / srIndex()
-// accessors; in construct mode: via DocListIdxBrute::construct(), which builds
-// the locate index from the raw data file). The factory.h facade special-cases
-// brute and does not call construct() on the index itself — only load().
-//
-// Brute force over a raw-range backend (dret::DocListIdxBruteBackend: the
-// plain DA or the RLCSA) does follow construct-then-load, as the RMQ cores do.
+// Brute force over the r-index or the sr-index (dret::DocListIdxBrute) is built
+// only in construct mode: its construct() builds the locate index from the
+// text, so query mode only loads it. Brute force over a raw-range backend
+// (dret::DocListIdxBruteBackend: the plain DA, the RLCSA, or nothing, for the
+// count alone) builds what is missing in query mode too, as the other families do.
 //
 
 #pragma once
@@ -106,14 +102,5 @@ using IdxCount = dret::DocListIdxBruteBackend<
     dret::Alphabet<>,
     sri::RIndexCount<TStorage, dret::Alphabet<>>,
     GetDocNone<TStorage, dret::Alphabet<>::int_width>>;
-
-template <typename TIndex, typename TStorage>
-std::pair<std::shared_ptr<dret::DocListIndex<>>, std::size_t>
-MakeBackend(TStorage t_storage, dret::Config& t_config) {
-  auto idx = std::make_shared<TIndex>(t_storage);
-  construct(*idx, t_config);
-  idx->load(t_config);
-  return {idx, sdsl::size_in_bytes(*idx)};
-}
 
 }  // namespace bench::factories::brute

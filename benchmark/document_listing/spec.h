@@ -56,7 +56,6 @@
 
 #include "axes.h"
 #include "enum_traits.h"
-#include "factories/rmq.h"  // for rmq::CoreKind
 
 namespace bench::spec {
 
@@ -141,13 +140,12 @@ struct SLPNSSweep {
 };
 
 struct RMQSweep {
-  std::vector<factories::rmq::CoreKind> core{
-      factories::rmq::CoreKind::SADA,
-      factories::rmq::CoreKind::ILCP,
-      factories::rmq::CoreKind::CILCP,
-      factories::rmq::CoreKind::SADA_V,
-      factories::rmq::CoreKind::ILCP_V,
-      factories::rmq::CoreKind::CILCP_V};
+  std::vector<axes::CoreKind> core{axes::CoreKind::SADA,
+                                   axes::CoreKind::ILCP,
+                                   axes::CoreKind::CILCP,
+                                   axes::CoreKind::SADA_V,
+                                   axes::CoreKind::ILCP_V,
+                                   axes::CoreKind::CILCP_V};
   std::vector<axes::GetDocEnum> get_doc{axes::GetDocEnum::DA};
   std::vector<axes::GCDASLPVariant> gcda_slp{axes::GCDASLPVariant::Light};
   std::vector<axes::BareSLPVariant> bare_slp{axes::BareSLPVariant::IV};
@@ -239,8 +237,8 @@ inline Mode ParseMode(const std::string& s) {
 // results. The "-s" spellings are rejected in every version.
 inline constexpr int kSpecVersion = 2;
 
-inline factories::rmq::CoreKind ParseRmqCore(const std::string& s, int t_version) {
-  using factories::rmq::CoreKind;
+inline axes::CoreKind ParseRmqCore(const std::string& s, int t_version) {
+  using axes::CoreKind;
   const bool plain = s == "sada" || s == "ilcp" || s == "cilcp";
   const auto base = [&s](std::size_t t_suffix) { return s.substr(0, s.size() - t_suffix); };
   auto marking = [](const std::string& b) {
@@ -373,7 +371,7 @@ inline SLPNSSweep ParseSLPNS(const nlohmann::json& j) {
 
 inline RMQSweep ParseRMQ(const nlohmann::json& j, int t_version) {
   RMQSweep s;
-  s.core = ParseListWith<factories::rmq::CoreKind>(
+  s.core = ParseListWith<axes::CoreKind>(
       j, "core", s.core, [t_version](const std::string& c) { return ParseRmqCore(c, t_version); });
   s.get_doc = ParseEnumList<axes::GetDocEnum>(j, "get_doc", s.get_doc);
   s.gcda_slp = ParseEnumList<axes::GCDASLPVariant>(j, "gcda_slp", s.gcda_slp);

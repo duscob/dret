@@ -4,46 +4,22 @@
 // These enums identify the variation axes across the doc-list index family
 // (which family / which SLP / which GetDoc policy / which PDL codec / which
 // PDL storage policy), shared by the spec parser, the factories and the
-// driver. Factory<>::GetDocEnum etc. are re-exported as type aliases.
+// driver.
 //
 
 #pragma once
 
 namespace bench::axes {
 
-// Which doc-list family / variant the benchmark is targeting.
-//
-// DGCDA's TSLP sub-axis (Default / OTF / CRL / EV / DV / VV) lives in
-// DGCDASLPVariant below; consumers fan out across that axis just like GCDA fans
-// across GCDASLPVariant.
-enum class IndexEnum {
-  BRUTE_R_INDEX,
-  BRUTE_SR_INDEX,
-  BRUTE_DA,     // dret::DocListIdxBruteBackend over the plain DA (counts with the r-index)
-  BRUTE_RLCSA,  // dret::DocListIdxBruteBackend over the RLCSA (counts with the RLCSA)
-  COUNT_RI,     // the r-index count alone (factories::brute::IdxCount): no document is reported
-  GCDA,
-  DGCDA,    // variant axis selects Default / OTF / CRL / EV / DV / VV (see DGCDASLPVariant)
-  // These names, and the benchmark labels built from them, are the 2026-11
-  // vocabulary: the plain names are the published algorithms (marking, no
-  // stored values) and the -V names dret's value-rule variants. Producers stamp
-  // context.core_naming = "2026-11". Under the 2026-09 names (results before
-  // then) the marking cores were SADA-L / ILCP-L / CILCP-L and the value cores
-  // had the plain names.
-  SADA,     // -> SadaCore:  RMinQ on prev_doc, marker-based stop
-  ILCP,     // -> IlcpCore:  RMinQ on backward-ILCP runs, marker-based stop
-  CILCP,    // -> CilcpCore: CMR20's document-aware merged runs, marker-based stop
-  SLP_NS,   // dret::DocListIdxSLP (Brute-GCDA) — brute force over a GCDA grammar
-  PDL,      // Precomputed Document Listing — variant axis selects Plain/RP/BC
-  // dret's value-rule variants: same runs as the cores above, plus the stored
-  // array their value-based recursion stop consults.
-  SADA_V,   // -> SadaValueCore
-  ILCP_V,   // -> IlcpValueCore
-  CILCP_V,  // -> CilcpValueCore: the SAME CMR20 partition as CILCP,
-            // built by one shared routine; the two differ only in whether the
-            // per-run minima are stored, not in where the runs fall.
-  GCDA_BACKEND,  // GCDA's sampled tree and node lists over a DA backend (DA, SA-Phi, RLCSA)
-};
+// The RMQ cores. These names, and the benchmark labels built from them, are the 2026-11 vocabulary:
+// SADA / ILCP / CILCP are the published algorithms (Sadakane 2007; Gagie et al. 2017; Cobas, Makinen
+// and Rossi 2020), which stop the recursion by marking reported documents and store no values; the
+// -V cores are dret's value-rule variants, which also store the array the RMQ was built over and stop
+// on its values. Producers stamp context.core_naming = "2026-11". Under the 2026-09 names (results
+// before then) the marking cores were SADA-L / ILCP-L / CILCP-L and the value cores had the plain
+// names. CILCP-V builds the SAME CMR20 partition as CILCP, by one shared routine; the two differ only
+// in whether the per-run minima are stored.
+enum class CoreKind { SADA_V, ILCP_V, CILCP_V, SADA, ILCP, CILCP };
 
 // PDL stored-set codec axis. The class template differs per value
 // (DocListIdxPDLPlain / DocListIdxPDLRP / DocListIdxPDLBC).
@@ -124,7 +100,7 @@ enum class BareSLPVariant {
 };
 
 // TRunValues container choice for the value-rule doc-listing cores
-// (IndexEnum::ILCP_V / CILCP). The persisted per-run min(VILCP) array
+// (CoreKind::ILCP_V / CILCP_V). The persisted per-run min(VILCP) array
 // can be encoded fixed-width and bit-compressed (IV) or with variable-
 // length per-element codes (DV / VV).
 enum class RunValuesVariant {
@@ -134,7 +110,7 @@ enum class RunValuesVariant {
 };
 
 // TPrevDoc container choice for the Sadakane-style SADA family
-// (IndexEnum::SADA_V). The
+// (CoreKind::SADA_V). The
 // persisted prev_doc array stores per-SA-position previous-occurrence
 // SA positions — values cover [0, n) roughly uniformly, so the natural
 // default is fixed-width int_vector (DAC / VLC have little to compress

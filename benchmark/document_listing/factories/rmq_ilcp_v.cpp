@@ -1,25 +1,32 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 11/25/26.
 //
-// Query-mode factory of the RMQ index with the ILCP-V (value rule) core, compiled on its own (see query.h).
+// The indexes of the RMQ cells with the ILCP-V (value rule) core, compiled on their own (see cells.h).
 //
 
-#include "query.h"
 #include "rmq.h"
 
-namespace bench::factories::query {
+namespace bench::factories::rmq {
 
-Built IlcpValue(Storage t_storage, dret::Config& t_config, const RMQArgs& t_args) {
-  return rmq::detail::MakeOneValue<rmq::IlcpValueCore>(t_storage,
-                                                       t_config,
-                                                       t_args.block_size,
-                                                       t_args.storing_factor,
-                                                       t_args.get_doc,
-                                                       t_args.gcda_slp,
-                                                       t_args.bare_slp,
-                                                       t_args.dgcda_slp,
-                                                       t_args.run_values,
-                                                       t_args.sa_sampling);
+namespace {
+// The core over a backend, its stored values (run_values) in TValues.
+template <typename TValues>
+struct WithValues {
+  template <typename TGetDoc>
+  using Core = IlcpValueCore<Storage, TGetDoc, TValues>;
+};
+}  // namespace
+
+MakeIndex MakeIlcpValue(const Params& t_params) {
+  switch (t_params.run_values) {
+    case axes::RunValuesVariant::IV:
+      return ByGetDoc<WithValues<RunValues_IV>::Core>(t_params);
+    case axes::RunValuesVariant::VV:
+      return ByGetDoc<WithValues<RunValues_VV>::Core>(t_params);
+    case axes::RunValuesVariant::DV:
+    default:
+      return ByGetDoc<WithValues<RunValues_DV>::Core>(t_params);
+  }
 }
 
-}  // namespace bench::factories::query
+}  // namespace bench::factories::rmq
