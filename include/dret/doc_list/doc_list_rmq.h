@@ -161,8 +161,11 @@ sdsl::int_vector<> LoadOrComputeIlcp(Config& t_config, std::size_t t_n_doc) {
 //
 // report_dedup(d, i) gets each document with its position i, for the sinks that
 // take positions (ReportPosition, dret/sink.h).
+//
+// Forced inline into the visit of each core: GCC 14 on shannon kept it out of line for CILCP over the
+// DA once the sink's bitmap shrank (6% there); the per-run call is the cores' hot path.
 template <bool kPeek, typename TGetDoc, typename TIsReported, typename TReportDedup>
-bool VisitRun(const TGetDoc& t_get_doc,
+[[gnu::always_inline]] inline bool VisitRun(const TGetDoc& t_get_doc,
               std::size_t t_b,
               std::size_t t_e,
               bool t_stop_if_reported,
