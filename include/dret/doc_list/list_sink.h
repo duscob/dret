@@ -21,7 +21,7 @@ namespace dret {
 template <typename TReport>
 class ListSink {
  public:
-  ListSink(std::size_t t_n_doc, const TReport& t_report) : seen_(t_n_doc), report_(t_report) {}
+  ListSink(std::size_t t_n_doc, const TReport& t_report) : seen_(t_n_doc), report_(&t_report) {}
 
   // Inlined into the cores' inner loops (an RMQ run's fan-out reports every position): a call per
   // position measured 6% on ILCP over the DA (revision-small).
@@ -30,7 +30,7 @@ class ListSink {
 #ifdef DRET_DOC_LIST_PROFILE
       ++reported_;
 #endif
-      report_(t_doc);
+      (*report_)(t_doc);
     }
   }
 
@@ -49,7 +49,7 @@ class ListSink {
 
  private:
   DistinctDocs seen_;
-  const TReport& report_;
+  const TReport* report_;  // a pointer, not a reference: see distinct_docs.h on register packing
 #ifdef DRET_DOC_LIST_PROFILE
   std::size_t reported_ = 0;
 #endif
