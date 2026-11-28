@@ -15,6 +15,7 @@
 #include "dret/backend/backend.h"
 #include "dret/collection.h"
 #include "dret/config.h"
+#include "dret/fields.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"
 
@@ -23,9 +24,9 @@ namespace dret::backend {
 // Document-array lookup over a plain sdsl::int_vector<>.
 // Loads the cache entry at conf::kDA, which EnsureDA builds (dret/collection.h).
 template <typename TStorage = GenericStorage, uint8_t t_width = 8>
-class PlainDA : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class PlainDA : public FieldsComponent<PlainDA<TStorage, t_width>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<PlainDA, TStorage, t_width>;
   using typename Base::size_type;
 
   explicit PlainDA(const TStorage& t_storage) : Base(t_storage) {}
@@ -57,30 +58,15 @@ class PlainDA : public IndexBaseWithExternalStorage<TStorage, t_width> {
     return da_ ? da_->size() : 0;
   }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    size_type written = 0;
-    written += da_ ? sdsl::serialize(*da_, out, child, "da")
-                   : sdsl::serialize_empty_object<sdsl::int_vector<>>(out, child, "da");
-    return written;
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (da_)
-      append(r, "da", sdsl::size_in_bytes(*da_));
-    return r;
-  }
-
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
-    key_da_ = t_keys[conf::kDA].get<std::string>();
-    da_ = this->template loadItemPtr<sdsl::int_vector<>>(key_da_, t_source, true);
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    return std::tuple{Item("da", t_self.da_, [](const JSON& k) { return k[conf::kDA].template get<std::string>(); })};
   }
 
-  std::string key_da_;
   const sdsl::int_vector<>* da_ = nullptr;
 };
 

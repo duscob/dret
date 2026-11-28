@@ -33,6 +33,7 @@
 #include "dret/doc_list/doc_list_gcda.h"
 #include "dret/doc_list/doc_list_index.h"
 #include "dret/doc_list/sampled_tree_core.h"
+#include "dret/fields.h"
 #include "dret/index_base.h"
 #include "dret/slp/slp_components.h"
 
@@ -42,9 +43,9 @@ namespace dret::gcda {
 // (da_sampled_tree) and the document lists of its sampled nodes; the cover reads the tree, not the
 // backend.
 template <typename TStorage, uint8_t t_width, typename TSampledTree, typename TSets>
-class SampledTree : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class SampledTree : public FieldsComponent<SampledTree<TStorage, t_width, TSampledTree, TSets>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<SampledTree, TStorage, t_width>;
   using typename Base::size_type;
   using Sets = TSets;
 
@@ -77,28 +78,16 @@ class SampledTree : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   float storing_factor() const { return storing_factor_; }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    size_type bytes = 0;
-    if (tree_) bytes += tree_->serialize(out, child, "sampled_tree");
-    if (sets_) bytes += sets_->serialize(out, child, "sets");
-    return bytes;
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (tree_) append(r, "sampled_tree", sdsl::size_in_bytes(*tree_));
-    if (sets_) append(r, "sets", sdsl::size_in_bytes(*sets_));
-    return r;
-  }
-
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
-    const SampledTreeCell cell{block_size_, storing_factor_};
-    tree_ = this->template loadItemPtr<TSampledTree>(CellKey(t_keys, conf::kDaSampledTree, cell), t_source, true);
-    sets_ = this->template loadItemPtr<TSets>(NodeDocListsKey<TSets>(t_keys, cell), t_source, true);
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    auto cell = [&t_self] { return SampledTreeCell{t_self.block_size_, t_self.storing_factor_}; };
+    return std::tuple{
+        Item("sampled_tree", t_self.tree_, [cell](const JSON& k) { return CellKey(k, conf::kDaSampledTree, cell()); }),
+        Item("sets", t_self.sets_, [cell](const JSON& k) { return NodeDocListsKey<TSets>(k, cell()); })};
   }
 
   const TSampledTree* tree_ = nullptr;

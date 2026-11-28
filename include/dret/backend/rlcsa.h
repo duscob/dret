@@ -40,6 +40,7 @@
 
 #include <rlcsa.h>
 
+#include "dret/archive.h"
 #include "dret/collection.h"
 #include "dret/backend/backend.h"
 #include "dret/config.h"
@@ -100,15 +101,12 @@ class RLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
     return {range.first + 1 + d, range.second + 2 + d};
   }
 
-  // Serialize the RLCSA sidecar base path so the istream reload path can
+  // Serialize the RLCSA sidecar base path (length, then the characters) so the istream reload path can
   // reopen the sidecar without needing a Config object.
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v,
                       const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    uint64_t len = base_.size();
-    out.write(reinterpret_cast<const char*>(&len), sizeof(len));
-    out.write(base_.data(), static_cast<std::streamsize>(len));
-    return sizeof(len) + len;
+    return archive::WriteValue(base_, out, child, "base");
   }
 
   SizeReport GetSizeReport() const {
@@ -128,10 +126,7 @@ class RLCSA : public IndexBaseWithExternalStorage<TStorage, t_width> {
           t_keys[dret::conf::kRLCSA].template get<std::string>(), config);
     } else {
       auto& in = std::get<std::reference_wrapper<std::istream>>(t_source).get();
-      uint64_t len = 0;
-      in.read(reinterpret_cast<char*>(&len), sizeof(len));
-      base_.resize(len);
-      in.read(base_.data(), static_cast<std::streamsize>(len));
+      archive::ReadValue(base_, in);
     }
     rlcsa_ = std::make_shared<CSA::RLCSA>(base_, /*print=*/false);
     if (!rlcsa_->isOk())

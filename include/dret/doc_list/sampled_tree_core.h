@@ -47,6 +47,7 @@
 #include "dret/backend/backend.h"
 #include "dret/collection.h"
 #include "dret/config.h"
+#include "dret/fields.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"
 
@@ -74,9 +75,10 @@ inline void CoverToRanges(std::size_t t_sp,
 }
 
 template <typename TStorage, uint8_t t_width, typename TBackend, typename TSampler>
-class SampledTreeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class SampledTreeCore
+    : public FieldsComponent<SampledTreeCore<TStorage, t_width, TBackend, TSampler>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<SampledTreeCore, TStorage, t_width>;
   using typename Base::size_type;
   using Backend = TBackend;
   using Sampler = TSampler;
@@ -171,21 +173,8 @@ class SampledTreeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   float storing_factor() const { return sampler_.storing_factor(); }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return backend_.serialize(out, child, TSampler::kBackendName) + sampler_.serialize(out, child, "sampler");
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    for (const auto& [name, bytes] : backend_.GetSizeReport())
-      append(r, std::string(TSampler::kBackendPrefix) + name, bytes);
-    for (const auto& [name, bytes] : sampler_.GetSizeReport()) append(r, name, bytes);
-    return r;
-  }
-
  protected:
-  using typename Base::TSource;
+  friend Base;
 
   static TBackend MakeBackend(const TStorage& t_storage, uint32_t t_block_size, float t_storing_factor) {
     if constexpr (TSampler::kBackendSharesCell)
@@ -194,17 +183,11 @@ class SampledTreeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       return TBackend(t_storage);
   }
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
-    std::visit(
-        [this, &t_keys](auto&& tt_source) {
-          using TS = std::decay_t<decltype(tt_source.get())>;
-          backend_.load(tt_source.get());
-          if constexpr (std::is_base_of_v<std::istream, TS>)
-            sampler_.load(tt_source.get(), t_keys);
-          else
-            sampler_.load(tt_source.get());
-        },
-        t_source);
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    return std::tuple{Part(TSampler::kBackendName, t_self.backend_, TSampler::kBackendPrefix),
+                      Part("sampler", t_self.sampler_)};
   }
 
   TBackend backend_;

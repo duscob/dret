@@ -24,6 +24,7 @@
 
 #include "dret/backend/backend.h"
 #include "dret/config.h"
+#include "dret/fields.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"
 #include "dret/slp/bare_grammar.h"
@@ -90,9 +91,9 @@ template <typename TStorage = GenericStorage,
           typename TSLP = grammar::LightSLP<grammar::BasicSLP<sdsl::int_vector<>>,
                                             grammar::SampledSLP<>,
                                             grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>>
-class GCDAGrammar : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class GCDAGrammar : public FieldsComponent<GCDAGrammar<TStorage, t_width, TSLP>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<GCDAGrammar, TStorage, t_width>;
   using SLP = TSLP;
   using typename Base::size_type;
 
@@ -134,24 +135,16 @@ class GCDAGrammar : public IndexBaseWithExternalStorage<TStorage, t_width> {
   // The grammar, with its sampled tree: GCDA covers a range on it (sampled_tree_core.h, GrammarTree).
   const TSLP& slp() const { return *slp_; }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return slp_ ? sdsl::serialize(*slp_, out, child, "slp") : sdsl::serialize_empty_object<TSLP>(out, child, "slp");
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (slp_)
-      collectSizes(r, *slp_, "slp_");
-    return r;
-  }
-
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
-    slp_ = this->template loadComponentsPtr<TSLP>(
-        CacheComponents(TSLP{}, t_keys, SampledTreeCell{block_size_, storing_factor_}), t_source);
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    auto components = [&t_self](const JSON& k) {
+      return CacheComponents(TSLP{}, k, SampledTreeCell{t_self.block_size_, t_self.storing_factor_});
+    };
+    return std::tuple{Components<SizeAs::kCollect>("slp", t_self.slp_, components, "slp_")};
   }
 
   const TSLP* slp_ = nullptr;
@@ -186,9 +179,9 @@ void construct(GCDAGrammar<TStorage, t_width, TSLP>& t_get_doc, Config& t_config
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>
-class BareGrammar : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class BareGrammar : public FieldsComponent<BareGrammar<TStorage, t_width, TSLP>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<BareGrammar, TStorage, t_width>;
   using SLP = TSLP;
   using typename Base::size_type;
 
@@ -227,24 +220,16 @@ class BareGrammar : public IndexBaseWithExternalStorage<TStorage, t_width> {
     ExpandSLPUntil(*slp_, b, e, report);
   }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return slp_ ? sdsl::serialize(*slp_, out, child, "slp") : sdsl::serialize_empty_object<TSLP>(out, child, "slp");
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (slp_)
-      append(r, "slp", sdsl::size_in_bytes(*slp_));
-    return r;
-  }
-
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
-    slp_ = this->template loadComponentsPtr<TSLP>(SlpNsTraits<TSLP>::components(t_keys, block_size_, storing_factor_),
-                                                  t_source);
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    auto components = [&t_self](const JSON& k) {
+      return SlpNsTraits<TSLP>::components(k, t_self.block_size_, t_self.storing_factor_);
+    };
+    return std::tuple{Components("slp", t_self.slp_, components)};
   }
 
   const TSLP* slp_ = nullptr;
@@ -262,9 +247,9 @@ void construct(BareGrammar<TStorage, t_width, TSLP>& t_get_doc, Config& t_config
 // Document-array lookup over a differential grammar-compressed SLP. The default
 // type matches dgcda::DocListIdxDGCDA's default TSLP for typed cache sharing.
 template <typename TStorage = GenericStorage, uint8_t t_width = 8, typename TDSLP = DifferentialLightSLP<>>
-class DiffGCDAGrammar : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class DiffGCDAGrammar : public FieldsComponent<DiffGCDAGrammar<TStorage, t_width, TDSLP>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<DiffGCDAGrammar, TStorage, t_width>;
   using DSLP = TDSLP;
   using typename Base::size_type;
 
@@ -303,25 +288,16 @@ class DiffGCDAGrammar : public IndexBaseWithExternalStorage<TStorage, t_width> {
     return storing_factor_;
   }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return dslp_ ? sdsl::serialize(*dslp_, out, child, "dslp")
-                 : sdsl::serialize_empty_object<TDSLP>(out, child, "dslp");
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (dslp_)
-      collectSizes(r, *dslp_, "dslp_");
-    return r;
-  }
-
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
-    dslp_ = this->template loadComponentsPtr<TDSLP>(
-        CacheComponents(TDSLP{}, t_keys, SampledTreeCell{block_size_, storing_factor_}), t_source);
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    auto components = [&t_self](const JSON& k) {
+      return CacheComponents(TDSLP{}, k, SampledTreeCell{t_self.block_size_, t_self.storing_factor_});
+    };
+    return std::tuple{Components<SizeAs::kCollect>("dslp", t_self.dslp_, components, "dslp_")};
   }
 
   const TDSLP* dslp_ = nullptr;

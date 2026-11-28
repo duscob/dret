@@ -36,6 +36,7 @@
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/doc_list/doc_list_index.h"
+#include "dret/fields.h"
 #include "dret/index_base.h"
 #include "dret/rmq/doc_index_rmq_common.h"
 #include "dret/rmq/doc_list_rmq_scheme.h"
@@ -199,9 +200,9 @@ template <typename TStorage = GenericStorage,
           typename TRMQ = sdsl::rmq_succinct_sct<true>,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = backend::PlainDA<TStorage, t_width>>
-class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class SadaCore : public FieldsComponent<SadaCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<SadaCore, TStorage, t_width>;
   using typename Base::size_type;
 
   explicit SadaCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
@@ -210,18 +211,6 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       : Base(t_storage), get_doc_(t_storage, t_block_size, t_storing_factor) {}
 
   SadaCore() = default;
-
-  void load(Config t_config) override {
-    Base::load(t_config);
-    get_doc_.load(t_config);
-  }
-
-  void load(std::istream& in, const JSON& t_keys) override {
-    Base::load(in, t_keys);
-    get_doc_.load(in, t_keys);
-  }
-
-  using Base::load;
 
   // The documents of [sp, ep) into t_sink (dret/sink.h). The marking stop reads the sink: a document
   // it holds is reported. Identifiers past n_doc (the text terminator's) count as reported, so they are
@@ -239,43 +228,23 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   std::size_t n_doc() const { return n_doc_; }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    size_type written = 0;
-    written += rmq_ ? sdsl::serialize(*rmq_, out, child, "rmq") : sdsl::serialize_empty_object<TRMQ>(out, child, "rmq");
-    // Write n_doc so the istream deserialization path can read it in sequence.
-    sdsl::int_vector<64> n_doc_vec(1, n_doc_);
-    written += sdsl::serialize(n_doc_vec, out, child, "n_doc");
-    written += get_doc_.serialize(out, child, "get_doc");
-    return written;
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (rmq_)
-      append(r, "rmq", sdsl::size_in_bytes(*rmq_));
-    auto get_doc_report = get_doc_.GetSizeReport();
-    for (const auto& [k, v] : get_doc_report)
-      append(r, k, v);
-    return r;
-  }
-
   TGetDoc& get_doc_policy() {
     return get_doc_;
   }
 
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
     using namespace dret::conf;
-    key_rmq_ = t_keys[kSADA][kRmq].get<std::string>();
-    rmq_ = this->template loadItemPtr<TRMQ>(key_rmq_, t_source, true);
-
-    n_doc_ = this->loadNDoc(t_keys, t_source);
+    return std::tuple{
+        Item("rmq", t_self.rmq_, [](const JSON& k) { return k[kSADA][kRmq].template get<std::string>(); }),
+        NDoc(t_self.n_doc_),
+        Part("get_doc", t_self.get_doc_)};
   }
 
-  std::string key_rmq_;
 
   const TRMQ* rmq_ = nullptr;
   std::size_t n_doc_ = 0;
@@ -299,9 +268,10 @@ template <typename TStorage = GenericStorage,
           typename TBvDocEnds = sdsl::sd_vector<>,
           typename TGetDoc = backend::PlainDA<TStorage, t_width>,
           typename TPrevDoc = sdsl::int_vector<>>
-class SadaValueCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class SadaValueCore
+    : public FieldsComponent<SadaValueCore<TStorage, t_width, TRMQ, TBvDocEnds, TGetDoc, TPrevDoc>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<SadaValueCore, TStorage, t_width>;
   using typename Base::size_type;
 
   explicit SadaValueCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
@@ -310,18 +280,6 @@ class SadaValueCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       : Base(t_storage), get_doc_(t_storage, t_block_size, t_storing_factor) {}
 
   SadaValueCore() = default;
-
-  void load(Config t_config) override {
-    Base::load(t_config);
-    get_doc_.load(t_config);
-  }
-
-  void load(std::istream& in, const JSON& t_keys) override {
-    Base::load(in, t_keys);
-    get_doc_.load(in, t_keys);
-  }
-
-  using Base::load;
 
   template <typename TSink>
   void Query(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
@@ -349,51 +307,25 @@ class SadaValueCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   std::size_t n_doc() const { return n_doc_; }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    size_type written = 0;
-    written += rmq_ ? sdsl::serialize(*rmq_, out, child, "rmq") : sdsl::serialize_empty_object<TRMQ>(out, child, "rmq");
-    written += prev_doc_
-                   ? sdsl::serialize(*prev_doc_, out, child, "prev_doc")
-                   : sdsl::serialize_empty_object<TPrevDoc>(out, child, "prev_doc");
-    sdsl::int_vector<64> n_doc_vec(1, n_doc_);
-    written += sdsl::serialize(n_doc_vec, out, child, "n_doc");
-    written += get_doc_.serialize(out, child, "get_doc");
-    return written;
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (rmq_)
-      append(r, "rmq", sdsl::size_in_bytes(*rmq_));
-    if (prev_doc_)
-      append(r, "prev_doc", sdsl::size_in_bytes(*prev_doc_));
-    auto get_doc_report = get_doc_.GetSizeReport();
-    for (const auto& [k, v] : get_doc_report)
-      append(r, k, v);
-    return r;
-  }
-
   TGetDoc& get_doc_policy() {
     return get_doc_;
   }
 
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
     using namespace dret::conf;
-    key_rmq_ = t_keys[kSADA][kRmq].get<std::string>();
-    rmq_ = this->template loadItemPtr<TRMQ>(key_rmq_, t_source, true);
-
-    key_prev_doc_ = t_keys[kSADA][kPrevDoc].get<std::string>();
-    prev_doc_ = this->template loadItemPtr<TPrevDoc>(key_prev_doc_, t_source, true);
-
-    n_doc_ = this->loadNDoc(t_keys, t_source);
+    return std::tuple{
+        Item("rmq", t_self.rmq_, [](const JSON& k) { return k[kSADA][kRmq].template get<std::string>(); }),
+        Item(
+            "prev_doc", t_self.prev_doc_, [](const JSON& k) { return k[kSADA][kPrevDoc].template get<std::string>(); }),
+        NDoc(t_self.n_doc_),
+        Part("get_doc", t_self.get_doc_)};
   }
 
-  std::string key_rmq_;
-  std::string key_prev_doc_;
 
   const TRMQ* rmq_ = nullptr;
   const TPrevDoc* prev_doc_ = nullptr;
@@ -419,9 +351,12 @@ template <IlcpPartition kVariant,
           typename TRMQ,
           typename TBvDocEnds,
           typename TGetDoc = backend::PlainDA<TStorage, t_width>>
-class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class IlcpLikeCore
+    : public FieldsComponent<IlcpLikeCore<kVariant, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc>,
+                             TStorage,
+                             t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<IlcpLikeCore, TStorage, t_width>;
   using typename Base::size_type;
 
   explicit IlcpLikeCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
@@ -430,18 +365,6 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
       : Base(t_storage), get_doc_(t_storage, t_block_size, t_storing_factor) {}
 
   IlcpLikeCore() = default;
-
-  void load(Config t_config) override {
-    Base::load(t_config);
-    get_doc_.load(t_config);
-  }
-
-  void load(std::istream& in, const JSON& t_keys) override {
-    Base::load(in, t_keys);
-    get_doc_.load(in, t_keys);
-  }
-
-  using Base::load;
 
   template <typename TSink>
   void Query(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
@@ -568,41 +491,6 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
     }
   }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    size_type written = 0;
-    written += rmq_ ? sdsl::serialize(*rmq_, out, child, "rmq") : sdsl::serialize_empty_object<TRMQ>(out, child, "rmq");
-    written += run_heads_ ? sdsl::serialize(*run_heads_, out, child, "run_heads")
-                          : sdsl::serialize_empty_object<TBvRunHeads>(out, child, "run_heads");
-    written += rank_ ? sdsl::serialize(*rank_, out, child, "run_heads_rank")
-                     : sdsl::serialize_empty_object<typename TBvRunHeads::rank_1_type>(out, child, "run_heads_rank");
-    written += select_
-                   ? sdsl::serialize(*select_, out, child, "run_heads_select")
-                   : sdsl::serialize_empty_object<typename TBvRunHeads::select_1_type>(out, child, "run_heads_select");
-    // Write n_doc so the istream deserialization path can read it in sequence
-    // (n_runs is always re-derived from rank after loading; no need to persist it).
-    sdsl::int_vector<64> n_doc_vec(1, n_doc_);
-    written += sdsl::serialize(n_doc_vec, out, child, "n_doc");
-    written += get_doc_.serialize(out, child, "get_doc");
-    return written;
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (rmq_)
-      append(r, "rmq", sdsl::size_in_bytes(*rmq_));
-    if (run_heads_)
-      append(r, "run_heads", sdsl::size_in_bytes(*run_heads_));
-    if (rank_)
-      append(r, "run_heads_rank", sdsl::size_in_bytes(*rank_));
-    if (select_)
-      append(r, "run_heads_select", sdsl::size_in_bytes(*select_));
-    auto get_doc_report = get_doc_.GetSizeReport();
-    for (const auto& [k, v] : get_doc_report)
-      append(r, k, v);
-    return r;
-  }
-
   std::size_t n_doc() const { return n_doc_; }
 
   TGetDoc& get_doc_policy() {
@@ -610,31 +498,30 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   }
 
  protected:
-  using typename Base::TSource;
+  friend Base;
 
   static std::string_view TopKey() {
     return kVariant == IlcpPartition::ILCP ? conf::kILCP : conf::kCILCP;
   }
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
     using namespace dret::conf;
-    std::string top(TopKey());
-    key_rmq_ = t_keys[top][kRmq].get<std::string>();
-    key_run_heads_ = t_keys[top][kRunHeads].get<std::string>();
-
-    rmq_ = this->template loadItemPtr<TRMQ>(key_rmq_, t_source, true);
-    run_heads_ = this->template loadItemPtr<TBvRunHeads>(key_run_heads_, t_source, true);
-    rank_ = &this->template loadBVRank<TBvRunHeads>(key_run_heads_, t_source, true).get();
-    select_ = &this->template loadBVSelect<TBvRunHeads>(key_run_heads_, t_source, true).get();
-
-    // n_runs is always derivable from rank after rank is loaded.
-    n_runs_ = (*rank_)(run_heads_->size());
-
-    n_doc_ = this->loadNDoc(t_keys, t_source);
+    auto key = [](std::string_view t_name) {
+      return [t_name](const JSON& k) { return k[std::string(TopKey())][t_name].template get<std::string>(); };
+    };
+    return std::tuple{Item("rmq", t_self.rmq_, key(kRmq)),
+                      Item("run_heads", t_self.run_heads_, key(kRunHeads)),
+                      Rank<TBvRunHeads>("run_heads_rank", t_self.rank_, key(kRunHeads)),
+                      Select<TBvRunHeads>("run_heads_select", t_self.select_, key(kRunHeads)),
+                      NDoc(t_self.n_doc_),
+                      Part("get_doc", t_self.get_doc_)};
   }
 
-  std::string key_rmq_;
-  std::string key_run_heads_;
+  // The number of runs, from the rank of the run heads.
+  void OnLoad() { n_runs_ = (*rank_)(run_heads_->size()); }
+
 
   const TRMQ* rmq_ = nullptr;
   const TBvRunHeads* run_heads_ = nullptr;
@@ -683,9 +570,13 @@ template <IlcpPartition kVariant,
           typename TBvDocEnds,
           typename TGetDoc = backend::PlainDA<TStorage, t_width>,
           typename TRunValues = sdsl::dac_vector<>>
-class IlcpLikeValueCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class IlcpLikeValueCore
+    : public FieldsComponent<
+          IlcpLikeValueCore<kVariant, TStorage, t_width, TBvRunHeads, TRMQ, TBvDocEnds, TGetDoc, TRunValues>,
+          TStorage,
+          t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<IlcpLikeValueCore, TStorage, t_width>;
   using typename Base::size_type;
 
   explicit IlcpLikeValueCore(const TStorage& t_storage) : Base(t_storage), get_doc_(t_storage) {}
@@ -694,18 +585,6 @@ class IlcpLikeValueCore : public IndexBaseWithExternalStorage<TStorage, t_width>
       : Base(t_storage), get_doc_(t_storage, t_block_size, t_storing_factor) {}
 
   IlcpLikeValueCore() = default;
-
-  void load(Config t_config) override {
-    Base::load(t_config);
-    get_doc_.load(t_config);
-  }
-
-  void load(std::istream& in, const JSON& t_keys) override {
-    Base::load(in, t_keys);
-    get_doc_.load(in, t_keys);
-  }
-
-  using Base::load;
 
   template <typename TSink>
   void Query(std::size_t t_sp, std::size_t t_ep, std::size_t t_m, TSink& t_sink) const {
@@ -760,44 +639,6 @@ class IlcpLikeValueCore : public IndexBaseWithExternalStorage<TStorage, t_width>
     ListDocsRMQSchemeDepthVisit(run_sp, run_ep, *rmq_, stop_pred, visit);
   }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    size_type written = 0;
-    written += rmq_ ? sdsl::serialize(*rmq_, out, child, "rmq") : sdsl::serialize_empty_object<TRMQ>(out, child, "rmq");
-    written += run_heads_ ? sdsl::serialize(*run_heads_, out, child, "run_heads")
-                          : sdsl::serialize_empty_object<TBvRunHeads>(out, child, "run_heads");
-    written += rank_ ? sdsl::serialize(*rank_, out, child, "run_heads_rank")
-                     : sdsl::serialize_empty_object<typename TBvRunHeads::rank_1_type>(out, child, "run_heads_rank");
-    written += select_
-                   ? sdsl::serialize(*select_, out, child, "run_heads_select")
-                   : sdsl::serialize_empty_object<typename TBvRunHeads::select_1_type>(out, child, "run_heads_select");
-    written += run_values_
-                   ? sdsl::serialize(*run_values_, out, child, "run_values")
-                   : sdsl::serialize_empty_object<TRunValues>(out, child, "run_values");
-    sdsl::int_vector<64> n_doc_vec(1, n_doc_);
-    written += sdsl::serialize(n_doc_vec, out, child, "n_doc");
-    written += get_doc_.serialize(out, child, "get_doc");
-    return written;
-  }
-
-  SizeReport GetSizeReport() const {
-    SizeReport r;
-    if (rmq_)
-      append(r, "rmq", sdsl::size_in_bytes(*rmq_));
-    if (run_heads_)
-      append(r, "run_heads", sdsl::size_in_bytes(*run_heads_));
-    if (rank_)
-      append(r, "run_heads_rank", sdsl::size_in_bytes(*rank_));
-    if (select_)
-      append(r, "run_heads_select", sdsl::size_in_bytes(*select_));
-    if (run_values_)
-      append(r, "run_values", sdsl::size_in_bytes(*run_values_));
-    auto get_doc_report = get_doc_.GetSizeReport();
-    for (const auto& [k, v] : get_doc_report)
-      append(r, k, v);
-    return r;
-  }
-
   std::size_t n_doc() const { return n_doc_; }
 
   TGetDoc& get_doc_policy() {
@@ -805,7 +646,7 @@ class IlcpLikeValueCore : public IndexBaseWithExternalStorage<TStorage, t_width>
   }
 
  protected:
-  using typename Base::TSource;
+  friend Base;
 
   // One namespace per family holds everything the family needs: the partition
   // (run_heads, rmq), shared with the published core, and the run values, which
@@ -815,27 +656,25 @@ class IlcpLikeValueCore : public IndexBaseWithExternalStorage<TStorage, t_width>
     return kVariant == IlcpPartition::ILCP ? conf::kILCP : conf::kCILCP;
   }
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
     using namespace dret::conf;
-    std::string top(TopKey());
-    key_rmq_ = t_keys[top][kRmq].get<std::string>();
-    key_run_heads_ = t_keys[top][kRunHeads].get<std::string>();
-    key_run_values_ = t_keys[top][kRunValues].get<std::string>();
-
-    rmq_ = this->template loadItemPtr<TRMQ>(key_rmq_, t_source, true);
-    run_heads_ = this->template loadItemPtr<TBvRunHeads>(key_run_heads_, t_source, true);
-    rank_ = &this->template loadBVRank<TBvRunHeads>(key_run_heads_, t_source, true).get();
-    select_ = &this->template loadBVSelect<TBvRunHeads>(key_run_heads_, t_source, true).get();
-    run_values_ = this->template loadItemPtr<TRunValues>(key_run_values_, t_source, true);
-
-    n_runs_ = (*rank_)(run_heads_->size());
-
-    n_doc_ = this->loadNDoc(t_keys, t_source);
+    auto key = [](std::string_view t_name) {
+      return [t_name](const JSON& k) { return k[std::string(TopKey())][t_name].template get<std::string>(); };
+    };
+    return std::tuple{Item("rmq", t_self.rmq_, key(kRmq)),
+                      Item("run_heads", t_self.run_heads_, key(kRunHeads)),
+                      Rank<TBvRunHeads>("run_heads_rank", t_self.rank_, key(kRunHeads)),
+                      Select<TBvRunHeads>("run_heads_select", t_self.select_, key(kRunHeads)),
+                      Item("run_values", t_self.run_values_, key(kRunValues)),
+                      NDoc(t_self.n_doc_),
+                      Part("get_doc", t_self.get_doc_)};
   }
 
-  std::string key_rmq_;
-  std::string key_run_heads_;
-  std::string key_run_values_;
+  // The number of runs, from the rank of the run heads.
+  void OnLoad() { n_runs_ = (*rank_)(run_heads_->size()); }
+
 
   const TRMQ* rmq_ = nullptr;
   const TBvRunHeads* run_heads_ = nullptr;

@@ -48,6 +48,8 @@ set(SOURCE_FILES
         # Root: project config + foundational base classes used by every family.
         ${PROJECT_SOURCE_DIR}/include/dret/config.h
         ${PROJECT_SOURCE_DIR}/include/dret/index_base.h
+        ${PROJECT_SOURCE_DIR}/include/dret/archive.h
+        ${PROJECT_SOURCE_DIR}/include/dret/fields.h
         ${PROJECT_SOURCE_DIR}/include/dret/construct_base.h
         ${PROJECT_SOURCE_DIR}/include/dret/size_report.h
         ${PROJECT_SOURCE_DIR}/include/dret/collection.h
@@ -186,6 +188,7 @@ if (dret_build_tests)
     cxx_test_with_flags_and_args(pdl_header_inclusion_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/pdl_header_inclusion_test.cpp)
     cxx_test_with_flags_and_args(repair_plan_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/repair_plan_test.cpp)
     cxx_test_with_flags_and_args(slp_expand_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/slp_expand_test.cpp)
+    cxx_test_with_flags_and_args(stream_roundtrip_test "" "${test_LIBS}" "" ${PROJECT_SOURCE_DIR}/test/stream_roundtrip_test.cpp)
 endif ()
 
 

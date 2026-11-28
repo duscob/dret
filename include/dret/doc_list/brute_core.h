@@ -28,15 +28,16 @@
 #include "dret/backend/backend.h"
 #include "dret/collection.h"
 #include "dret/config.h"
+#include "dret/fields.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"
 
 namespace dret {
 
 template <typename TStorage, uint8_t t_width, typename TBackend>
-class BruteCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
+class BruteCore : public FieldsComponent<BruteCore<TStorage, t_width, TBackend>, TStorage, t_width> {
  public:
-  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using Base = FieldsComponent<BruteCore, TStorage, t_width>;
   using typename Base::size_type;
   using Backend = TBackend;
 
@@ -65,22 +66,13 @@ class BruteCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
 
   const TBackend& backend() const { return backend_; }
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    size_type written = backend_.serialize(out, child, "get_doc");
-    sdsl::int_vector<64> n_doc_vec(1, n_doc_);
-    written += sdsl::serialize(n_doc_vec, out, child, "n_doc");
-    return written;
-  }
-
-  SizeReport GetSizeReport() const { return backend_.GetSizeReport(); }
-
  protected:
-  using typename Base::TSource;
+  friend Base;
 
-  void loadInner(TSource& t_source, const JSON& t_keys) override {
-    std::visit([this](auto&& tt_source) { backend_.load(tt_source.get()); }, t_source);
-    n_doc_ = this->loadNDoc(t_keys, t_source);
+  // The structures, in the order they are serialized and read back (dret/fields.h).
+  template <typename TSelf>
+  static auto Fields(TSelf& t_self) {
+    return std::tuple{Part("get_doc", t_self.backend_), NDoc(t_self.n_doc_)};
   }
 
   TBackend backend_;
