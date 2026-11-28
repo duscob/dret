@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
   namespace dgcda = bench::factories::dgcda;
   namespace slp_ns = bench::factories::slp_ns;
   using namespace dret::conf;
-  using PDLCore = dret::pdl::DocListIdxPDLPlain<dret::GenericStorage>::TCore;
+  using PDLCore = dret::pdl::DocListIdxPDLPlain<dret::GenericStorage>::Core::Sampler::Core;
   using CorePlain = typename dret::pdl::WithCodec<PDLCore, dret::pdl::PlainCodec<>>::type;
   using CoreRP = typename dret::pdl::WithCodec<PDLCore, dret::pdl::RPCodec<>>::type;
   using CoreRPLengths = typename dret::pdl::WithCodec<PDLCore, dret::pdl::RPCodecWithLengths>::type;

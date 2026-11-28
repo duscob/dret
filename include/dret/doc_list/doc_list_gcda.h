@@ -1,6 +1,12 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 3/21/26.
 //
+// GCDA: the sampled-tree core (sampled_tree_core.h) over the grammar-compressed DA. The grammar is the
+// backend that expands the uncovered ends of a range (backend::GCDAGrammar), and its sampled parse tree
+// gives the cover (GrammarTree); the stored lists of the sampled nodes are a separate component, shared
+// by every representation of the cell. GCDA over another backend keeps the tree alone
+// (doc_list_gcda_backend.h).
+//
 
 #pragma once
 
@@ -16,16 +22,18 @@
 
 #include "sr-index/r_index.h"
 
+#include "dret/backend/grammar.h"
 #include "dret/collection.h"
+#include "dret/construct_base.h"
+#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/sampled_tree_core.h"
+#include "dret/index_base.h"
 #include "dret/slp/combined_slp_with_unit_cover.h"
 #include "dret/slp/compact_bp_slp.h"
 #include "dret/slp/compact_louds_slp.h"
 #include "dret/slp/differential_light_slp.h"
-#include "dret/construct_base.h"
-#include "dret/doc_list/doc_list_sampled_tree_base.h"
-#include "dret/index_base.h"
-#include "dret/slp/slp_components.h"
 #include "dret/slp/gcda_grammar.h"
+#include "dret/slp/slp_components.h"
 #include "dret/slp/slp_tools.h"
 
 namespace dret {
@@ -34,6 +42,86 @@ namespace gcda {
 
 class MergeSetsBinaryTreeFunctor;
 
+// The sampler of GCDA (sampled_tree_core.h): the sampled parse tree of the DA grammar, read from the
+// backend's grammar (backend::GCDAGrammar, which also expands the uncovered ends), and the document
+// lists of its sampled nodes. The grammar is the backend, so it is built for the sampler's cell.
+template <typename TStorage, uint8_t t_width, typename TSets>
+class GrammarTree : public IndexBaseWithExternalStorage<TStorage, t_width> {
+ public:
+  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using typename Base::size_type;
+  using Sets = TSets;
+
+  static constexpr bool kBackendSharesCell = true;
+  static constexpr const char* kBackendName = "slp";
+  static constexpr const char* kBackendPrefix = "";
+
+  explicit GrammarTree(const TStorage& t_storage, uint32_t t_block_size = 512, float t_storing_factor = 4)
+      : Base(t_storage), block_size_(t_block_size), storing_factor_(t_storing_factor) {}
+
+  GrammarTree() = default;
+
+  template <typename TBackend>
+  void computeCoverFull(const TBackend& t_backend,
+                        std::size_t t_sp,
+                        std::size_t t_ep,
+                        std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,
+                        std::vector<std::size_t>& t_nodes) const {
+    auto report = [&t_nodes](const auto& _value) { t_nodes.emplace_back(_value); };
+    const auto range = grammar::ComputeCoverFromBottom(t_backend.slp(), t_sp, t_ep, report);
+    CoverToRanges(t_sp, t_ep, range, !t_nodes.empty(), t_raw_ranges);
+  }
+
+  // The node's list as the sets codec gives it (a grammar-compressed list expands into a vector; a
+  // plain one is read in place).
+  template <typename TReport>
+  void forEachInNode(std::size_t t_i, TReport& t_report) const {
+    for (const auto& d : (*sets_)[t_i]) t_report(static_cast<std::size_t>(d));
+  }
+
+  uint32_t block_size() const { return block_size_; }
+
+  float storing_factor() const { return storing_factor_; }
+
+  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
+    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    return sets_ ? sets_->serialize(out, child, "slp_docs") : 0;
+  }
+
+  SizeReport GetSizeReport() const {
+    SizeReport r;
+    if (sets_) append(r, "slp_sets", sdsl::size_in_bytes(*sets_));
+    return r;
+  }
+
+ protected:
+  using typename Base::TSource;
+
+  void loadInner(TSource& t_source, const JSON& t_keys) override {
+    sets_ = this->template loadItemPtr<TSets>(
+        NodeDocListsKey<TSets>(t_keys, {block_size_, storing_factor_}), t_source, true);
+  }
+
+  const TSets* sets_ = nullptr;
+  uint32_t block_size_ = 512;
+  float storing_factor_ = 4;
+};
+
+// The lists are the same for every representation of the cell (built while sampling the tree, which
+// every representation shares).
+template <typename TStorage, uint8_t t_width, typename TSets>
+void construct(GrammarTree<TStorage, t_width, TSets>& t_sampler, Config& t_config) {
+  const SampledTreeCell cell{t_sampler.block_size(), t_sampler.storing_factor()};
+  if (const auto key_docs = NodeDocListsKey<TSets>(t_config.keys, cell);
+      !sdsl::cache_file_exists<TSets>(key_docs, t_config)) {
+    auto event = sdsl::memory_monitor::event(key_docs);
+    TSets sets;
+    construct(sets, t_config, cell.block_size, cell.storing_factor);
+  }
+}
+
+// GCDA: the sampled-tree core over the grammar, with GrammarTree. TMergeSets is unused (the listing
+// bitmap deduplicates, distinct_docs.h); it stays for the existing spellings of the type.
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
@@ -44,149 +132,13 @@ template <typename TStorage = GenericStorage,
                                                 true,
                                                 grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
-class DocListIdxGCDA
-    : public DLSampledTreeScheme<DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TMergeSets>,
-                                 TMergeSets,
-                                 typename TAlphabet::string_type>,
-      public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
- public:
-  using SchemeBase = DLSampledTreeScheme<DocListIdxGCDA, TMergeSets, typename TAlphabet::string_type>;
-  using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
-  using typename SchemeBase::size_type;
-
-  explicit DocListIdxGCDA(const TStorage& t_storage, uint32_t t_block_size = 512, float t_storing_factor = 4)
-      : SchemeBase(TMergeSets()),
-        StorageBase(t_storage),
-        count_idx_(t_storage),
-        block_size_(t_block_size),
-        storing_factor_(t_storing_factor) {}
-
-  DocListIdxGCDA(const TStorage& t_storage,
-                 const TCountIdx& t_count_idx,
-                 uint32_t t_block_size = 512,
-                 float t_storing_factor = 4)
-      : SchemeBase(TMergeSets()),
-        StorageBase(t_storage),
-        count_idx_(t_count_idx),
-        block_size_(t_block_size),
-        storing_factor_(t_storing_factor) {}
-
-  DocListIdxGCDA() = default;
-
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return count_idx_.serialize(out, child, "count_idx") + slp_->serialize(out, child, "slp")
-           + slp_sets_->serialize(out, child, "slp_docs");
-  }
-
-  SizeReport GetSizeReport() const override {
-    SizeReport r;
-    if (slp_) collectSizes(r, *slp_, "slp_");
-    if (slp_sets_) append(r, "slp_sets", sdsl::size_in_bytes(*slp_sets_));
-    append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
-    return r;
-  }
-
-  const TCountIdx& count_idx() const {
-    return count_idx_;
-  }
-
-  const uint32_t& block_size() const {
-    return block_size_;
-  }
-
-  const float& storing_factor() const {
-    return storing_factor_;
-  }
-
- protected:
-  // The steps of DLSampledTreeScheme::Query.
-  friend SchemeBase;
-
-  std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const {
-    return count_idx_.Count(t_pattern);
-  }
-
-  void computeCoverFull(std::size_t t_sp,
-                        std::size_t t_ep,
-                        std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,
-                        std::vector<std::size_t>& t_nodes) const {
-    auto report = [&t_nodes](const auto& _value) { t_nodes.emplace_back(_value); };
-    const auto range = grammar::ComputeCoverFromBottom(*slp_, t_sp, t_ep, report);
-    SchemeBase::CoverToRanges(t_sp, t_ep, range, !t_nodes.empty(), t_raw_ranges);
-  }
-
-  // A reference to the sink, not the sink: some expansions take their report as const&.
-  template <typename TSink>
-  void getDocs(std::size_t t_sp, std::size_t t_ep, TSink& t_sink) const {
-    auto position = [&t_sink](auto d) { t_sink.Position(static_cast<std::size_t>(d)); };
-    ExpandSLP(*slp_, t_sp, t_ep, position);
-  }
-
-  // The node's list as the sets codec gives it (a grammar-compressed list expands into a vector; a
-  // plain one is read in place).
-  template <typename TSink>
-  void forEachInNode(std::size_t t_i, TSink& t_sink) const {
-    for (const auto& d : (*slp_sets_)[t_i]) t_sink.Listed(static_cast<std::size_t>(d));
-  }
-
-  void loadInner(typename StorageBase::TSource& t_source, const JSON& t_keys) override {
-    using namespace conf;
-
-    std::visit(
-        [this](auto&& tt_source) {
-          count_idx_.load(tt_source.get());
-        },
-        t_source);
-
-    const SampledTreeCell cell{block_size_, storing_factor_};
-    slp_ = this->template loadComponentsPtr<TSLP>(CacheComponents(TSLP{}, t_keys, cell), t_source);
-    slp_sets_ = this->template loadItemPtr<TSLPSets>(NodeDocListsKey<TSLPSets>(t_keys, cell), t_source, true);
-  }
-
-  TCountIdx count_idx_;
-  const TSLP* slp_ = nullptr;
-  const TSLPSets* slp_sets_ = nullptr;
-
-  uint32_t block_size_ = 512;
-  float storing_factor_ = 4;
-};
-
-template <typename TStorage,
-          typename TAlphabet,
-          typename TCountIdx,
-          typename TSLP,
-          typename TSLPSets,
-          typename TMergeSets>
-void construct(DocListIdxGCDA<TStorage, TAlphabet, TCountIdx, TSLP, TSLPSets, TMergeSets>& t_index, Config& t_config) {
-  using namespace conf;
-  using Traits = GCDAVariantTraits<TSLP>;
-
-  EnsureDA<TAlphabet::int_width>(t_config);
-
-  const SampledTreeCell cell{t_index.block_size(), t_index.storing_factor()};
-
-  if (const auto components = CacheComponents(TSLP{}, t_config.keys, cell); !ComponentsExist(components, t_config)) {
-    auto event = sdsl::memory_monitor::event(components.back().key);
-    auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
-    TSLP slp;
-    Traits::constructSLP(slp, t_config, filepath_da, t_index.block_size(), t_index.storing_factor());
-  }
-
-  auto count_idx = t_index.count_idx();
-  construct(count_idx, t_config.data_path, t_config);
-
-  // The lists are the same for every representation of the cell (built while
-  // sampling the tree, which every representation shares).
-  if (const auto key_docs = NodeDocListsKey<TSLPSets>(t_config.keys, cell);
-      !sdsl::cache_file_exists<TSLPSets>(key_docs, t_config)) {
-    auto event = sdsl::memory_monitor::event(key_docs);
-    TSLPSets slp_sets;
-    construct(slp_sets, t_config, t_index.block_size(), t_index.storing_factor());
-  }
-
-  t_index.load(t_config);
-}
+using DocListIdxGCDA = DocListIdx<TStorage,
+                                  TAlphabet,
+                                  TCountIdx,
+                                  SampledTreeCore<TStorage,
+                                                  TAlphabet::int_width,
+                                                  backend::GCDAGrammar<TStorage, TAlphabet::int_width, TSLP>,
+                                                  GrammarTree<TStorage, TAlphabet::int_width, TSLPSets>>>;
 
 //~~~~~~~
 
@@ -261,12 +213,7 @@ class MergeSetsBinaryTreeFunctor {
 
 //~~~~~~~
 
-// Backward-compatible alias. dret::dgcda::DocListIdxDGCDA locks TSLP to
-// DifferentialLightSLP<> and forwards every other template parameter and
-// default to gcda::DocListIdxGCDA. Existing consumers that wrote
-// dret::dgcda::DocListIdxDGCDA<...> keep working unchanged; ADL on a
-// DocListIdxGCDA<..., DifferentialLightSLP<>, ...> argument resolves to the
-// unified gcda::construct(DocListIdxGCDA&, Config&) above.
+// GCDA over the differential grammar: DocListIdxGCDA with TSLP = DifferentialLightSLP<>.
 namespace dgcda {
 
 template <typename TStorage = GenericStorage,

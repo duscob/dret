@@ -42,7 +42,7 @@ namespace dret::rmq {
 // win the RMQ, report a repeat occurrence and stop the recursion with pending
 // documents still in the subrange. CILCP therefore does not weaken this
 // stop — it restricts the range it recurses over to the contained runs and
-// expands the two boundary runs itself. See IlcpLikeCore::findDocs.
+// expands the two boundary runs itself. See IlcpLikeCore::Query.
 //
 // The marker test IS the stop, so a run that fails it is neither reported nor
 // descended into. For SADA that loses nothing: one RMQ position carries one

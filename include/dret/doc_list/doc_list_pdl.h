@@ -1,21 +1,17 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 5/16/26.
 //
-// DocListIdxPDL: PDL document-listing index parameterised on the stored-set
-// codec. Composes a count sub-index (default: sri::RIndexCount), a document-array
-// backend for the ranges no stored node covers (default: backend::PlainDA; see
-// backend/backend.h), and a PDLTreeCore<..., TStoredSetCodec>
-// for the sparse suffix-tree navigation + per-slot stored-set expansion.
+// DocListIdxPDL: PDL document listing, the sampled-tree core (sampled_tree_core.h)
+// with PDLTree: a PDLTreeCore<..., TStoredSetCodec> for the sparse suffix-tree
+// navigation and the per-slot stored sets, and a document-array backend for the
+// ranges no stored node covers (default: backend::PlainDA; see backend/backend.h).
+// The range comes from the r-index count (default: sri::RIndexCount), or from a
+// backend that counts (the RLCSA, as in the original PDL; doc_list_index.h).
 //
 // The three PlainCodec / RPCodec / BCCodec variants are exposed as alias
-// templates DocListIdxPDLPlain / DocListIdxPDLRP / DocListIdxPDLBC that lock
-// in the codec while leaving the remaining seven template parameters defaulted.
-// Each codec names its lists component through a static constexpr kListsKey;
-// the core is cached as components (see CacheComponents in pdl/tree_core.h).
-//
-// Search() is DLSampledTreeScheme's; the index supplies its steps: count,
-// computeCoverFull (PDLTreeCore's multi-range cover), getDocs (the backend)
-// and forEachInNode (the stored set, through the codec).
+// templates DocListIdxPDLPlain / DocListIdxPDLRP / DocListIdxPDLBC. Each codec
+// names its lists component through a static constexpr kListsKey; the core is
+// cached as components (see CacheComponents in pdl/tree_core.h).
 //
 
 #pragma once
@@ -40,240 +36,107 @@
 
 #include "sr-index/r_index.h"
 
-#include "dret/collection.h"
 #include "dret/backend/backend.h"
 #include "dret/backend/da.h"
+#include "dret/collection.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
-#include "dret/doc_list/doc_list_sampled_tree_base.h"
 #include "dret/doc_list/doc_list_gcda.h"
+#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/sampled_tree_core.h"
 #include "dret/index_base.h"
-#include "dret/size_report.h"
 #include "dret/pdl/build_pdl_core.h"
 #include "dret/pdl/set_codecs.h"
 #include "dret/pdl/storage_policy.h"
 #include "dret/pdl/tree_builder.h"
 #include "dret/pdl/tree_core.h"
+#include "dret/size_report.h"
 
 namespace dret::pdl {
 
-template <typename TStorage = GenericStorage,
-          typename TAlphabet = Alphabet<>,
-          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
-          typename TStoredSetCodec = PlainCodec<>,
-          typename TBitvector = sdsl::sd_vector<>,
-          typename TIntVector = sdsl::int_vector<>,
-          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
-class DocListIdxPDL
-    : public DLSampledTreeScheme<
-          DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend, TStoredSetCodec, TBitvector, TIntVector, TMergeSets>,
-          TMergeSets,
-          typename TAlphabet::string_type>,
-      public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
+// The sampler of PDL (sampled_tree_core.h): the sparse suffix tree of the collection, collapsed by the
+// block size, with the stored sets of its selected nodes under a storage policy (PDLTreeCore, cached as
+// components). Its cover can leave several uncovered ranges, between the selected nodes.
+template <typename TStorage, uint8_t t_width, typename TCore>
+class PDLTree : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
-  using SchemeBase = DLSampledTreeScheme<DocListIdxPDL, TMergeSets, typename TAlphabet::string_type>;
-  using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
-  using TCore = PDLTreeCore<TBitvector,
-                            typename TBitvector::rank_1_type,
-                            typename TBitvector::select_1_type,
-                            TIntVector,
-                            TStoredSetCodec>;
-  using typename SchemeBase::size_type;
+  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using typename Base::size_type;
+  using Core = TCore;
 
-  // A backend that finds the suffix-array range itself (RLCSA, as in the original PDL) replaces the
-  // r-index: count_idx is then neither loaded, serialized nor counted in the size.
-  static constexpr bool kBackendCounts = ::dret::backend::CountsPattern<TBackend, typename TAlphabet::string_type>;
+  static constexpr bool kBackendSharesCell = false;
+  static constexpr const char* kBackendName = "get_docs";
+  static constexpr const char* kBackendPrefix = "get_docs_";
 
-  DocListIdxPDL() = default;
+  explicit PDLTree(const TStorage& t_storage,
+                   uint32_t t_block_size = 512,
+                   float t_storing_factor = 4.0f,
+                   StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
+      : Base(t_storage), block_size_(t_block_size), storing_factor_(t_storing_factor), policy_(t_policy) {}
 
-  explicit DocListIdxPDL(const TStorage& t_storage,
-                         uint32_t t_block_size = 512,
-                         float t_storing_factor = 4.0f,
-                         StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
-      : SchemeBase(TMergeSets()),
-        StorageBase(t_storage),
-        count_idx_(t_storage),
-        backend_(t_storage),
-        block_size_(t_block_size),
-        storing_factor_(t_storing_factor),
-        policy_(t_policy) {}
+  PDLTree() = default;
 
-  // Externally-supplied count_idx variant, mirroring the GCDA pattern at
-  // doc_list/doc_list_gcda.h:54. Useful when the count sub-index is
-  // shared across multiple indexes pointing at the same storage.
-  DocListIdxPDL(const TStorage& t_storage,
-                const TCountIdx& t_count_idx,
-                uint32_t t_block_size = 512,
-                float t_storing_factor = 4.0f,
-                StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
-      : SchemeBase(TMergeSets()),
-        StorageBase(t_storage),
-        count_idx_(t_count_idx),
-        backend_(t_storage),
-        block_size_(t_block_size),
-        storing_factor_(t_storing_factor),
-        policy_(t_policy) {}
-
-  // Externally-supplied backend. Used by the benchmark factory to set the
-  // backend's own parameters (e.g. the GCDA-light grammar's block size and
-  // storing factor) independently of PDL's (block_size, storing_factor) above.
-  // The other ctors build the backend from {t_storage} only, which leaves a
-  // GCDA grammar at its default (512, 4).
-  DocListIdxPDL(const TStorage& t_storage,
-                const TBackend& t_backend,
-                uint32_t t_block_size = 512,
-                float t_storing_factor = 4.0f,
-                StoragePolicy t_policy = StoragePolicy::OccurrenceWeighted)
-      : SchemeBase(TMergeSets()),
-        StorageBase(t_storage),
-        count_idx_(t_storage),
-        backend_(t_backend),
-        block_size_(t_block_size),
-        storing_factor_(t_storing_factor),
-        policy_(t_policy) {}
-
-  size_type serialize(std::ostream& out,
-                      sdsl::structure_tree_node* v,
-                      const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    std::size_t bytes = 0;
-    if constexpr (!kBackendCounts) bytes += count_idx_.serialize(out, child, "count_idx");
-    bytes += backend_.serialize(out, child, "get_docs");
-    if (core_) bytes += core_->serialize(out, child, "core");
-    return bytes;
-  }
-
-  SizeReport GetSizeReport() const override {
-    SizeReport r;
-    if constexpr (!kBackendCounts) append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
-    auto gd = backend_.GetSizeReport();
-    for (const auto& f : gd) append(r, "get_docs_" + f.name, f.bytes);
-    if (core_) {
-      auto core_r = core_->GetSizeReport();
-      for (const auto& f : core_r) append(r, "core_" + f.name, f.bytes);
-    }
-    return r;
-  }
-
-  const TCountIdx& count_idx() const { return count_idx_; }
-  const TBackend& backend() const { return backend_; }
-  uint32_t block_size() const { return block_size_; }
-  float storing_factor() const { return storing_factor_; }
-  StoragePolicy policy() const { return policy_; }
-
- protected:
-  // The steps of DLSampledTreeScheme::Query.
-  friend SchemeBase;
-
-  std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const {
-    if constexpr (kBackendCounts) return backend_.Count(t_pattern);
-    else return count_idx_.Count(t_pattern);
-  }
-
-  // PDL's cover: the selected nodes inside [sp, ep) and the gaps between them (PDLTreeCore).
-  void computeCoverFull(std::size_t t_sp,
+  // The selected nodes inside [sp, ep) and the gaps between them (PDLTreeCore).
+  template <typename TBackend>
+  void computeCoverFull(const TBackend& /*t_backend*/,
+                        std::size_t t_sp,
                         std::size_t t_ep,
                         std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,
                         std::vector<std::size_t>& t_nodes) const {
     if (core_) core_->computeCoverFull(t_sp, t_ep, t_raw_ranges, t_nodes);
   }
 
-  template <typename TSink>
-  void getDocs(std::size_t t_sp, std::size_t t_ep, TSink& t_sink) const {
-    auto position = [&t_sink](std::size_t d) { t_sink.Position(d); };
-    backend_(t_sp, t_ep, position);
+  // The stored set, through the codec.
+  template <typename TReport>
+  void forEachInNode(std::size_t t_codec_slot, TReport& t_report) const {
+    if (core_) core_->forEachInSet(t_codec_slot, t_report);
   }
 
-  template <typename TSink>
-  void forEachInNode(std::size_t t_codec_slot, TSink& t_sink) const {
-    if (core_) core_->forEachInSet(t_codec_slot, [&t_sink](std::size_t d) { t_sink.Listed(d); });
+  uint32_t block_size() const { return block_size_; }
+
+  float storing_factor() const { return storing_factor_; }
+
+  StoragePolicy policy() const { return policy_; }
+
+  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
+    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    return core_ ? core_->serialize(out, child, "core") : 0;
   }
 
-  void loadInner(typename StorageBase::TSource& t_source, const JSON& t_keys) override {
-    using namespace conf;
+  SizeReport GetSizeReport() const {
+    SizeReport r;
+    if (core_)
+      for (const auto& f : core_->GetSizeReport()) append(r, "core_" + f.name, f.bytes);
+    return r;
+  }
 
-    std::visit(
-        [this](auto&& tt_source) {
-          if constexpr (!kBackendCounts) count_idx_.load(tt_source.get());
-          backend_.load(tt_source.get());
-        },
-        t_source);
+ protected:
+  using typename Base::TSource;
 
+  void loadInner(TSource& t_source, const JSON& t_keys) override {
     core_ = this->template loadComponentsPtr<TCore>(
         CacheComponents(TCore{}, t_keys, block_size_, storing_factor_, policy_), t_source);
   }
 
-  TCountIdx count_idx_;
-  TBackend backend_;
   const TCore* core_ = nullptr;
   uint32_t block_size_ = 512;
   float storing_factor_ = 4.0f;
   StoragePolicy policy_ = StoragePolicy::OccurrenceWeighted;
 };
 
-// Backward-compatible aliases. Each locks the 5th template parameter
-// (TStoredSetCodec) to the matching codec while keeping every other parameter
-// default identical to the unified template. Existing consumers that wrote
-// DocListIdxPDLPlain<...>, DocListIdxPDLRP<...>, DocListIdxPDLBC<...> keep
-// working without changes — alias templates expand to the underlying class
-// template at the point of instantiation.
-
-template <typename TStorage = GenericStorage,
-          typename TAlphabet = Alphabet<>,
-          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
-          typename TBitvector = sdsl::sd_vector<>,
-          typename TIntVector = sdsl::int_vector<>,
-          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
-using DocListIdxPDLPlain = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend,
-                                          PlainCodec<>, TBitvector, TIntVector, TMergeSets>;
-
-template <typename TStorage = GenericStorage,
-          typename TAlphabet = Alphabet<>,
-          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
-          typename TBitvector = sdsl::sd_vector<>,
-          typename TIntVector = sdsl::int_vector<>,
-          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
-using DocListIdxPDLRP = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend,
-                                       RPCodec<>, TBitvector, TIntVector, TMergeSets>;
-
-template <typename TStorage = GenericStorage,
-          typename TAlphabet = Alphabet<>,
-          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
-          typename TBitvector = sdsl::sd_vector<>,
-          typename TIntVector = sdsl::int_vector<>,
-          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
-using DocListIdxPDLBC = DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend,
-                                       BCCodec<>, TBitvector, TIntVector, TMergeSets>;
-
-template <typename TStorage,
-          typename TAlphabet,
-          typename TCountIdx,
-          typename TBackend,
-          typename TStoredSetCodec,
-          typename TBitvector,
-          typename TIntVector,
-          typename TMergeSets>
-void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend,
-                              TStoredSetCodec, TBitvector, TIntVector, TMergeSets>& t_index,
-               Config& t_config) {
+// The LCP array the sparse suffix tree is built from (the DA comes from the core's construct), then
+// the tree core.
+template <typename TStorage, uint8_t t_width, typename TCore>
+void construct(PDLTree<TStorage, t_width, TCore>& t_sampler, Config& t_config) {
   using namespace conf;
-  using Index = std::remove_reference_t<decltype(t_index)>;
-  using TCore = typename Index::TCore;
-  constexpr uint8_t t_width = TAlphabet::int_width;
 
-  // The collection's structures, and the LCP array the sparse suffix tree is built from.
-  EnsureDA<t_width>(t_config);
   EnsureLCP<t_width>(t_config);
 
   // PDLTreeCore as components: the tree under the block size, the selected
   // nodes and their lists under the block size, the policy and, for a policy
   // that reads it, the storing factor.
   const auto components =
-      CacheComponents(TCore{}, t_config.keys, t_index.block_size(), t_index.storing_factor(), t_index.policy());
+      CacheComponents(TCore{}, t_config.keys, t_sampler.block_size(), t_sampler.storing_factor(), t_sampler.policy());
 
   if (!ComponentsExist(components, t_config)) {
     auto event = sdsl::memory_monitor::event(components.back().key);
@@ -295,37 +158,80 @@ void construct(DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend,
       return i < lcp.size() ? static_cast<std::size_t>(lcp[i]) : 0;
     };
     auto* root = BuildSparseSuffixTree(pool, lcp_fn, n);
-    CollapseSubtreesByBlockSize(root, t_index.block_size());
+    CollapseSubtreesByBlockSize(root, t_sampler.block_size());
     // Reclaim the interval nodes just detached by the collapse before the
     // memory-heavy doc-set phase (the arena keeps all nodes alive otherwise).
     pool.retain(root);
     InsertExplicitLeaves(pool, root);
     ComputeDocSetsBottomUp(
         root, n_doc, [&da](std::size_t i) { return static_cast<std::size_t>(da[i]); });
-    ApplyStoragePolicy(root, t_index.policy(), t_index.storing_factor(), n_doc);
+    ApplyStoragePolicy(root, t_sampler.policy(), t_sampler.storing_factor(), n_doc);
     const std::size_t n_nodes = AssignNodeIds(root);
 
     TCore core;
-    BuildPDLTreeCoreFromBuilder(core, root, n_nodes, n_doc,
-                                t_index.block_size(), t_index.storing_factor(),
-                                t_index.policy());
-    StoreComponents(core, CacheComponents(core, t_config.keys, t_index.block_size(), t_index.storing_factor(),
-                                          t_index.policy()),
-                    t_config);
+    BuildPDLTreeCoreFromBuilder(
+        core, root, n_nodes, n_doc, t_sampler.block_size(), t_sampler.storing_factor(), t_sampler.policy());
+    StoreComponents(
+        core,
+        CacheComponents(core, t_config.keys, t_sampler.block_size(), t_sampler.storing_factor(), t_sampler.policy()),
+        t_config);
   }
-
-  // The backend's own structures (backend/*.h): the grammars build their
-  // components, the DA and SA-Phi find theirs built above or build them. A copy
-  // of the index's backend, as TBackend need not be default-constructible (not
-  // when TStorage is std::reference_wrapper).
-  auto backend = t_index.backend();
-  construct(backend, t_config);
-
-  // Count sub-index — same delegation pattern as GCDA.
-  auto count_idx = t_index.count_idx();
-  construct(count_idx, t_config.data_path, t_config);
-
-  t_index.load(t_config);
 }
+
+// PDL: the sampled-tree core with PDLTree, parameterised on the stored-set codec. TMergeSets is unused
+// (the listing bitmap deduplicates); it stays for the existing spellings.
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
+          typename TStoredSetCodec = PlainCodec<>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxPDL = DocListIdx<TStorage,
+                                 TAlphabet,
+                                 TCountIdx,
+                                 SampledTreeCore<TStorage,
+                                                 TAlphabet::int_width,
+                                                 TBackend,
+                                                 PDLTree<TStorage,
+                                                         TAlphabet::int_width,
+                                                         PDLTreeCore<TBitvector,
+                                                                     typename TBitvector::rank_1_type,
+                                                                     typename TBitvector::select_1_type,
+                                                                     TIntVector,
+                                                                     TStoredSetCodec>>>>;
+
+// The three codecs: plain, Re-Pair and BC lists.
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxPDLPlain =
+    DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend, PlainCodec<>, TBitvector, TIntVector, TMergeSets>;
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxPDLRP =
+    DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend, RPCodec<>, TBitvector, TIntVector, TMergeSets>;
+
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TBackend = backend::PlainDA<TStorage, TAlphabet::int_width>,
+          typename TBitvector = sdsl::sd_vector<>,
+          typename TIntVector = sdsl::int_vector<>,
+          typename TMergeSets = gcda::MergeSetsBinaryTreeFunctor>
+using DocListIdxPDLBC =
+    DocListIdxPDL<TStorage, TAlphabet, TCountIdx, TBackend, BCCodec<>, TBitvector, TIntVector, TMergeSets>;
 
 }  // namespace dret::pdl

@@ -131,6 +131,9 @@ class GCDAGrammar : public IndexBaseWithExternalStorage<TStorage, t_width> {
     return storing_factor_;
   }
 
+  // The grammar, with its sampled tree: GCDA covers a range on it (sampled_tree_core.h, GrammarTree).
+  const TSLP& slp() const { return *slp_; }
+
   size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
     auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
     return slp_ ? sdsl::serialize(*slp_, out, child, "slp") : sdsl::serialize_empty_object<TSLP>(out, child, "slp");
@@ -168,14 +171,18 @@ void construct(GCDAGrammar<TStorage, t_width, TSLP>& t_get_doc, Config& t_config
   auto event = sdsl::memory_monitor::event(components.back().key);
   auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
   TSLP slp;
-  gcda::construct(slp, t_config, filepath_da, t_get_doc.block_size(), t_get_doc.storing_factor());
+  // Every sampled representation, the differential one included (it reads the DA itself).
+  gcda::GCDAVariantTraits<TSLP>::constructSLP(
+      slp, t_config, filepath_da, t_get_doc.block_size(), t_get_doc.storing_factor());
 }
 
-// Document-array lookup over the grammar of GCDA-nolists: the CNF grammar alone
-// (a plain grammar::SLP), or the differential grammar without the sampled tree.
-// It reads the same components as DocListIdxSLP with the same TSLP. The one
-// knob is the sample spacing of a differential TSLP: a lookup jumps to a sample
-// before skipping by span lengths. A plain TSLP has no sampling and ignores it.
+// Document-array lookup over a GCDA grammar without its document lists: the CNF
+// grammar alone (a plain grammar::SLP), the differential grammar without the
+// sampled tree, or a sampled GCDA grammar whose lists are not loaded. The backend
+// of Brute-GCDA (DocListIdxSLP). The block size is the sample spacing of a
+// differential TSLP (a lookup jumps to a sample before skipping by span lengths)
+// or the block size of a sampled one, with the storing factor; a plain TSLP has
+// no sampling and ignores both (SlpNsTraits).
 template <typename TStorage = GenericStorage,
           uint8_t t_width = 8,
           typename TSLP = grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>>>
@@ -185,14 +192,18 @@ class BareGrammar : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using SLP = TSLP;
   using typename Base::size_type;
 
-  explicit BareGrammar(const TStorage& t_storage, uint32_t t_block_size = 512, float /*t_storing_factor*/ = 0)
-      : Base(t_storage), block_size_(t_block_size) {}
+  explicit BareGrammar(const TStorage& t_storage,
+                       uint32_t t_block_size = kDiffBlockSize,
+                       float t_storing_factor = kNolistsStoringFactor)
+      : Base(t_storage), block_size_(t_block_size), storing_factor_(t_storing_factor) {}
 
   BareGrammar() = default;
 
   uint32_t block_size() const {
     return block_size_;
   }
+
+  float storing_factor() const { return storing_factor_; }
 
   std::size_t operator()(std::size_t i) const {
     std::size_t value = 0;
@@ -232,19 +243,20 @@ class BareGrammar : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using typename Base::TSource;
 
   void loadInner(TSource& t_source, const JSON& t_keys) override {
-    slp_ = this->template loadComponentsPtr<TSLP>(SlpNsTraits<TSLP>::components(t_keys, block_size_), t_source);
+    slp_ = this->template loadComponentsPtr<TSLP>(SlpNsTraits<TSLP>::components(t_keys, block_size_, storing_factor_),
+                                                  t_source);
   }
 
   const TSLP* slp_ = nullptr;
-  uint32_t block_size_ = 512;
+  uint32_t block_size_ = kDiffBlockSize;
+  float storing_factor_ = kNolistsStoringFactor;
 };
 
-// Build the grammar's components, as DocListIdxSLP does. The DA they are built
-// from is the index's: its construct() ensures it (EnsureDA, dret/collection.h)
-// before it constructs the backend.
+// Build the grammar's components. The DA they are built from is the index's: its
+// construct() ensures it (EnsureDA, dret/collection.h) before it constructs the backend.
 template <typename TStorage, uint8_t t_width, typename TSLP>
 void construct(BareGrammar<TStorage, t_width, TSLP>& t_get_doc, Config& t_config) {
-  SlpNsTraits<TSLP>::build(t_config, t_get_doc.block_size());
+  SlpNsTraits<TSLP>::build(t_config, t_get_doc.block_size(), t_get_doc.storing_factor());
 }
 
 // Document-array lookup over a differential grammar-compressed SLP. The default

@@ -77,7 +77,7 @@ const std::vector<std::string> kDocsB = {"BB", "BCCCBBCBB", "BAB", "A"};
 //
 // This one was found by cilcp_random_diff_test (seed 20260907, collection 48)
 // and is verified to fail against that same broken build, so it guards the
-// boundary-run handling in IlcpLikeCore::findDocs. Pattern "BAB" returns
+// boundary-run handling in IlcpLikeCore::Query. Pattern "BAB" returns
 // {0} where the answer is {0, 2}.
 const std::vector<std::string> kDocsC = {"BBBABABAA", "A", "CBCBABAAC"};
 

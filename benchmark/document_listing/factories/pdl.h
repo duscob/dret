@@ -19,6 +19,7 @@
 #include <sdsl/util.hpp>
 
 #include "sr-index/r_index.h"
+#include "sr-index/sr_index.h"
 
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_base.h"

@@ -92,7 +92,7 @@ TEST_F(ListDocsRMQSchemeTest, empty_range_reports_nothing) {
 // against a hand-built run array. It belongs there: the defect was never in
 // this scheme but in the range the caller recurses over, and the fix (restrict
 // the marker stop to the runs contained in the query range, expand the two
-// boundary runs separately) lives in IlcpLikeCore::findDocs. A scheme-level
+// boundary runs separately) lives in IlcpLikeCore::Query. A scheme-level
 // test could only pin behaviour no core asks for.
 //
 // The shape that breaks the stop, for reference: run values [5, 5, 7, 3, 9]

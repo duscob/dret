@@ -79,7 +79,7 @@ CoreFixture MakeFixture(StoragePolicy policy, std::size_t n_doc = 5,
 
 // Deterministic guard for PDLTreeCore::getDocSet's sort.
 //
-// DLSampledTreeScheme::Search merges node sets with std::set_union, whose
+// The listing query once merged node sets with std::set_union, whose
 // precondition is sorted input. BCCodec::Expand emits [rule docs][verbatim
 // docs] -- each run ascending, the concatenation not -- and on dna_010000_010
 // that made set_union emit 273,171 duplicate doc ids across 1191 of 1210

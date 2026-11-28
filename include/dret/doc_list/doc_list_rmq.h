@@ -30,14 +30,15 @@
 #include "sr-index/r_index.h"
 #include "sr-index/sr_index.h"
 
-#include "dret/collection.h"
 #include "dret/backend/da.h"
+#include "dret/collection.h"
 #include "dret/config.h"
 #include "dret/construct_base.h"
-#include "dret/rmq/doc_index_rmq_common.h"
 #include "dret/doc_list/doc_list_base.h"
-#include "dret/rmq/doc_list_rmq_scheme.h"
+#include "dret/doc_list/doc_list_index.h"
 #include "dret/index_base.h"
+#include "dret/rmq/doc_index_rmq_common.h"
+#include "dret/rmq/doc_list_rmq_scheme.h"
 #include "dret/sink.h"
 #include "dret/size_report.h"
 
@@ -152,7 +153,7 @@ sdsl::int_vector<> LoadOrComputeIlcp(Config& t_config, std::size_t t_n_doc) {
 // visit there -- the marker stop -- and the run is neither reported nor fanned
 // out; otherwise the head is reported and the rest of the run fans out. With
 // kPeek (CILCP), a second position that holds the head's document ends the
-// fan-out: IlcpLikeCore::findDocs explains why that is sound.
+// fan-out: IlcpLikeCore::Query explains why that is sound.
 //
 // This replaces a head lookup, a peek and a range expansion that each located
 // their start position again. Returns false iff the visit stopped at a head that
@@ -226,7 +227,7 @@ class SadaCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   // it holds is reported. Identifiers past n_doc (the text terminator's) count as reported, so they are
   // neither reported nor descended past.
   template <typename TSink>
-  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
+  void Query(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
     if (t_sp >= t_ep || !rmq_)
       return;
 
@@ -323,7 +324,7 @@ class SadaValueCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using Base::load;
 
   template <typename TSink>
-  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
+  void Query(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
     if (t_sp >= t_ep || !rmq_ || !prev_doc_)
       return;
 
@@ -443,7 +444,7 @@ class IlcpLikeCore : public IndexBaseWithExternalStorage<TStorage, t_width> {
   using Base::load;
 
   template <typename TSink>
-  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
+  void Query(std::size_t t_sp, std::size_t t_ep, std::size_t /*t_m*/, TSink& t_sink) const {
     if (t_sp >= t_ep || !rmq_ || !run_heads_ || !rank_ || !select_)
       return;
 
@@ -707,7 +708,7 @@ class IlcpLikeValueCore : public IndexBaseWithExternalStorage<TStorage, t_width>
   using Base::load;
 
   template <typename TSink>
-  void findDocs(std::size_t t_sp, std::size_t t_ep, std::size_t t_m, TSink& t_sink) const {
+  void Query(std::size_t t_sp, std::size_t t_ep, std::size_t t_m, TSink& t_sink) const {
     if (t_sp >= t_ep || !rmq_ || !run_heads_ || !rank_ || !select_ || !run_values_)
       return;
 
@@ -746,7 +747,7 @@ class IlcpLikeValueCore : public IndexBaseWithExternalStorage<TStorage, t_width>
     // other, and VisitRun never stops at the head. CILCP★ runs can be either
     // single-doc (merged) or multi-doc (a non-merged, hence ilcp-constant, ILCP
     // run); the peek is sound for both, by the argument in
-    // IlcpLikeCore::findDocs.
+    // IlcpLikeCore::Query.
     auto visit = [this, &select, &state, &is_reported, &report_dedup](std::size_t i) {
       const std::size_t head = static_cast<std::size_t>(select(i + 1));
       const std::size_t run_start = std::max(state.sp_orig, head);
@@ -868,83 +869,12 @@ using CilcpValueCore = IlcpLikeValueCore<IlcpPartition::CILCP, TStorage, t_width
 // DocListIdxRMQ
 
 
+// The RMQ index: the r-index count and an RMQ core (doc_list_index.h).
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
           typename TCore = SadaCore<TStorage, TAlphabet::int_width>>
-class DocListIdxRMQ : public DocListIndexExtStorage<TStorage, TAlphabet> {
- public:
-  using Base = DocListIndexExtStorage<TStorage, TAlphabet>;
-  using Core = TCore;
-  using typename Base::size_type;
-  using typename Base::TDocId;
-  using typename Base::TPattern;
-
-  explicit DocListIdxRMQ(const TStorage& t_storage) : Base(t_storage), count_idx_(t_storage), core_(t_storage) {}
-
-  DocListIdxRMQ(const TStorage& t_storage, const TCountIdx& t_count_idx)
-      : Base(t_storage), count_idx_(t_count_idx), core_(t_storage) {}
-
-  DocListIdxRMQ(const TStorage& t_storage, const TCore& t_core)
-      : Base(t_storage), count_idx_(t_storage), core_(t_core) {}
-
-  DocListIdxRMQ(const TStorage& t_storage, const TCountIdx& t_count_idx, const TCore& t_core)
-      : Base(t_storage), count_idx_(t_count_idx), core_(t_core) {}
-
-  DocListIdxRMQ() = default;
-
-  void Search(const TPattern& t_pattern, const std::function<void(TDocId)>& t_report) const override {
-    ListSink<std::function<void(TDocId)>> sink(core_.n_doc(), t_report);
-    Query(t_pattern, sink);
-  }
-
-  // The query into any sink (dret/sink.h).
-  template <typename TSink>
-  void Query(const TPattern& t_pattern, TSink& t_sink) const {
-    auto [sp, ep] = count_idx_.Count(t_pattern);
-    if (sp >= ep)
-      return;
-    core_.findDocs(sp, ep, t_pattern.size(), t_sink);
-  }
-
-  void load(Config t_config) override {
-    count_idx_.load(t_config);
-    core_.load(t_config);
-  }
-
-  void load(std::istream& in, const JSON& t_keys) override {
-    count_idx_.load(in);
-    core_.load(in, t_keys);
-  }
-
-  using Base::load;
-
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    return count_idx_.serialize(out, child, "count_idx") + core_.serialize(out, child, "core");
-  }
-
-  SizeReport GetSizeReport() const override {
-    SizeReport r;
-    append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
-    auto core_report = core_.GetSizeReport();
-    for (const auto& [k, v] : core_report)
-      append(r, k, v);
-    return r;
-  }
-
-  const TCountIdx& count_idx() const {
-    return count_idx_;
-  }
-
-  const TCore& core() const {
-    return core_;
-  }
-
- protected:
-  TCountIdx count_idx_;
-  TCore core_;
-};
+using DocListIdxRMQ = DocListIdx<TStorage, TAlphabet, TCountIdx, TCore>;
 
 //~~~~~~~
 // Construction
@@ -987,7 +917,7 @@ void StoreRunHeadsAndRMQ(Config& t_config,
 // construction. They differ in exactly one thing: CILCP-V also stores the run
 // values, which buys it the value-based stop; CILCP, as published, omits them
 // and prunes on the reported-document marker over the runs contained in the
-// query range instead (see IlcpLikeCore::findDocs).
+// query range instead (see IlcpLikeCore::Query).
 inline void BuildCilcpRuns(const sdsl::int_vector<>& t_ilcp,
                            const sdsl::int_vector<>& t_da,
                            sdsl::bit_vector& t_run_heads,
@@ -1349,18 +1279,6 @@ void construct(IlcpLikeValueCore<IlcpPartition::CILCP, TStorage, t_width, TBvRun
   }
 
   construct(t_core.get_doc_policy(), t_config);
-}
-
-// Wiring: construct the whole DocListIdxRMQ (count_idx + core).
-template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TCore>
-void construct(DocListIdxRMQ<TStorage, TAlphabet, TCountIdx, TCore>& t_index, Config& t_config) {
-  auto count_idx = t_index.count_idx();
-  construct(count_idx, t_config.data_path, t_config);
-
-  TCore core(t_index.core());
-  construct(core, t_config);
-
-  t_index.load(t_config);
 }
 
 }  // namespace rmq

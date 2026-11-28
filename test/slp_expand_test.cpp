@@ -36,13 +36,9 @@ static_assert(!dret::StoresSpanLength<Light, std::size_t>);
 static_assert(!dret::StoresSpanLength<grammar::CompactBPSLP<>, std::size_t>);
 static_assert(!dret::StoresSpanLength<grammar::CompactLOUDSSLP<>, std::size_t>);
 
-// The index's grammar, which DocListIdxGCDA keeps protected.
+// GCDA over TSLP; its grammar is the backend of its core.
 template <typename TSLP>
-struct Probe : dret::gcda::DocListIdxGCDA<S, dret::Alphabet<>, RC, TSLP, SetsPlain> {
-  using Base = dret::gcda::DocListIdxGCDA<S, dret::Alphabet<>, RC, TSLP, SetsPlain>;
-  using Base::Base;
-  const TSLP& slp() const { return *this->slp_; }
-};
+using Probe = dret::gcda::DocListIdxGCDA<S, dret::Alphabet<>, RC, TSLP, SetsPlain>;
 
 class SLPExpandTest : public BaseConfigTests<8> {
  protected:
@@ -71,7 +67,7 @@ class SLPExpandTest : public BaseConfigTests<8> {
     sdsl::int_vector<> da;
     ASSERT_TRUE(sdsl::load_from_cache(da, config_.keys[dret::conf::kDA].get<std::string>(), config_, true));
     const std::size_t n = da.size();
-    const auto& slp = index.slp();
+    const auto& slp = index.core().backend().slp();
 
     std::vector<std::pair<std::size_t, std::size_t>> ranges;
     const std::size_t b = t_block_size;

@@ -51,6 +51,7 @@ set(SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/include/dret/construct_base.h
         ${PROJECT_SOURCE_DIR}/include/dret/size_report.h
         ${PROJECT_SOURCE_DIR}/include/dret/collection.h
+        ${PROJECT_SOURCE_DIR}/include/dret/sink.h
 
         # backend/: document-array backends, shared by every index that expands positions.
         ${PROJECT_SOURCE_DIR}/include/dret/backend/backend.h
@@ -91,11 +92,15 @@ set(SOURCE_FILES
 
         # doc_list/: document-listing family — all listing index entry points.
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_base.h
-        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_sampled_tree_base.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_index.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/brute_core.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/sampled_tree_core.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_brute.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_brute_backend.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_rmq.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_slp.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_gcda.h
+        ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_gcda_backend.h
         ${PROJECT_SOURCE_DIR}/include/dret/doc_list/doc_list_pdl.h
 
         # pdl/: PDL infrastructure (codecs + sparse tree + storage policy).

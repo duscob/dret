@@ -1,9 +1,10 @@
 //
 // Created by Dustin Cobas <dustin.cobas@gmail.com> on 10/6/26.
 //
-// GCDA over a backend: GCDA's sampled tree and the document lists of its
-// sampled nodes, with the partial leaves at the two ends of a range expanded by
-// a document-array backend (plain DA, SA-Phi, RLCSA) instead of the grammar.
+// GCDA over a backend: the sampled-tree core (sampled_tree_core.h) with GCDA's
+// sampled tree and the document lists of its sampled nodes (SampledTree), the
+// partial leaves at the two ends of a range expanded by a document-array backend
+// (plain DA, SA-Phi, RLCSA) instead of the grammar.
 //
 // The cover of a range reads only the sampled tree (Leaf, Position,
 // IsFirstChild, Parent; see grammar::ComputeCoverFromBottom), so the grammar is
@@ -30,131 +31,87 @@
 #include "dret/backend/sa_phi.h"
 #include "dret/collection.h"
 #include "dret/doc_list/doc_list_gcda.h"
-#include "dret/doc_list/doc_list_sampled_tree_base.h"
+#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/sampled_tree_core.h"
 #include "dret/index_base.h"
 #include "dret/slp/slp_components.h"
 
 namespace dret::gcda {
 
-template <typename TStorage = GenericStorage,
-          typename TAlphabet = Alphabet<>,
-          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
-          typename TBackend = backend::SAPhi<TStorage, TAlphabet::int_width>,
-          typename TSets = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>,
-                                             true,
-                                             grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
-          typename TSampledTree = grammar::SampledSLP<>,
-          typename TMergeSets = MergeSetsBinaryTreeFunctor>
-class DocListIdxGCDABackend
-    : public DLSampledTreeScheme<
-          DocListIdxGCDABackend<TStorage, TAlphabet, TCountIdx, TBackend, TSets, TSampledTree, TMergeSets>,
-          TMergeSets,
-          typename TAlphabet::string_type>,
-      public IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width> {
+// The sampler of GCDA over a backend (sampled_tree_core.h): the cell's sampled tree stored alone
+// (da_sampled_tree) and the document lists of its sampled nodes; the cover reads the tree, not the
+// backend.
+template <typename TStorage, uint8_t t_width, typename TSampledTree, typename TSets>
+class SampledTree : public IndexBaseWithExternalStorage<TStorage, t_width> {
  public:
-  using SchemeBase = DLSampledTreeScheme<DocListIdxGCDABackend, TMergeSets, typename TAlphabet::string_type>;
-  using StorageBase = IndexBaseWithExternalStorage<TStorage, TAlphabet::int_width>;
-  using typename SchemeBase::size_type;
-  using Backend = TBackend;
+  using Base = IndexBaseWithExternalStorage<TStorage, t_width>;
+  using typename Base::size_type;
   using Sets = TSets;
 
-  explicit DocListIdxGCDABackend(const TStorage& t_storage, uint32_t t_block_size = 512, float t_storing_factor = 4)
-      : SchemeBase(TMergeSets()),
-        StorageBase(t_storage),
-        count_idx_(t_storage),
-        backend_(t_storage),
-        block_size_(t_block_size),
-        storing_factor_(t_storing_factor) {}
+  static constexpr bool kBackendSharesCell = false;
+  static constexpr const char* kBackendName = "get_docs";
+  static constexpr const char* kBackendPrefix = "get_docs_";
 
-  // As in DocListIdxPDL: a backend that finds the suffix-array range itself (RLCSA) replaces the
-  // r-index, which is then neither loaded, serialized nor counted in the size.
-  static constexpr bool kBackendCounts = ::dret::backend::CountsPattern<TBackend, typename TAlphabet::string_type>;
+  explicit SampledTree(const TStorage& t_storage, uint32_t t_block_size = 512, float t_storing_factor = 4)
+      : Base(t_storage), block_size_(t_block_size), storing_factor_(t_storing_factor) {}
 
-  DocListIdxGCDABackend() = default;
+  SampledTree() = default;
 
-  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
-    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-    std::size_t bytes = 0;
-    if constexpr (!kBackendCounts) bytes += count_idx_.serialize(out, child, "count_idx");
-    bytes += backend_.serialize(out, child, "get_docs");
-    if (tree_) bytes += tree_->serialize(out, child, "sampled_tree");
-    if (sets_) bytes += sets_->serialize(out, child, "sets");
-    return bytes;
-  }
-
-  SizeReport GetSizeReport() const override {
-    SizeReport r;
-    if constexpr (!kBackendCounts) append(r, "count_idx", sdsl::size_in_bytes(count_idx_));
-    for (const auto& f : backend_.GetSizeReport()) append(r, "get_docs_" + f.name, f.bytes);
-    if (tree_) append(r, "sampled_tree", sdsl::size_in_bytes(*tree_));
-    if (sets_) append(r, "sets", sdsl::size_in_bytes(*sets_));
-    return r;
-  }
-
-  const TCountIdx& count_idx() const { return count_idx_; }
-  TBackend& backend() { return backend_; }
-  uint32_t block_size() const { return block_size_; }
-  float storing_factor() const { return storing_factor_; }
-
- protected:
-  // The steps of DLSampledTreeScheme::Query.
-  friend SchemeBase;
-
-  std::pair<std::size_t, std::size_t> count(const typename SchemeBase::TPattern& t_pattern) const {
-    if constexpr (kBackendCounts) return backend_.Count(t_pattern);
-    else return count_idx_.Count(t_pattern);
-  }
-
-  void computeCoverFull(std::size_t t_sp,
+  template <typename TBackend>
+  void computeCoverFull(const TBackend& /*t_backend*/,
+                        std::size_t t_sp,
                         std::size_t t_ep,
                         std::vector<std::pair<std::size_t, std::size_t>>& t_raw_ranges,
                         std::vector<std::size_t>& t_nodes) const {
     auto report = [&t_nodes](const auto& _value) { t_nodes.emplace_back(_value); };
     const auto range = grammar::ComputeCoverFromBottom(*tree_, t_sp, t_ep, report);
-    SchemeBase::CoverToRanges(t_sp, t_ep, range, !t_nodes.empty(), t_raw_ranges);
+    CoverToRanges(t_sp, t_ep, range, !t_nodes.empty(), t_raw_ranges);
   }
 
-  template <typename TSink>
-  void getDocs(std::size_t t_sp, std::size_t t_ep, TSink& t_sink) const {
-    auto position = [&t_sink](std::size_t d) { t_sink.Position(d); };
-    backend_(t_sp, t_ep, position);
+  template <typename TReport>
+  void forEachInNode(std::size_t t_i, TReport& t_report) const {
+    for (const auto& d : (*sets_)[t_i]) t_report(static_cast<std::size_t>(d));
   }
 
-  template <typename TSink>
-  void forEachInNode(std::size_t t_i, TSink& t_sink) const {
-    for (const auto& d : (*sets_)[t_i]) t_sink.Listed(static_cast<std::size_t>(d));
+  uint32_t block_size() const { return block_size_; }
+
+  float storing_factor() const { return storing_factor_; }
+
+  size_type serialize(std::ostream& out, sdsl::structure_tree_node* v, const std::string& name) const override {
+    auto child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+    size_type bytes = 0;
+    if (tree_) bytes += tree_->serialize(out, child, "sampled_tree");
+    if (sets_) bytes += sets_->serialize(out, child, "sets");
+    return bytes;
   }
 
-  void loadInner(typename StorageBase::TSource& t_source, const JSON& t_keys) override {
-    std::visit(
-        [this](auto&& tt_source) {
-          if constexpr (!kBackendCounts) count_idx_.load(tt_source.get());
-          backend_.load(tt_source.get());
-        },
-        t_source);
+  SizeReport GetSizeReport() const {
+    SizeReport r;
+    if (tree_) append(r, "sampled_tree", sdsl::size_in_bytes(*tree_));
+    if (sets_) append(r, "sets", sdsl::size_in_bytes(*sets_));
+    return r;
+  }
+
+ protected:
+  using typename Base::TSource;
+
+  void loadInner(TSource& t_source, const JSON& t_keys) override {
     const SampledTreeCell cell{block_size_, storing_factor_};
     tree_ = this->template loadItemPtr<TSampledTree>(CellKey(t_keys, conf::kDaSampledTree, cell), t_source, true);
     sets_ = this->template loadItemPtr<TSets>(NodeDocListsKey<TSets>(t_keys, cell), t_source, true);
   }
 
-  TCountIdx count_idx_;
-  TBackend backend_;
   const TSampledTree* tree_ = nullptr;
   const TSets* sets_ = nullptr;
   uint32_t block_size_ = 512;
   float storing_factor_ = 4;
 };
 
-// The sampled tree and the node lists come from the cell's GCDA build (which
-// reads the DA grammar); the backend builds its own cache.
-template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TBackend, typename TSets,
-          typename TSampledTree, typename TMergeSets>
-void construct(DocListIdxGCDABackend<TStorage, TAlphabet, TCountIdx, TBackend, TSets, TSampledTree, TMergeSets>& t_index,
-               Config& t_config) {
+// The sampled tree and the node lists come from the cell's GCDA build (which reads the DA grammar).
+template <typename TStorage, uint8_t t_width, typename TSampledTree, typename TSets>
+void construct(SampledTree<TStorage, t_width, TSampledTree, TSets>& t_sampler, Config& t_config) {
   using namespace conf;
-  EnsureDA<TAlphabet::int_width>(t_config);
-
-  const SampledTreeCell cell{t_index.block_size(), t_index.storing_factor()};
+  const SampledTreeCell cell{t_sampler.block_size(), t_sampler.storing_factor()};
   if (!sdsl::cache_file_exists<TSampledTree>(CellKey(t_config.keys, kDaSampledTree, cell), t_config)) {
     auto filepath_da = sdsl::cache_file_name<std::vector<int>>(t_config.keys[kDA].get<std::string>(), t_config);
     LoadOrBuildSampledTree(t_config, filepath_da, cell.block_size, cell.storing_factor);
@@ -164,12 +121,25 @@ void construct(DocListIdxGCDABackend<TStorage, TAlphabet, TCountIdx, TBackend, T
     TSets sets;
     construct(sets, t_config, cell.block_size, cell.storing_factor);
   }
-
-  construct(t_index.backend(), t_config);
-  auto count_idx = t_index.count_idx();
-  construct(count_idx, t_config.data_path, t_config);
-
-  t_index.load(t_config);
 }
+
+// TMergeSets is unused (the listing bitmap deduplicates); it stays for the existing spellings.
+template <typename TStorage = GenericStorage,
+          typename TAlphabet = Alphabet<>,
+          typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
+          typename TBackend = backend::SAPhi<TStorage, TAlphabet::int_width>,
+          typename TSets = grammar::GCChunks<grammar::BasicSLP<sdsl::int_vector<>>,
+                                             true,
+                                             grammar::Chunks<sdsl::int_vector<>, sdsl::int_vector<>>>,
+          typename TSampledTree = grammar::SampledSLP<>,
+          typename TMergeSets = MergeSetsBinaryTreeFunctor>
+using DocListIdxGCDABackend =
+    DocListIdx<TStorage,
+               TAlphabet,
+               TCountIdx,
+               SampledTreeCore<TStorage,
+                               TAlphabet::int_width,
+                               TBackend,
+                               SampledTree<TStorage, TAlphabet::int_width, TSampledTree, TSets>>>;
 
 }  // namespace dret::gcda
