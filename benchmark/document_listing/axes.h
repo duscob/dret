@@ -45,6 +45,14 @@ enum class GCDACounts {
   Plain,
 };
 
+// How an RMQ frequency index turns a document's leftmost and rightmost positions into its frequency
+// (dret/doc_freq/oracle.h): the rank of a wavelet tree over the DA, which is also its backend, or the
+// per-document inverse suffix arrays over a differential suffix array, its backend.
+enum class FreqOracle {
+  Rank,
+  DocIsa,
+};
+
 // PDL tree-construction storage policy. Threaded into the constructor as a
 // runtime argument; baked into the cache-key prefix.
 enum class PDLStoragePolicy {

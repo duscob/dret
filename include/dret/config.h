@@ -47,7 +47,13 @@ constexpr std::string_view kDaSampledLeavesLOUDS = "daSampledLeavesLOUDS";
 constexpr std::string_view kDaLeafCovers = "daLeafCovers";        // its leaves as covers in the DA grammar
 constexpr std::string_view kDaNodeDocListsPlain = "daNodeDocListsPlain";  // document list per sampled node
 constexpr std::string_view kDaNodeDocListsRP = "daNodeDocListsRP";
-constexpr std::string_view kDaNodeDocCounts = "daNodeDocCounts";  // frequencies of each node list's documents
+constexpr std::string_view kDaNodeDocCounts = "daNodeDocCounts";
+// Document frequencies: a wavelet tree over the DA (rank by document); the differential grammar of the
+// suffix array; the differential grammar of the per-document inverse suffix arrays, by text position.
+// The grammars carry their sample spacing in the key.
+constexpr std::string_view kDaWt = "daWt";
+constexpr std::string_view kDiffSA = "diffSA";
+constexpr std::string_view kDocIsa = "docIsa";  // frequencies of each node list's documents
 constexpr std::string_view kDaDiffGrammar = "daDiffGrammar";      // RePair grammar of the differential DA
 constexpr std::string_view kDaDiffRoots = "daDiffRoots";          // its top-level sequence
 constexpr std::string_view kDaDiffSpanSums = "daDiffSpanSums";    // differential sum of each rule
@@ -120,6 +126,9 @@ struct Keys {
         {conf::kDaNodeDocListsPlain, "da_node_doclists_plain"},
         {conf::kDaNodeDocListsRP, "da_node_doclists_rp"},
         {conf::kDaNodeDocCounts, "da_node_doccounts"},
+        {conf::kDaWt, "da_wt"},
+        {conf::kDiffSA, "dsa"},
+        {conf::kDocIsa, "doc_disa"},
         {conf::kDaDiffGrammar, "da_diff_grammar"},
         {conf::kDaDiffRoots, "da_diff_roots"},
         {conf::kDaDiffSpanSums, "da_diff_span_sums"},

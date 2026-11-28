@@ -10,8 +10,6 @@
 
 #include <sdsl/config.hpp>
 #include <sdsl/bit_vectors.hpp>
-#include <sdsl/rmq_support.hpp>
-#include <sdsl/rmq_succinct_sct.hpp>
 
 #include <r_index.hpp>
 
@@ -21,7 +19,6 @@
 #include <grammar/sampled_slp.h>
 
 #include <dret/doc_freq/doc_freq_base.h>
-#include <dret/doc_freq/doc_freq_rmq.h>
 #include <dret/doc_freq/doc_freq_gcda.h>
 
 #include "../../tool/definitions.h"
@@ -45,33 +42,6 @@ auto Load(T &_v, const std::string &_key, const sdsl::cache_config &_config, con
 }
 
 template<typename BitVectors>
-class IsMarkedWrapper {
- public:
-  IsMarkedWrapper(const BitVectors *_marked = nullptr) : bit_vectors_{_marked} {}
-
-  template<typename DocSuffix>
-  auto operator()(std::size_t /*_i*/, const DocSuffix &_doc_suffix, dret::OccurrenceSide _side) const {
-    return bit_vectors_[_side == dret::OccurrenceSide::LEFTMOST ? 0 : 1][_doc_suffix.first];
-  }
-
- private:
-  const BitVectors *bit_vectors_;
-};
-
-template<typename BitVectors>
-class MarkWrapper {
- public:
-  MarkWrapper(BitVectors *_marked = nullptr) : bit_vectors_{_marked} {}
-
-  void operator()(std::size_t _doc, dret::OccurrenceSide _side) {
-    bit_vectors_[_side == dret::OccurrenceSide::LEFTMOST ? 0 : 1][_doc] = 1;
-  }
-
- private:
-  BitVectors *bit_vectors_;
-};
-
-template<typename BitVectors>
 class UnmarkWrapper {
  public:
   UnmarkWrapper(BitVectors *_marked = nullptr) : bit_vectors_{_marked} {}
@@ -91,23 +61,14 @@ class Factory {
   using BitVectorCompactRank = BitVectorCompact::rank_1_type;
   using BitVectorCompactSelect = BitVectorCompact::select_1_type;
 
-  using RangeMinQuery = sdsl::rmq_succinct_sct<true>;
-  using RangeMaxQuery = sdsl::rmq_succinct_sct<false>;
-
   enum class IndexEnum {
-    SADA_ISAs = 0,
-    SADA_WT_DA,
-    ILCP_ISAs,
-    ILCP_WT_DA,
-    CILCP_ISAs,
-    CILCP_WT_DA,
-    GCDA_ISAs,
+    GCDA_ISAs = 0,
     GCDA_WT_DA
   };
 
   Factory(const sdsl::cache_config &_config) : config_{_config} {
     std::ofstream breakdown_csv("breakdown.csv");
-    breakdown_csv << "R-Index-Basic,R-Index,Doc-Endings,DSA,Doc-DISAs,WT-DA,Sada,ILCP,CILCP,GCDA"
+    breakdown_csv << "R-Index-Basic,R-Index,Doc-Endings,DSA,Doc-DISAs,WT-DA,GCDA"
                   << std::endl;
 
     // Loading CSAs
@@ -134,8 +95,6 @@ class Factory {
     doc_marked_[0].resize(n_doc_, false);
     doc_marked_[1].resize(n_doc_, false);
 
-    is_marked_ = decltype(is_marked_)(doc_marked_);
-    mark_ = decltype(mark_)(doc_marked_);
     unmark_ = decltype(unmark_)(doc_marked_);
 
 
@@ -206,83 +165,6 @@ class Factory {
     compute_doc_freq_suff_wrappers_.emplace_back(
         new dret::ComputeDocFrequencyWithSuffixesOccs<decltype(unmark_)>(&unmark_));
 
-    // Loading Sada components
-    Load(core_sada_.left_rmq, KEY_SADA_RMINQ, config_, "Sada RMinQ");
-    Load(core_sada_.right_rmq, KEY_SADA_RMAXQ, config_, "Sada RMaxQ");
-    size_sada_ = sdsl::size_in_bytes(core_sada_.left_rmq) + sdsl::size_in_bytes(core_sada_.right_rmq);
-
-    breakdown_csv << size_sada_ << ",";
-
-
-    // Loading ILCP components
-    Load(core_ilcp_.left_rmq, KEY_ILCP_BACKWARD_RMQ, config_, "ILCP Left RMQ");
-    Load(core_ilcp_.right_rmq, KEY_ILCP_FORWARD_RMQ, config_, "ILCP Right RMQ");
-    size_ilcp_ = sdsl::size_in_bytes(core_ilcp_.left_rmq) + sdsl::size_in_bytes(core_ilcp_.right_rmq);
-    {
-      sdsl::bit_vector tmp_bv;
-      std::string keys[2] = {KEY_ILCP_BACKWARD_RUN_HEADS, KEY_ILCP_FORWARD_RUN_HEADS};
-      for (std::size_t i = 0; i < 2; ++i) {
-        Load(tmp_bv, keys[i], config_, "ILCP Left/Right Run Heads");
-        core_ilcp_.run_heads[i] =
-            std::remove_reference<std::remove_pointer<decltype(core_ilcp_.run_heads[i])>::type>::type(tmp_bv);
-        core_ilcp_.run_heads_rank[i].set_vector(&core_ilcp_.run_heads[i]);
-        core_ilcp_.run_heads_select[i].set_vector(&core_ilcp_.run_heads[i]);
-        size_ilcp_ += sdsl::size_in_bytes(core_ilcp_.run_heads[i]) + sdsl::size_in_bytes(core_ilcp_.run_heads_rank[i])
-            + sdsl::size_in_bytes(core_ilcp_.run_heads_select[i]);
-      }
-    }
-
-    breakdown_csv << size_ilcp_ << ",";
-
-
-    // Loading CILCP components
-    Load(core_cilcp_.left_rmq, KEY_CILCP_BACKWARD_RMQ, config_, "CILCP Left RMQ");
-    Load(core_cilcp_.right_rmq, KEY_CILCP_FORWARD_RMQ, config_, "CILCP Right RMQ");
-    size_cilcp_ = sdsl::size_in_bytes(core_cilcp_.left_rmq) + sdsl::size_in_bytes(core_cilcp_.right_rmq);
-    {
-      sdsl::bit_vector tmp_bv;
-      std::string keys[2] = {KEY_CILCP_BACKWARD_RUN_HEADS, KEY_CILCP_FORWARD_RUN_HEADS};
-      for (std::size_t i = 0; i < 2; ++i) {
-        Load(tmp_bv, keys[i], config_, "CILCP Left/Right Run Heads");
-        core_cilcp_.run_heads[i] =
-            std::remove_reference<std::remove_pointer<decltype(core_cilcp_.run_heads[i])>::type>::type(tmp_bv);
-        core_cilcp_.run_heads_rank[i].set_vector(&core_cilcp_.run_heads[i]);
-        core_cilcp_.run_heads_select[i].set_vector(&core_cilcp_.run_heads[i]);
-        size_cilcp_ += sdsl::size_in_bytes(core_cilcp_.run_heads[i])
-            + sdsl::size_in_bytes(core_cilcp_.run_heads_rank[i])
-            + sdsl::size_in_bytes(core_cilcp_.run_heads_select[i]);
-      }
-    }
-
-    breakdown_csv << size_cilcp_ << ",";
-
-    // RMQ get values functors
-    get_values_rmq_functors_.emplace_back(new dret::GetValuesRMQSadaFunctor<SAWrapper>(sa_wrappers_[0]));
-    get_values_rmq_functors_.emplace_back(
-        new dret::GetValuesRMQILCPFunctor<SAWrapper, decltype(core_ilcp_)>(sa_wrappers_[0], &core_ilcp_));
-    get_values_rmq_functors_.emplace_back(
-        new dret::GetValuesRMQCILCPFunctor<SAWrapper, decltype(core_cilcp_)>(sa_wrappers_[0], &core_cilcp_));
-    get_values_rmq_functors_.emplace_back(new dret::GetValuesRMQSadaFunctor<SAWrapper>(sa_wrappers_[1]));
-    get_values_rmq_functors_.emplace_back(
-        new dret::GetValuesRMQILCPFunctor<SAWrapper, decltype(core_ilcp_)>(sa_wrappers_[1], &core_ilcp_));
-    get_values_rmq_functors_.emplace_back(
-        new dret::GetValuesRMQCILCPFunctor<SAWrapper, decltype(core_cilcp_)>(sa_wrappers_[1], &core_cilcp_));
-
-    // RMQ reporters
-    rmq_reporters_.emplace_back(new dret::RMQSadaReporter<decltype(mark_)>(&mark_));
-    rmq_reporters_.emplace_back(
-        new dret::RMQILCPReporter<decltype(mark_), SAWrapper, decltype(core_ilcp_)>(
-            &mark_, sa_wrappers_[0], &core_ilcp_));
-    rmq_reporters_.emplace_back(
-        new dret::RMQCILCPReporter<decltype(mark_), SAWrapper, decltype(core_cilcp_)>(
-            &mark_, sa_wrappers_[0], &core_cilcp_));
-    rmq_reporters_.emplace_back(new dret::RMQSadaReporter<decltype(mark_)>(&mark_));
-    rmq_reporters_.emplace_back(
-        new dret::RMQILCPReporter<decltype(mark_), SAWrapper, decltype(core_ilcp_)>(
-            &mark_, sa_wrappers_[1], &core_ilcp_));
-    rmq_reporters_.emplace_back(
-        new dret::RMQCILCPReporter<decltype(mark_), SAWrapper, decltype(core_cilcp_)>(
-            &mark_, sa_wrappers_[1], &core_cilcp_));
 
 
     // Loading GCDA components
@@ -335,45 +217,6 @@ class Factory {
 
   std::pair<dret::DocFreqIndex *, std::size_t> Build(const Config &_config) const {
     switch (_config.index) {
-      case IndexEnum::SADA_ISAs: {
-        return {
-            dret::MakePtrDocFreqIndexBasicScheme(
-                csa_wrappers_[0],
-                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_sada_,
-                                                                *get_values_rmq_functors_[0],
-                                                                *rmq_reporters_[0],
-                                                                is_marked_)),
-                compute_doc_freq_suff_wrappers_[0]),
-            size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_sada_
-        };
-      }
-      case IndexEnum::ILCP_ISAs: {
-        return {
-            dret::MakePtrDocFreqIndexBasicScheme(
-                csa_wrappers_[0],
-                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_ilcp_,
-                                                                *get_values_rmq_functors_[1],
-                                                                *rmq_reporters_[1],
-                                                                is_marked_)),
-                compute_doc_freq_suff_wrappers_[0]),
-            size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_ilcp_
-        };
-      }
-      case IndexEnum::CILCP_ISAs: {
-        return {
-            dret::MakePtrDocFreqIndexBasicScheme(
-                csa_wrappers_[0],
-                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_cilcp_,
-                                                                *get_values_rmq_functors_[2],
-                                                                *rmq_reporters_[2],
-                                                                is_marked_)),
-                compute_doc_freq_suff_wrappers_[0]),
-            size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_cilcp_
-        };
-      }
       case IndexEnum::GCDA_ISAs: {
         return {
             dret::MakePtrDocFreqIndexBasicScheme(
@@ -391,46 +234,7 @@ class Factory {
             size_r_idx_basic_ + size_doc_endings_ + dsa_.size_in_bytes_ + doc_disas_.size_in_bytes_ + size_gcda_
         };
       }
-      case IndexEnum::SADA_WT_DA: {
-        return {
-            dret::MakePtrDocFreqIndexBasicScheme(
-                csa_wrappers_[0],
-                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_sada_,
-                                                                *get_values_rmq_functors_[3],
-                                                                *rmq_reporters_[3],
-                                                                is_marked_)),
-                compute_doc_freq_suff_wrappers_[1]),
-            size_r_idx_basic_ + size_doc_endings_ + size_wt_da_ap_ + size_sada_
-        };
-      }
-      case IndexEnum::ILCP_WT_DA: {
-        return {
-            dret::MakePtrDocFreqIndexBasicScheme(
-                csa_wrappers_[0],
-                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_ilcp_,
-                                                                *get_values_rmq_functors_[4],
-                                                                *rmq_reporters_[4],
-                                                                is_marked_)),
-                compute_doc_freq_suff_wrappers_[1]),
-            size_r_idx_basic_ + size_doc_endings_ + size_wt_da_ap_ + size_ilcp_
-        };
-      }
 
-      case IndexEnum::CILCP_WT_DA: {
-        return {
-            dret::MakePtrDocFreqIndexBasicScheme(
-                csa_wrappers_[0],
-                std::shared_ptr<dret::ComputeSuffixesByDocFunctor>(
-                    dret::MakePtrComputeSuffixesByDocRMQFunctor(core_cilcp_,
-                                                                *get_values_rmq_functors_[5],
-                                                                *rmq_reporters_[5],
-                                                                is_marked_)),
-                compute_doc_freq_suff_wrappers_[1]),
-            size_r_idx_basic_ + size_doc_endings_ + size_wt_da_ap_ + size_cilcp_
-        };
-      }
       case IndexEnum::GCDA_WT_DA: {
         return {
             dret::MakePtrDocFreqIndexBasicScheme(
@@ -474,8 +278,6 @@ class Factory {
 
   using MarkedDocs = std::vector<bool>;
   MarkedDocs doc_marked_[2];
-  IsMarkedWrapper<MarkedDocs> is_marked_;
-  MarkWrapper<MarkedDocs> mark_;
   UnmarkWrapper<MarkedDocs> unmark_;
 
   struct DSLPWrapper {
@@ -522,24 +324,6 @@ class Factory {
   sdsl::wt_ap<> wt_da_ap_;
   std::size_t size_wt_da_ap_;
 
-  // Sada components
-  dret::RMQAlgoCoreSada<RangeMinQuery, RangeMaxQuery> core_sada_;
-  std::size_t size_sada_;
-
-  // ILCP components
-  //TODO Experiment with other bitvectors
-  dret::RMQAlgoCoreILCP<RangeMinQuery, RangeMinQuery, sdsl::rrr_vector<>> core_ilcp_;
-  std::size_t size_ilcp_;
-
-  // CILCP components
-  dret::RMQAlgoCoreCILCP<RangeMinQuery, RangeMinQuery, sdsl::sd_vector<>> core_cilcp_;
-  std::size_t size_cilcp_;
-
-  // RMQ get values
-  std::vector<std::unique_ptr<dret::GetValuesRMQFunctor>> get_values_rmq_functors_;
-
-  // RMQ reporters
-  std::vector<std::unique_ptr<dret::RMQReporter>> rmq_reporters_;
 
   // GCDA components
   grammar::SLP<sdsl::int_vector<>, sdsl::int_vector<>> gcda_slp_;

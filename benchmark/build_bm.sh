@@ -18,12 +18,6 @@ for coll in "$dir_colls"/*; do
   # Build common items
   "$dir_tools"/build_items --data "$coll"/data
 
-  # Build Sada items
-  "$dir_tools"/build_items_sada --data "$coll"/data
-
-  # Build ILCP items
-  "$dir_tools"/build_items_ilcp --data "$coll"/data
-
   for raw_file in dsa_raw_data.sdsl doc_disas_raw_data.sdsl da_raw_data.sdsl da_rle_raw_data.sdsl; do
     if [[ ! -f "$raw_file".R || ! -f "$raw_file".C ]]; then
       echo "Re-pair $raw_file"

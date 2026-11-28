@@ -207,8 +207,16 @@ struct BruteSweep {
   std::vector<std::size_t> sampling_size{8};  // Only used for sr-index.
 };
 
+// The RMQ frequency indexes (dret/doc_freq/rmq_core.h): a published core x a frequency oracle x the
+// sample spacing of the doc-ISA oracle's grammars. Frequency task only.
+struct RMQFreqSweep {
+  std::vector<axes::CoreKind> core{axes::CoreKind::SADA, axes::CoreKind::ILCP, axes::CoreKind::CILCP};
+  std::vector<axes::FreqOracle> oracle{axes::FreqOracle::Rank, axes::FreqOracle::DocIsa};
+  std::vector<std::uint32_t> block_size{256};
+};
+
 using FamilySweep = std::variant<GCDASweep, DGCDASweep, SLPNSSweep,
-                                  RMQSweep, PDLSweep, BruteSweep, GCDABackendSweep>;
+                                  RMQSweep, PDLSweep, BruteSweep, GCDABackendSweep, RMQFreqSweep>;
 
 struct Spec {
   // 0 when the spec does not say (see ParseRmqCore).
@@ -393,6 +401,15 @@ inline RMQSweep ParseRMQ(const nlohmann::json& j, int t_version) {
   return s;
 }
 
+inline RMQFreqSweep ParseRMQFreq(const nlohmann::json& j, int t_version) {
+  RMQFreqSweep s;
+  s.core = ParseListWith<axes::CoreKind>(
+      j, "core", s.core, [t_version](const std::string& c) { return ParseRmqCore(c, t_version); });
+  s.oracle = ParseEnumList<axes::FreqOracle>(j, "oracle", s.oracle);
+  s.block_size = ParseList<std::uint32_t>(j, "block_size", s.block_size);
+  return s;
+}
+
 inline PDLSweep ParsePDL(const nlohmann::json& j) {
   PDLSweep s;
   s.codec = ParseEnumList<axes::PDLVariant>(j, "codec", s.codec);
@@ -433,6 +450,7 @@ inline FamilySweep ParseFamilyBlock(const nlohmann::json& j, int t_version) {
   if (family == "dgcda")   return ParseDGCDA(j);
   if (family == "slp_ns")  return ParseSLPNS(j);
   if (family == "rmq")     return ParseRMQ(j, t_version);
+  if (family == "rmq_freq") return ParseRMQFreq(j, t_version);
   if (family == "pdl")     return ParsePDL(j);
   if (family == "brute")   return ParseBrute(j);
   if (family == "gcda_backend") return ParseGCDABackend(j);

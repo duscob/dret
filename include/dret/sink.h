@@ -43,6 +43,17 @@ concept DocSink = requires(TSink& t_sink, std::size_t t_doc) {
   { t_sink.Done() } -> std::convertible_to<bool>;
 };
 
+// Reports t_doc, found at suffix-array position t_pos, to t_sink: with the position when the sink takes
+// it (PositionAt: the extreme positions the frequency cores collect, doc_freq/rmq_core.h), else as a
+// position. The RMQ cores report through it.
+template <typename TSink>
+[[gnu::always_inline]] inline void ReportPosition(TSink& t_sink, std::size_t t_doc, std::size_t t_pos) {
+  if constexpr (requires { t_sink.PositionAt(t_doc, t_pos); })
+    t_sink.PositionAt(t_doc, t_pos);
+  else
+    t_sink.Position(t_doc);
+}
+
 // Document listing: reports each document once, to t_report, the first time it is seen, from a
 // position or a list. Contains(d) tells whether d was reported, for the marking stop of the RMQ cores.
 // t_n_doc sizes the bitmap; identifiers past it grow it (distinct_docs.h), so 0 is valid when the
