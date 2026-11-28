@@ -14,7 +14,7 @@
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_base.h"
-#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/doc_index.h"
 #include "dret/fields.h"
 #include "dret/index_base.h"
 
@@ -28,7 +28,7 @@ class GetDocBv;
 
 // Brute force over the r-index or sr-index locate (Brute-RI / Brute-SRI): the text position of every
 // occurrence, mapped to its document by the document ends (GetDocBv). A pattern core: the locate index
-// finds the occurrences itself, so the index holds no r-index count (doc_list_index.h). Serialized as
+// finds the occurrences itself, so the index holds no r-index count (doc_index.h). Serialized as
 // the locate index, then the document ends; no size report (the benchmark falls back to the serialized
 // size).
 template <typename TStorage, typename TAlphabet, typename TLocateIdx, typename TGetDoc>
@@ -77,7 +77,7 @@ template <typename TStorage = GenericStorage,
           typename TLocateIdx = sri::SrIdxGeneric<sri::SrIndexValidArea<TStorage, TAlphabet>, 16>,
           typename TGetDoc = GetDocBv<TStorage, sdsl::sd_vector<>, TAlphabet::int_width>>
 using DocListIdxBrute =
-    DocListIdx<TStorage, TAlphabet, NoCountIdx, LocateCore<TStorage, TAlphabet, TLocateIdx, TGetDoc>>;
+    DocIndex<TStorage, TAlphabet, NoCountIdx, LocateCore<TStorage, TAlphabet, TLocateIdx, TGetDoc>>;
 
 //~~~~~~~
 

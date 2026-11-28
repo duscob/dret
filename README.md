@@ -55,7 +55,7 @@ returns: the documents of the pattern (`listing`, the default) or each document 
 (`frequency`). Every index computes listing; frequencies come from the brute-force indexes, GCDA with
 `counts`, and the `rmq_freq` (SADA / ILCP / CILCP) and `gcda_occs` families, the last two with a
 frequency oracle (`rank` over a wavelet tree on the document array, or `doc_isa`, the per-document
-inverse suffix arrays over a differential suffix array). See `benchmark/document_listing/README.md`
+inverse suffix arrays over a differential suffix array). See `benchmark/document_retrieval/README.md`
 for the spec, and `test/regression/` for a sweep of every index in each task.
 
 >##### Dependencies

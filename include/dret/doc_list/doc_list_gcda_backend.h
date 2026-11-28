@@ -31,7 +31,7 @@
 #include "dret/backend/sa_phi.h"
 #include "dret/collection.h"
 #include "dret/doc_list/doc_list_gcda.h"
-#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/doc_index.h"
 #include "dret/doc_list/sampled_tree_core.h"
 #include "dret/fields.h"
 #include "dret/index_base.h"
@@ -123,7 +123,7 @@ template <typename TStorage = GenericStorage,
           typename TSampledTree = grammar::SampledSLP<>,
           typename TMergeSets = MergeSetsBinaryTreeFunctor>
 using DocListIdxGCDABackend =
-    DocListIdx<TStorage,
+    DocIndex<TStorage,
                TAlphabet,
                TCountIdx,
                SampledTreeCore<TStorage,

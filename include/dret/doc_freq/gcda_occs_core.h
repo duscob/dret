@@ -35,7 +35,7 @@
 #include "dret/config.h"
 #include "dret/doc_freq/frequencies.h"
 #include "dret/doc_freq/oracle.h"
-#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/doc_index.h"
 #include "dret/fields.h"
 #include "dret/index_base.h"
 #include "dret/size_report.h"
@@ -248,6 +248,6 @@ struct ComputesFrequencies<GcdaOccsCore<TStorage, t_width, TBackend, TOracle>> :
 // A GCDA frequency index: the r-index for the range, then GcdaOccsCore.
 template <typename TStorage, typename TAlphabet, typename TCountIdx, typename TBackend, typename TOracle>
 using DocFreqIdxGCDAOccs =
-    DocListIdx<TStorage, TAlphabet, TCountIdx, GcdaOccsCore<TStorage, TAlphabet::int_width, TBackend, TOracle>>;
+    DocIndex<TStorage, TAlphabet, TCountIdx, GcdaOccsCore<TStorage, TAlphabet::int_width, TBackend, TOracle>>;
 
 }  // namespace dret::freq

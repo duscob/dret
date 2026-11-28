@@ -35,7 +35,7 @@
 #include "dret/config.h"
 #include "dret/construct_base.h"
 #include "dret/doc_list/doc_list_base.h"
-#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/doc_index.h"
 #include "dret/fields.h"
 #include "dret/index_base.h"
 #include "dret/rmq/doc_list_rmq_scheme.h"
@@ -718,12 +718,12 @@ using CilcpValueCore = IlcpLikeValueCore<IlcpPartition::CILCP, TStorage, t_width
 // DocListIdxRMQ
 
 
-// The RMQ index: the r-index count and an RMQ core (doc_list_index.h).
+// The RMQ index: the r-index count and an RMQ core (doc_index.h).
 template <typename TStorage = GenericStorage,
           typename TAlphabet = Alphabet<>,
           typename TCountIdx = sri::RIndexCount<TStorage, TAlphabet>,
           typename TCore = SadaCore<TStorage, TAlphabet::int_width>>
-using DocListIdxRMQ = DocListIdx<TStorage, TAlphabet, TCountIdx, TCore>;
+using DocListIdxRMQ = DocIndex<TStorage, TAlphabet, TCountIdx, TCore>;
 
 //~~~~~~~
 // Construction

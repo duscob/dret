@@ -7,7 +7,7 @@
 // over a GCDA grammar without its lists, Brute-GCDA (doc_list_slp.h).
 //
 // A backend that finds the range itself (the RLCSA) does so for the index (Count), which then holds no
-// r-index (doc_list_index.h). The RLCSA must count for itself anyway, since its suffix array orders
+// r-index (doc_index.h). The RLCSA must count for itself anyway, since its suffix array orders
 // suffixes differently around the separators (see factories/rmq.h).
 //
 // Serialized as the backend, then the number of documents.

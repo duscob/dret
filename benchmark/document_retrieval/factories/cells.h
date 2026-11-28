@@ -32,7 +32,7 @@
 #include "dret/config.h"
 #include "dret/doc_list/doc_list_base.h"
 #include "dret/doc_freq/frequencies.h"
-#include "dret/doc_list/doc_list_index.h"
+#include "dret/doc_list/doc_index.h"
 
 #include "../spec.h"
 
